@@ -1,0 +1,10 @@
+; mp4demux.def ; declares the exports
+
+LIBRARY         "mp4demux.dll"
+
+EXPORTS
+        DllGetClassObject PRIVATE
+        DllCanUnloadNow PRIVATE
+        DllRegisterServer PRIVATE
+        DllUnregisterServer PRIVATE
+
