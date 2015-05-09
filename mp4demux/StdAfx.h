@@ -18,6 +18,7 @@
 #include <comdef.h>
 _COM_SMARTPTR_TYPEDEF(IMediaSample, IID_IMediaSample);
 _COM_SMARTPTR_TYPEDEF(IAsyncReader, IID_IAsyncReader);
+_COM_SMARTPTR_TYPEDEF(IMemAllocator, IID_IMemAllocator);
 _COM_SMARTPTR_TYPEDEF(IPin, IID_IPin);
 
 #include "smartptr.h"
@@ -29,7 +30,7 @@ using namespace std;
 
 #pragma warning(pop)
 
-//{{AFX_INSERT_LOCATION}}
-// Microsoft Visual C++ will insert additional declarations immediately before the previous line.
+#define FOURCC(p)   (DWORD(p[3] | (p[2] << 8) | (p[1] << 16) | (p[0] << 24)))
+
 
 

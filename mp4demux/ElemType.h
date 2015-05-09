@@ -119,6 +119,10 @@ public:
 	{
 		return m_type;
 	}
+	void SetRate(REFERENCE_TIME tFrame)
+	{
+		m_tFrame = tFrame;
+	}
 private:
     bool GetType_H264(CMediaType* pmt);
 	bool GetType_H264ByteStream(CMediaType* pmt);

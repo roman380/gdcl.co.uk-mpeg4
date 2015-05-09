@@ -8,6 +8,10 @@
 
 #pragma once
 
+// NOTE: Orignial Geraint's project uses 90 kHz clock, and 360 kHz advantage is that frame rates up to 60M and 60 are mapped 
+//       accurately without integer rounding precision loss
+#define DEFAULT_TIMESCALE 360000 // 90000
+
 class Atom;
 class MovieWriter;
 

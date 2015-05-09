@@ -60,14 +60,14 @@ MovieWriter::MovieWriter(AtomWriter* pContainer)
 }
 
 TrackWriter* 
-MovieWriter::MakeTrack(const CMediaType* pmt)
+MovieWriter::MakeTrack(const CMediaType* pmt, BOOL bNotifyMediaSampleWrite)
 {
 	TypeHandler* ph = TypeHandler::Make(pmt);
 	if (!ph)
 	{
 		return NULL;
 	}
-    TrackWriter* pTrack = new TrackWriter(this, (long)m_Tracks.size(), ph);
+    TrackWriter* pTrack = new TrackWriter(this, (long)m_Tracks.size(), ph, bNotifyMediaSampleWrite);
     m_Tracks.push_back(pTrack);
     return pTrack;
 }
@@ -442,9 +442,15 @@ void MovieWriter::RecordBitrate(size_t index, long bitrate)
 	}
 }
 
+VOID MovieWriter::NotifyMediaSampleWrite(INT nTrackIndex, IMediaSample* pMediaSample)
+{
+	if(m_pContainer)
+		m_pContainer->NotifyMediaSampleWrite(nTrackIndex, pMediaSample);
+}
+
 // -------- Track -------------------------------------------------------
 
-TrackWriter::TrackWriter(MovieWriter* pMovie, int index, TypeHandler* pType)
+TrackWriter::TrackWriter(MovieWriter* pMovie, int index, TypeHandler* pType, BOOL bNotifyMediaSampleWrite)
 : m_bEOS(false),
   m_bStopped(false),
   m_index(index),
@@ -452,7 +458,8 @@ TrackWriter::TrackWriter(MovieWriter* pMovie, int index, TypeHandler* pType)
   m_tLast(0),
   m_StartAt(0),
   m_pMovie(pMovie),
-  m_Durations(90000),     // scale: 90KHz
+  m_bNotifyMediaSampleWrite(bNotifyMediaSampleWrite),
+  m_Durations(DEFAULT_TIMESCALE),
   m_SC(1)                // dataref 1
 {
     // adjust scale to media type (mostly because audio scales must be 16 bits);
@@ -781,6 +788,12 @@ TrackWriter::Close(Atom* patm)
     return hr;
 }
 
+VOID TrackWriter::NotifyMediaSampleWrite(IMediaSample* pMediaSample)
+{
+	if(m_bNotifyMediaSampleWrite && m_pMovie)
+		m_pMovie->NotifyMediaSampleWrite(m_index, pMediaSample);
+}
+
 // -- Media Chunk ----------------------
 
 MediaChunk::MediaChunk(TrackWriter* pTrack)
@@ -808,7 +821,9 @@ MediaChunk::AddSample(IMediaSample* pSample)
 {
     REFERENCE_TIME tStart, tEnd;
     HRESULT hr = pSample->GetTime(&tStart, &tEnd);
-    if (SUCCEEDED(hr)) // watch out for VFW_S_NO_STOP_TIME
+	if(hr == VFW_S_NO_STOP_TIME)
+		tEnd = tStart + 1;
+    if(SUCCEEDED(hr))
     {
         // H264 samples from large frames
         // may be broken across several buffers, with the
@@ -928,7 +943,9 @@ MediaChunk::Write(Atom* patm)
 		cBytes += cActual;
         REFERENCE_TIME tStart, tEnd;
         HRESULT hr = pSample->GetTime(&tStart, &tEnd);
-        if (SUCCEEDED(hr))
+		if(hr == VFW_S_NO_STOP_TIME)
+			tEnd = tStart + 1;
+        if(SUCCEEDED(hr))
         {
 			// this is the last buffer in the sample
 			m_pTrack->IndexSample(bSync, tStart, tEnd, cBytes);
@@ -937,7 +954,10 @@ MediaChunk::Write(Atom* patm)
 			cBytes = 0;
 			nSamples++;
         }
-    }
+
+		ASSERT((LONG) cActual == pSample->GetActualDataLength());
+		m_pTrack->NotifyMediaSampleWrite(pSample);
+	}
 
     // add chunk position to index
 	m_pTrack->IndexChunk(posChunk, nSamples);

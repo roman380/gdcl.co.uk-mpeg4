@@ -1,0 +1,38 @@
+////////////////////////////////////////////////////////////
+// Copyright (c) GDCL 2004-6. All Rights Reserved. 
+// You are free to re-use this as the basis for your own filter development,
+// provided you retain this copyright notice in the source.
+// http://www.gdcl.co.uk
+// 
+// Enhancements by Roman Ryltsov roman@alax.info, 2013-2015
+
+import "oaidl.idl";
+import "ocidl.idl";
+
+[
+	uuid(2B5B3422-E4C3-4401-A38F-32737FFB0450),
+	version(1.0),
+]
+library GdclMp4Demux
+{
+	importlib("stdole2.tlb");
+	[
+		object,
+		uuid(1B2E20A1-8C41-4313-BA18-0A3DA484F2EC),
+		//dual,
+		//oleautomation,
+		nonextensible,
+		pointer_default(unique)
+	]
+	interface IDemuxOutputPin : IUnknown
+	{
+	    HRESULT GetMediaSampleTimes([out] ULONG* pnCount, [out] LONGLONG** ppnStartTimes, [out] LONGLONG** ppnStopTimes, [out] ULONG** ppnFlags, [out] ULONG** ppnDataSizes);
+	};
+	[
+		uuid(025BE2E4-1787-4da4-A585-C5B2B9EEB57C)
+	]
+	coclass DemuxFilter
+	{
+		[default] interface IUnknown;
+	};
+};

@@ -69,6 +69,8 @@ public:
     virtual LONGLONG Position() = 0;
     virtual HRESULT Replace(LONGLONG pos, const BYTE* pBuffer, long cBytes) = 0;
     virtual HRESULT Append(const BYTE* pBuffer, long cBytes) = 0;
+
+	virtual VOID NotifyMediaSampleWrite(INT nTrackIndex, IMediaSample* pMediaSample) { nTrackIndex; pMediaSample; }
 };
 
 // basic container structure for MPEG-4 file format.
@@ -398,7 +400,7 @@ private:
 class TrackWriter
 {
 public:
-    TrackWriter(MovieWriter* pMovie, int index, TypeHandler* ptype);
+    TrackWriter(MovieWriter* pMovie, int index, TypeHandler* ptype, BOOL bNotifyMediaSampleWrite = FALSE);
 
     HRESULT Add(IMediaSample* pSample);
 
@@ -488,10 +490,14 @@ public:
 		}
 		return false;
 	}
+
+	VOID NotifyMediaSampleWrite(IMediaSample* pMediaSample);
+
 private:
     MovieWriter* m_pMovie;
     int m_index;
     smart_ptr<TypeHandler> m_pType;
+	BOOL m_bNotifyMediaSampleWrite;
 
     CCritSec m_csQueue;
     bool m_bEOS;
@@ -520,7 +526,7 @@ class MovieWriter
 public:
     MovieWriter(AtomWriter* pContainer);
 
-    TrackWriter* MakeTrack(const CMediaType* pmt);
+    TrackWriter* MakeTrack(const CMediaType* pmt, BOOL bNotifyMediaSampleWrite = FALSE);
     HRESULT Close(REFERENCE_TIME* pDuration);
 
     // ensures that CheckQueues is not active when
@@ -539,7 +545,7 @@ public:
     // the timescale must fit in 16 bits
     long MovieScale() 
     {
-        return 90000;
+        return DEFAULT_TIMESCALE;
     }
 
     long TrackCount()
@@ -558,6 +564,9 @@ public:
 		return m_tInterleave;
 	}
 	void RecordBitrate(size_t index, long bitrate);
+
+	VOID NotifyMediaSampleWrite(INT nTrackIndex, IMediaSample* pMediaSample);
+
 private:
     void MakeIODS(Atom* pmoov);
     void InsertFTYP(AtomWriter* pFile);

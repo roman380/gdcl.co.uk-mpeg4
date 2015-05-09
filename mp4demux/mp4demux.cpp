@@ -6,7 +6,18 @@
 // http://www.gdcl.co.uk
 
 #include "stdafx.h"
+#include "Module_i.h"
+#include "Module_i.c"
 #include "demuxfilter.h"
+
+#pragma region Libraries
+#pragma comment(lib, "winmm.lib")
+#if defined(_DEBUG)
+#pragma comment(lib, "strmbasd.lib")
+#else
+#pragma comment(lib, "strmbase.lib")
+#endif // defined(_DEBUG)
+#pragma endregion
 
 // --- COM factory table and registration code --------------
 
@@ -29,15 +40,41 @@ int g_cTemplates = sizeof(g_Templates) / sizeof(g_Templates[0]);
 STDAPI DllRegisterServer()
 {
     // base classes will handle registration using the factory template table
-    HRESULT hr = AMovieDllRegisterServer2(true);
-    return hr;
+    HRESULT nResult;
+	nResult = AMovieDllRegisterServer2(true);
+	if(FAILED(nResult))
+	    return nResult;
+	WCHAR pszPath[MAX_PATH] = { 0 };
+	GetModuleFileNameW(g_hInst, pszPath, _countof(pszPath));
+	QzCComPtr<ITypeLib> pTypeLib;
+	nResult = LoadTypeLib(pszPath, &pTypeLib);
+	if(FAILED(nResult))
+	    return nResult;
+	nResult = RegisterTypeLib(pTypeLib, pszPath, NULL);
+	if(FAILED(nResult))
+	    return nResult;
+    return S_OK;
 }
 
 STDAPI DllUnregisterServer()
 {
     // base classes will handle de-registration using the factory template table
-    HRESULT hr = AMovieDllRegisterServer2(false);
-    return hr;
+    HRESULT nResult;
+	// NOTE: We could obtain exact values using ITypeLib::GetLibAttr
+	#if defined(_WIN64)
+		static const SYSKIND g_SysKind = SYS_WIN64;
+	#else
+		static const SYSKIND g_SysKind = SYS_WIN32;
+	#endif
+	nResult = UnRegisterTypeLib(LIBID_GdclMp4Demux, 1, 0, 0, g_SysKind);
+	if(nResult == TYPE_E_REGISTRYACCESS)
+		nResult = S_OK;
+	if(FAILED(nResult))
+	    return nResult;
+    nResult = AMovieDllRegisterServer2(false);
+	if(FAILED(nResult))
+	    return nResult;
+    return S_OK;
 }
 
 // if we declare the correct C runtime entrypoint and then forward it to the DShow base

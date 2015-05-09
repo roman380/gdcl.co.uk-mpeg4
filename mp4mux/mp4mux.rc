@@ -38,7 +38,7 @@ END
 
 3 TEXTINCLUDE 
 BEGIN
-    "\r\n"
+    "1 TYPELIB ""Module.tlb""\r\n"
     "\0"
 END
 
@@ -51,8 +51,8 @@ END
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,0,0,14
- PRODUCTVERSION 1,0,0,14
+ FILEVERSION  1, 0, 0, 247
+ PRODUCTVERSION 1,0,0,8
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -68,13 +68,13 @@ BEGIN
         BLOCK "040904b0"
         BEGIN
             VALUE "CompanyName", "GDCL (www.gdcl.co.uk)"
-            VALUE "FileDescription", "GDCL DirectShow Mpeg-4 Multiplexor"
-            VALUE "FileVersion", "1.0.0.14"
+            VALUE "FileDescription", "GDCL DirectShow Mpeg-4 Multiplexor; see https://github.com/roman380/gdcl.co.uk-mpeg4 for details"
+            VALUE "FileVersion",  "1, 0, 0, 247\0"
             VALUE "InternalName", "mp4mux"
-            VALUE "LegalCopyright", "Copyright © 2006-13 GDCL. All rights reserved."
+            VALUE "LegalCopyright", "Copyright © 2006-2015 GDCL. All rights reserved."
             VALUE "OriginalFilename", "mp4mux.dll"
             VALUE "ProductName", "GDCL DirectShow Mpeg-4 Multiplexor"
-            VALUE "ProductVersion", "1.0.0.14"
+            VALUE "ProductVersion", "1.0.0.8"
         END
     END
     BLOCK "VarFileInfo"
@@ -93,7 +93,7 @@ END
 //
 // Generated from the TEXTINCLUDE 3 resource.
 //
-
+1 TYPELIB "Module.tlb"
 
 /////////////////////////////////////////////////////////////////////////////
 #endif    // not APSTUDIO_INVOKED

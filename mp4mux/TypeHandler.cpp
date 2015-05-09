@@ -45,10 +45,9 @@ public:
         // an approximation is sufficient
         return 30;
     }
-    // use 90Khz except for audio
     long Scale()
     {
-        return 90000;
+        return DEFAULT_TIMESCALE;
     }
 	long Width();
 	long Height();
@@ -87,10 +86,9 @@ public:
         // an approximation is sufficient
         return 30;
     }
-    // use 90Khz except for audio
     long Scale()
     {
-        return 90000;
+        return DEFAULT_TIMESCALE;
     }
 	long Width();
 	long Height();
@@ -161,10 +159,9 @@ public:
         // an approximation is sufficient
         return 30;
     }
-    // use 90Khz except for audio
     long Scale()
     {
-        return 90000;
+        return DEFAULT_TIMESCALE;
     }
 	long Width();
 	long Height();
@@ -351,23 +348,42 @@ TypeHandler::CanSupport(const CMediaType* pmt)
 		// the bitcount and biSize match up with the dimensions, but that
 		// also works for ffdshow encoder outputs, so I'm returning to an 
 		// explicit list. 
+
+		#pragma region 24/32-bit RGB
+		if (*pmt->FormatType() == FORMAT_VideoInfo)
+		{
+			VIDEOINFOHEADER* pvi = (VIDEOINFOHEADER*)pmt->Format();
+			if ((pvi->bmiHeader.biCompression == BI_RGB) && DIBSIZE(pvi->bmiHeader) == pmt->GetSampleSize())
+			{
+				if ((*pmt->Subtype() == MEDIASUBTYPE_RGB32) && (pvi->bmiHeader.biBitCount == 32) ||
+					(*pmt->Subtype() == MEDIASUBTYPE_RGB24) && (pvi->bmiHeader.biBitCount == 24)
+					)
+				{
+					return true;
+				}
+			}
+		}
+		#pragma endregion
+
 		FOURCCMap fcc(pmt->subtype.Data1);
 		if ((fcc == *pmt->Subtype()) && (*pmt->FormatType() == FORMAT_VideoInfo))
 		{
 			VIDEOINFOHEADER* pvi = (VIDEOINFOHEADER*)pmt->Format();
 			if ((pvi->bmiHeader.biBitCount > 0) && (DIBSIZE(pvi->bmiHeader) == pmt->GetSampleSize()))
 			{
-				FOURCCMap yuy2(DWORD('2YUY'));
-				FOURCCMap uyvy(DWORD('YVYU'));
-				FOURCCMap yv12(DWORD('21VY'));
-				FOURCCMap nv12(DWORD('21VN'));
-				FOURCCMap i420(DWORD('024I'));
+				FOURCCMap yuy2(DWORD('2YUY')); // YUY2
+				FOURCCMap uyvy(DWORD('YVYU')); // UYVY
+				FOURCCMap hdyc(DWORD('CYDH')); // HDYC
+				FOURCCMap yv12(DWORD('21VY')); // YV12
+				FOURCCMap nv12(DWORD('21VN')); // NV12
+				FOURCCMap i420(DWORD('024I')); // I420
 				if ((*pmt->Subtype() == yuy2) ||
 					(*pmt->Subtype() == uyvy) ||
+					(*pmt->Subtype() == hdyc) ||
 					(*pmt->Subtype() == yv12) ||
 					(*pmt->Subtype() == nv12) ||
-//					(*pmt->Subtype() == MEDIASUBTYPE_RGB32) ||
-//					(*pmt->Subtype() == MEDIASUBTYPE_RGB24) ||
+					//(*pmt->Subtype() == MEDIASUBTYPE_RGB32) ||
+					//(*pmt->Subtype() == MEDIASUBTYPE_RGB24) ||
 					(*pmt->Subtype() == i420)
 					)
 				{
@@ -813,9 +829,18 @@ AACHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
 	}
     if (cExtra > 0)
     {
-        dsi.Append(pExtra, cExtra);
-	}
-	dcfg.Append(&dsi);
+		// HOTFIX: LEAD Tools AAC Encoder provides incorrect MPEG-4 Audio Object Type which causes compatibility issues, 
+		//         To work this around we override 0 (Null) and 1 values with 2 (AAC-LC)
+		if(cExtra == 2)
+		{
+			BYTE pnNewExtraData[2] = { pExtra[0], pExtra[1] };
+			if(((pnNewExtraData[0] & 0xF8) >> 3) != 2) // AAC-LC
+				pnNewExtraData[0] = ((2) << 3) | (pnNewExtraData[0] & 0x07);
+	        dsi.Append(pnNewExtraData, 2);
+		} else
+	        dsi.Append(pExtra, cExtra);
+    }
+    dcfg.Append(&dsi);
     es.Append(&dcfg);
     Descriptor sl(Descriptor::SL_Config);
     b[0] = 2;
@@ -1027,19 +1052,26 @@ FOURCCVideoHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
 	UNREFERENCED_PARAMETER(id);
 
 	FOURCCMap fcc = m_mt.Subtype();
-	DWORD codec = Swap4Bytes(fcc.GetFOURCC());
-	if (m_bMJPG)
-	{
-		codec = DWORD('mjpa');
-	}
-	else if (codec == DWORD('MJPG'))
-	{
-		// we didn't need the APP1 insertion,
-		// so call it Photo JPEG.
-		codec = DWORD('jpeg');
-	}
 
-	smart_ptr<Atom> psd = patm->CreateAtom(codec);
+	DWORD codec;
+	if(*m_mt.Subtype() == MEDIASUBTYPE_RGB24 || *m_mt.Subtype() == MEDIASUBTYPE_RGB32)
+	{
+		codec = BI_RGB;
+	} else
+	{
+		codec = fcc.GetFOURCC();
+		if (m_bMJPG)
+		{
+			codec = MAKEFOURCC('m', 'j', 'p', 'a'); // mjpa
+		}
+		else if (codec == MAKEFOURCC('M', 'J', 'P', 'G')) // MJPG
+		{
+			// we didn't need the APP1 insertion,
+			// so call it Photo JPEG.
+			codec = MAKEFOURCC('j', 'p', 'e', 'g'); // jpeg
+		}
+	}
+	smart_ptr<Atom> psd = patm->CreateAtom(Swap4Bytes(codec));
 
 	int cx, cy, depth;
 	if (*m_mt.FormatType() == FORMAT_VideoInfo)
@@ -1080,11 +1112,11 @@ FOURCCVideoHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
 		pName = "Motion JPEG";
 		fmt.spatial_compression = Swap4Bytes(512);
 	}
-	else if (codec == DWORD('jpeg'))
+	else if (codec == MAKEFOURCC('j', 'p', 'e', 'g')) // jpeg
 	{
 		pName = "Photo JPEG";
 	}
-	else if (codec == 0)
+	else if (codec == BI_RGB)
 	{
 		pName = "RGB Video";
 	}

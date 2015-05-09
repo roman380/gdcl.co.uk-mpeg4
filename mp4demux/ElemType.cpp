@@ -13,7 +13,7 @@
 //////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
-#include "mpeg4.h"
+#include "Mpeg4.h"
 #include "ElemType.h"
 #include <dvdmedia.h>
 
@@ -443,14 +443,14 @@ ElementaryType::Parse(REFERENCE_TIME tFrame, Atom* patm)
     AtomCache pSD(patm);
     long cOffset;
 	bool bDescriptor = true;
-    if (patm->Type() == DWORD('mp4v'))
+    if (patm->Type() == FOURCC("mp4v"))
     {
         m_type = Video_Mpeg4;
 		m_shortname = "MPEG4 Video";
         m_cx = (pSD[24] << 8) + pSD[25];
         m_cy = (pSD[26] << 8) + pSD[27];
         cOffset = 78;
-    } else if (patm->Type() == DWORD('jvt1')) 
+    } else if (patm->Type() == FOURCC("jvt1")) 
     {
 		// this is an older format that I think is not in use
         m_type = Video_H264;
@@ -458,14 +458,14 @@ ElementaryType::Parse(REFERENCE_TIME tFrame, Atom* patm)
         m_cx = (pSD[24] << 8) + pSD[25];
         m_cy = (pSD[26] << 8) + pSD[27];
         cOffset = 78;
-	} else if ((patm->Type() == DWORD('s263')) || (patm->Type() == DWORD('M263')))
+	} else if ((patm->Type() == FOURCC("s263")) || (patm->Type() == FOURCC("M263")))
 	{
 		m_type = Video_H263;
 		m_shortname = "H263 Video";
         m_cx = (pSD[24] << 8) + pSD[25];
         m_cy = (pSD[26] << 8) + pSD[27];
         cOffset = 78;
-    } else if (patm->Type() == DWORD('avc1'))
+    } else if (patm->Type() == FOURCC("avc1"))
 	{
 		// this is 14496-15: there is no descriptor in this case
         m_type = Video_H264;
@@ -474,19 +474,43 @@ ElementaryType::Parse(REFERENCE_TIME tFrame, Atom* patm)
         m_cy = (pSD[26] << 8) + pSD[27];
 		cOffset = 78;
 		bDescriptor = false;
-	} else if ((patm->Type() == DWORD('rle ')) ||
-				(patm->Type() == DWORD('I420')) ||
-				(patm->Type() == DWORD('YUY2')) ||
-				(patm->Type() == DWORD('dvc ')) ||
-				(patm->Type() == DWORD('dvcp')) ||
-				(patm->Type() == DWORD('dvsd')) ||
-				(patm->Type() == DWORD('dvh5')) ||
-				(patm->Type() == DWORD('dvhq')) ||
-				(patm->Type() == DWORD('dvhd')) ||
-				(patm->Type() == DWORD('jpeg')) ||
-				(patm->Type() == DWORD('mjpg')) ||
-				(patm->Type() == DWORD('MJPG')) ||
-				(patm->Type() == DWORD('mjpa'))
+	#pragma region 24/32-bit RGB
+	} else if ((patm->Type() == BI_RGB) ||
+				(patm->Type() == Swap4Bytes(MEDIASUBTYPE_RGB24.Data1)) || 
+				(patm->Type() == Swap4Bytes(MEDIASUBTYPE_RGB32.Data1))
+				)
+	{
+		m_type = Video_FOURCC;
+		m_fourcc = BI_RGB;
+
+		// casting this to the structure makes it clearer what
+		// info is there, but remember all shorts and longs are byte swapped
+		const QTVideo* pformat = (const QTVideo*)(const BYTE*)pSD;
+		m_cx = Swap2Bytes(pformat->width);
+		m_cy = Swap2Bytes(pformat->height);
+		m_depth = Swap2Bytes(pformat->bit_depth);
+
+		// no further info needed
+		return true;
+	#pragma endregion
+	} else if ((patm->Type() == FOURCC("rle ")) ||
+				(patm->Type() == FOURCC("YUY2")) ||
+				(patm->Type() == FOURCC("UYVY")) ||
+				(patm->Type() == FOURCC("HDYC")) ||
+				(patm->Type() == FOURCC("YV12")) ||
+				(patm->Type() == FOURCC("NV12")) ||
+				(patm->Type() == FOURCC("I420")) ||
+				(patm->Type() == FOURCC("dvc ")) ||
+				(patm->Type() == FOURCC("dvcp")) ||
+				(patm->Type() == FOURCC("dvsd")) ||
+				(patm->Type() == FOURCC("dvh5")) ||
+				(patm->Type() == FOURCC("dvhq")) ||
+				(patm->Type() == FOURCC("dvhd")) ||
+				(patm->Type() == FOURCC("jpeg")) ||
+				(patm->Type() == FOURCC("mjpg")) ||
+				(patm->Type() == FOURCC("MJPG")) ||
+				(patm->Type() == FOURCC("mjpa")) ||
+				(patm->Type() == FOURCC("apcn")) 
 				)
 	{
 		m_type = Video_FOURCC;
@@ -494,25 +518,25 @@ ElementaryType::Parse(REFERENCE_TIME tFrame, Atom* patm)
 
 		// some decoders (eg mainconcept) only accept basic dv types, so map to these types:
 		DWORD fcc = patm->Type();
-		if ((fcc == DWORD('dvc ')) ||
-			(fcc == DWORD('dvcp'))
+		if ((fcc == FOURCC("dvc ")) ||
+			(fcc == FOURCC("dvcp"))
 			)
 		{
-			fcc = DWORD('dvsd');
+			fcc = FOURCC("dvsd");
 			m_shortname = "DV Video";
 		}
-		else if ((fcc == DWORD('dvhq')) ||
-				(fcc == DWORD('dvh5'))
+		else if ((fcc == FOURCC("dvhq")) ||
+				(fcc == FOURCC("dvh5"))
 				)
 		{
-			fcc = DWORD('dvhd');
+			fcc = FOURCC("dvhd");
 			m_shortname = "DV Video";
 		}
-		else if ((fcc == DWORD('jpeg')) ||
-				 (fcc == DWORD('mjpa')) ||
-				 (fcc == DWORD('mjpg')))
+		else if ((fcc == FOURCC("jpeg")) ||
+				 (fcc == FOURCC("mjpa")) ||
+				 (fcc == FOURCC("mjpg")))
 		{
-			fcc = DWORD('MJPG');
+			fcc = FOURCC("MJPG");
 			m_shortname = "Motion JPEG Video";
 		}
 		m_fourcc = Swap4Bytes(fcc);
@@ -527,9 +551,9 @@ ElementaryType::Parse(REFERENCE_TIME tFrame, Atom* patm)
 
 		// no further info needed
 		return true;
-	} else if ((patm->Type() == DWORD('mpg2')) ||
-			   (patm->Type() == DWORD('xdvc')) ||
-			   (patm->Type() == DWORD('xdv3'))
+	} else if ((patm->Type() == FOURCC("mpg2")) ||
+			   (patm->Type() == FOURCC("xdvc")) ||
+			   (patm->Type() == FOURCC("xdv3"))
 			   )
 	{
         m_type = Video_Mpeg2;
@@ -538,7 +562,7 @@ ElementaryType::Parse(REFERENCE_TIME tFrame, Atom* patm)
         m_cy = (pSD[26] << 8) + pSD[27];
         cOffset = 78;
 		return true;
-	}else if (patm->Type() == DWORD('mp4a'))
+	}else if (patm->Type() == FOURCC("mp4a"))
     {
         m_type = Audio_AAC;
 		m_shortname = "AAC Audio";
@@ -571,14 +595,14 @@ ElementaryType::Parse(REFERENCE_TIME tFrame, Atom* patm)
 		{
 			cOffset += 16 + 20;
 		}
-		if (SwapLong(pSD+cOffset + 4) != DWORD('wave'))
+		if ((DWORD)SwapLong(pSD+cOffset + 4) != FOURCC("wave"))
 		{
 			if (version > 0)
 			{
 				long cSearch = 28;
 				while (cSearch < (patm->Length()-8))
 				{
-					if (SwapLong(pSD + cSearch + 4) == DWORD('wave'))
+					if ((DWORD)SwapLong(pSD + cSearch + 4) == FOURCC("wave"))
 					{
 						cOffset = cSearch;
 						break;
@@ -587,21 +611,21 @@ ElementaryType::Parse(REFERENCE_TIME tFrame, Atom* patm)
 				}
 			}
 		}
-    } else if ((patm->Type() == DWORD('lpcm')) ||
-               (patm->Type() == DWORD('alaw')) ||
-               (patm->Type() == DWORD('ulaw')) ||
-			   (patm->Type() == DWORD('samr')) ||
-			   (patm->Type() == DWORD('samw')))
+    } else if ((patm->Type() == FOURCC("lpcm")) ||
+               (patm->Type() == FOURCC("alaw")) ||
+               (patm->Type() == FOURCC("ulaw")) ||
+			   (patm->Type() == FOURCC("samr")) ||
+			   (patm->Type() == FOURCC("samw")))
     {
         m_type = Audio_WAVEFORMATEX;
 		m_shortname = "Audio";
         cOffset = 28;
 	}
-	else if ((patm->Type() == DWORD('sowt')) ||
-			(patm->Type() == DWORD('twos')) ||
-			(patm->Type() == DWORD('in24')) ||
-			(patm->Type() == DWORD('in32')) ||
-			(patm->Type() == DWORD('raw '))
+	else if ((patm->Type() == FOURCC("sowt")) ||
+			(patm->Type() == FOURCC("twos")) ||
+			(patm->Type() == FOURCC("in24")) ||
+			(patm->Type() == FOURCC("in32")) ||
+			(patm->Type() == FOURCC("raw "))
 			)
 	{
 		m_type = Audio_WAVEFORMATEX;
@@ -617,11 +641,11 @@ ElementaryType::Parse(REFERENCE_TIME tFrame, Atom* patm)
 		pwfx->cbSize = 0;
 		WORD w = *(USHORT*)(pSD + 16);
 		pwfx->nChannels = Swap2Bytes(w);
-		if (patm->Type() == DWORD('in24'))
+		if (patm->Type() == FOURCC("in24"))
 		{
 			pwfx->wBitsPerSample = 24;
 		}
-		else if (patm->Type() == DWORD('in32'))
+		else if (patm->Type() == FOURCC("in32"))
 		{
 			pwfx->wBitsPerSample = 32;
 		}
@@ -639,7 +663,7 @@ ElementaryType::Parse(REFERENCE_TIME tFrame, Atom* patm)
 		
 		return true;
 	}
-	else if (patm->Type() == DWORD('c608'))
+	else if (patm->Type() == FOURCC("c608"))
 	{
 		m_type = Text_CC608;
 		m_shortname = "CC 608 Data";
@@ -662,7 +686,7 @@ ElementaryType::Parse(REFERENCE_TIME tFrame, Atom* patm)
 		if ((m_type == Video_H264) && !bDescriptor)
 		{
 			// iso 14496-15
-			if (patmESD->Type() == DWORD('avcC'))
+			if (patmESD->Type() == FOURCC("avcC"))
 			{
 				// store the whole payload as decoder specific
 				m_cDecoderSpecific = cPayload;
@@ -671,7 +695,7 @@ ElementaryType::Parse(REFERENCE_TIME tFrame, Atom* patm)
 				break;
 			}
 
-		} else if (patmESD->Type() == DWORD('d263'))
+		} else if (patmESD->Type() == FOURCC("d263"))
 		{
 			// 4 byte vendor code
 			// 1 byte version
@@ -679,7 +703,7 @@ ElementaryType::Parse(REFERENCE_TIME tFrame, Atom* patm)
 			// 1 byte profile
 			break;
 		}
-		else if (patmESD->Type() == DWORD('damr'))
+		else if (patmESD->Type() == FOURCC("damr"))
 		{
 			// 4 byte vendor code
 			// 1 byte version
@@ -688,7 +712,7 @@ ElementaryType::Parse(REFERENCE_TIME tFrame, Atom* patm)
 			// 1-byte number of samples per packet
 			break;
 		}
-		else if (patmESD->Type() == DWORD('esds'))
+		else if (patmESD->Type() == FOURCC("esds"))
 		{
 			if (ParseDescriptor(patmESD))
 			{
@@ -699,14 +723,14 @@ ElementaryType::Parse(REFERENCE_TIME tFrame, Atom* patm)
 				return false;
 			}
 		}
-		else if (patmESD->Type() == DWORD('wave'))
+		else if (patmESD->Type() == FOURCC("wave"))
 		{
 			// this appears to be a non-ISO file (prob quicktime)
 			// search for esds in children of this atom
 			for (int j = 0; j < patmESD->ChildCount(); j++)
 			{
 				Atom* pwav = patmESD->Child(j);
-				if (pwav->Type() == DWORD('esds'))
+				if (pwav->Type() == FOURCC("esds"))
 				{
 					if (ParseDescriptor(pwav))
 					{
@@ -771,7 +795,7 @@ ElementaryType::SetType(const CMediaType* pmt)
 					m_pHandler = new H264ByteStreamHandler(m_pDecoderSpecific, m_cDecoderSpecific);
 				}
 				else if ((m_type == Audio_WAVEFORMATEX) &&
-						(m_fourcc == DWORD('twos'))
+						(m_fourcc == FOURCC("twos"))
 						)
 				{
 					m_pHandler = new BigEndianAudioHandler();
@@ -836,7 +860,7 @@ ElementaryType::GetType(CMediaType* pmt, int nType)
 			pVI->hdr.bmiHeader.biWidth = m_cx;
 			pVI->hdr.bmiHeader.biHeight = m_cy;
 			pVI->hdr.bmiHeader.biSizeImage = DIBSIZE(pVI->hdr.bmiHeader);
-			pVI->hdr.bmiHeader.biCompression = Swap4Bytes(DWORD('mpg2'));
+			pVI->hdr.bmiHeader.biCompression = Swap4Bytes(FOURCC("mpg2"));
 			pVI->hdr.AvgTimePerFrame = m_tFrame;
 
 			if (m_cDecoderSpecific)
@@ -913,7 +937,7 @@ ElementaryType::GetType_H264(CMediaType* pmt)
     pVI->hdr.bmiHeader.biWidth = m_cx;
     pVI->hdr.bmiHeader.biHeight = m_cy;
     pVI->hdr.AvgTimePerFrame = m_tFrame;
-	pVI->hdr.bmiHeader.biCompression = DWORD('1cva');
+	pVI->hdr.bmiHeader.biCompression = FOURCC("1cva");
 
 	pVI->dwProfile = pconfig[1];
 	pVI->dwLevel = pconfig[3];
@@ -945,7 +969,7 @@ ElementaryType::GetType_H264(CMediaType* pmt)
     return true;
 }
 	
-FOURCCMap H264(DWORD('462H'));
+FOURCCMap H264(FOURCC("462H"));
 bool 
 ElementaryType::GetType_H264ByteStream(CMediaType* pmt)
 {
@@ -959,7 +983,7 @@ ElementaryType::GetType_H264ByteStream(CMediaType* pmt)
 	pvi2->bmiHeader.biWidth = m_cx;
 	pvi2->bmiHeader.biHeight = m_cy;
     pvi2->bmiHeader.biSizeImage = DIBSIZE(pvi2->bmiHeader);
-    pvi2->bmiHeader.biCompression = DWORD('1cva');
+    pvi2->bmiHeader.biCompression = FOURCC("1cva");
 	pvi2->AvgTimePerFrame = m_tFrame;
 	SetRect(&pvi2->rcSource, 0, 0, m_cx, m_cy);
 	pvi2->rcTarget = pvi2->rcSource;
@@ -978,15 +1002,15 @@ ElementaryType::GetType_Mpeg4V(CMediaType* pmt, int n)
 	DWORD fourcc;
 	if (n == 0)
 	{
-		fourcc = DWORD('V4PM');
+		fourcc = FOURCC("V4PM");
 	}
 	else if (n == 1)
 	{
-		fourcc = DWORD('XVID');
+		fourcc = FOURCC("XVID");
 	}
 	else if (n == 2)
 	{
-		fourcc = DWORD('DIVX');
+		fourcc = FOURCC("DIVX");
 	}
 	else
 	{
@@ -1038,11 +1062,29 @@ ElementaryType::GetType_FOURCC(CMediaType* pmt)
 
 	pmt->SetSampleSize(pVI->bmiHeader.biSizeImage);
 
-	if (m_fourcc == DWORD('rle '))
+	if (m_fourcc == FOURCC("rle "))
 	{
 		pmt->SetSubtype(&MEDIASUBTYPE_QTRle);
 	}
-	else 
+	else
+	#pragma region 24/32-bit RGB
+	if (m_fourcc == BI_RGB)
+	{
+		switch(m_depth)
+		{
+		case 24:
+			pmt->SetSubtype(&MEDIASUBTYPE_RGB24);
+			break;
+		case 32:
+			pmt->SetSubtype(&MEDIASUBTYPE_RGB32);
+			break;
+		default:
+			ASSERT(m_depth == 24 || m_depth == 32);
+			pmt->SetSubtype(&MEDIASUBTYPE_NULL);
+		}
+	}
+	else
+	#pragma endregion
 	{
 		FOURCCMap fcc(m_fourcc);
 		pmt->SetSubtype(&fcc);

@@ -24,7 +24,7 @@ inline long SwapLong(const BYTE* pByte)
 inline LONGLONG SwapI64(const BYTE* pByte)
 {
     return ((LONGLONG)SwapLong(pByte))<< 32 |
-            unsigned long(SwapLong(pByte + 4));
+            (unsigned long)(SwapLong(pByte + 4));
 }
 
 class Atom;
@@ -152,15 +152,15 @@ public:
     }
 
 
-    const BYTE* operator->() 
+    const BYTE* operator->() const 
     {
         return m_pBuffer;
     }
-    BYTE operator[](int idx)
+    BYTE operator[](int idx) const
     {
         return m_pBuffer[idx];
     }
-    operator const BYTE*()
+    operator const BYTE*() const
     {
         return m_pBuffer;
     }
@@ -178,6 +178,13 @@ class FormatHandler;
 class SampleSizes;
 class KeyMap;
 class SampleTimes;
+
+struct EditEntry
+{
+	LONGLONG duration;
+	LONGLONG offset;
+	LONGLONG sumDurations;
+};
 
 class MovieTrack
 {
@@ -214,6 +221,10 @@ public:
     }
     HRESULT ReadSample(long nSample, BYTE* pBuffer, long cBytes);
 	bool IsOldAudioFormat()		{ return m_bOldFixedAudio; }
+	bool CheckInSegment(REFERENCE_TIME tNext, bool bSyncBefore, size_t* pnSegment, long* pnSample);
+	void GetTimeBySegment(long nSample, size_t segment, REFERENCE_TIME* ptStart, REFERENCE_TIME* pDuration);
+	bool NextBySegment(long* pnSample, size_t* psegment);
+	SIZE_T GetTimes(REFERENCE_TIME** ppnStartTimes, REFERENCE_TIME** ppnStopTimes, ULONG** ppnFlags, ULONG** ppnDataSizes);
 
 private:
     bool ParseMDIA(Atom* patm, REFERENCE_TIME tFirst);
@@ -233,6 +244,9 @@ private:
     smart_ptr<KeyMap> m_pKeyMap;
     smart_ptr<SampleTimes> m_pTimes;
 	bool m_bOldFixedAudio;
+
+	REFERENCE_TIME m_tNext;
+	vector<EditEntry> m_Edits;
 };
 typedef smart_ptr<MovieTrack> MovieTrackPtr;
 

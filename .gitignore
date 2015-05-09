@@ -1,0 +1,9 @@
+/baseclasses
+*.suo
+/*.sdf
+/*.opensdf
+/ipch
+
+*.user
+*.bak
+_Bin

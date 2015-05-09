@@ -11,7 +11,7 @@
 
 
 #include "stdafx.h"
-#include "mpeg4.h"
+#include "Mpeg4.h"
 #include "Index.h"
 
 // sample count and sizes ------------------------------------------------
@@ -31,7 +31,7 @@ SampleSizes::Parse(Atom* patmSTBL)
     // need to locate three inter-related tables
     // stsz, stsc and stco/co64
 
-    m_patmSTSZ = patmSTBL->FindChild(DWORD('stsz'));
+    m_patmSTSZ = patmSTBL->FindChild(FOURCC("stsz"));
     if (!m_patmSTSZ)
     {
         return false;
@@ -59,7 +59,7 @@ SampleSizes::Parse(Atom* patmSTBL)
         }
     }
 
-    m_patmSTSC = patmSTBL->FindChild(DWORD('stsc'));
+    m_patmSTSC = patmSTBL->FindChild(FOURCC("stsc"));
     if (!m_patmSTSC)
     {
         return false;
@@ -67,12 +67,12 @@ SampleSizes::Parse(Atom* patmSTBL)
     m_pSTSC = m_patmSTSC;
     m_nEntriesSTSC = SwapLong(m_pSTSC+4);
 
-    m_patmSTCO = patmSTBL->FindChild(DWORD('stco'));
+    m_patmSTCO = patmSTBL->FindChild(FOURCC("stco"));
     if (m_patmSTCO)
     {
         m_bCO64 = false;
     } else {
-        m_patmSTCO = patmSTBL->FindChild(DWORD('co64'));
+        m_patmSTCO = patmSTBL->FindChild(FOURCC("co64"));
         if (!m_patmSTCO)
         {
             return false;
@@ -88,7 +88,7 @@ long
 SampleSizes::Size(long nSample)
 {
     long cThis = m_nFixedSize;
-    if (cThis == 0)
+    if ((cThis == 0) && (nSample < m_nSamples))
     {
         cThis = SwapLong(m_pBuffer + 12 + (nSample * 4));
     }
@@ -194,7 +194,7 @@ KeyMap::~KeyMap()
 bool 
 KeyMap::Parse(Atom* patmSTBL)
 {
-    m_patmSTSS = patmSTBL->FindChild(DWORD('stss'));
+    m_patmSTSS = patmSTBL->FindChild(FOURCC("stss"));
     if (!m_patmSTSS)
     {
 		// no key map -- so all samples are key
@@ -255,6 +255,22 @@ KeyMap::Next(long nSample)
     return 0;
 }
 
+SIZE_T KeyMap::Get(SIZE_T*& pnIndexes) const
+{
+	ASSERT(!pnIndexes);
+	if(m_nEntries)
+	{
+		pnIndexes = (SIZE_T*) CoTaskMemAlloc(m_nEntries * sizeof *pnIndexes);
+		ASSERT(pnIndexes);
+	    for(SIZE_T nEntryIndex = 0; nEntryIndex < (SIZE_T) m_nEntries; nEntryIndex++)
+		{
+	        const SIZE_T nIndex = SwapLong(m_pSTSS + 8 + (nEntryIndex * 4))-1;
+			pnIndexes[nEntryIndex] = nIndex;
+		}
+	}
+	return (SIZE_T) m_nEntries;
+}
+
 // ----- times index ----------------------------------
 
 SampleTimes::SampleTimes()
@@ -269,7 +285,7 @@ SampleTimes::Parse(long scale, LONGLONG CTOffset, Atom* patmSTBL)
     m_CTOffset = CTOffset;      // offset to start of first sample in 100ns
 
     // basic duration table
-    m_patmSTTS = patmSTBL->FindChild(DWORD('stts'));
+    m_patmSTTS = patmSTBL->FindChild(FOURCC("stts"));
     if (!m_patmSTTS)
     {
         return false;
@@ -277,17 +293,17 @@ SampleTimes::Parse(long scale, LONGLONG CTOffset, Atom* patmSTBL)
     m_pSTTS = m_patmSTTS;
     m_nSTTS = SwapLong(m_pSTTS + 4);
 
-	long dur = 0;
+	m_total = 0;
 	for (int i = 0; i < m_nSTTS; i++)
 	{
         long nEntries = SwapLong(m_pSTTS + 8 + (i * 8));
         long nDuration = SwapLong(m_pSTTS + 8 + 4 + (i * 8));
-		dur += (nEntries * nDuration);
+		m_total += (nEntries * nDuration);
 	}
-	DbgLog((LOG_TRACE, 0, TEXT("Sum of %d STTS entries %d"), m_nSTTS, dur));
+	m_total = TrackToReftime(m_total);
 
     // optional decode-to-composition offset table
-    m_patmCTTS = patmSTBL->FindChild(DWORD('ctts'));
+    m_patmCTTS = patmSTBL->FindChild(FOURCC("ctts"));
     if (m_patmCTTS)
     {
         m_pCTTS = m_patmCTTS;
@@ -303,6 +319,52 @@ SampleTimes::Parse(long scale, LONGLONG CTOffset, Atom* patmSTBL)
     m_tAtBase = m_CTOffset;
 
     return true;
+}
+
+long SampleTimes::CTSToSample(LONGLONG tStart)
+{
+	if (!m_nCTTS)
+	{
+		return DTSToSample(tStart);
+	}
+
+	// we have a RLE list of durations and a RLE list of CTS offsets.
+	// maybe start from a DTS time a little earlier, and step forward?
+	LONGLONG pos = tStart;
+	if (tStart > 0)
+	{
+		if (tStart < (UNITS/2))
+		{
+			pos = 0;
+		}
+		else
+		{
+			pos = tStart - (UNITS/2);
+		}
+	}
+	long n = DTSToSample(pos); 
+	for (;;)
+	{
+		LONGLONG cts = SampleToCTS(n);
+		if (cts < 0)
+		{
+			return -1;
+		}
+		LONGLONG dur = Duration(n);
+		if (cts > tStart)
+		{
+			return n;
+		}
+		if ((cts <= tStart) && ((cts + dur) > tStart))
+		{
+			return n;
+		}
+		if (dur == 0)
+		{
+			return -1;
+		}
+		n++;
+	}
 }
 
 long 
@@ -327,22 +389,56 @@ SampleTimes::DTSToSample(LONGLONG tStart)
     {
         long nEntries = SwapLong(m_pSTTS + 8 + (m_idx * 8));
         long nDuration = SwapLong(m_pSTTS + 8 + 4 + (m_idx * 8));
-        LONGLONG tDur = TrackToReftime(nDuration);
-		if (tDur == 0)
+		if (nDuration == 0)
 		{
-			tDur = 1;
+			nDuration = 1;
 		}
-        LONGLONG tLimit = m_tAtBase + (nEntries * tDur) + CTSOffset(m_nBaseSample + nEntries);
+        LONGLONG tLimit = m_tAtBase + TrackToReftime(nEntries * nDuration) + CTSOffset(m_nBaseSample + nEntries);
         if (tStart < tLimit)
         {
-            return m_nBaseSample + long((tStart - m_tAtBase)/tDur);
+			LONGLONG trackoffset = ReftimeToTrack(tStart - m_tAtBase);
+            return m_nBaseSample + long(trackoffset / nDuration);
         }
-        m_tAtBase += (nEntries * tDur);
+        m_tAtBase += TrackToReftime(nEntries * nDuration);
         m_nBaseSample += nEntries;
     }
 
     // should not get here?
     return 0;
+}
+
+SIZE_T SampleTimes::Get(REFERENCE_TIME*& pnTimes) const
+{
+	ASSERT(!pnTimes);
+	SIZE_T nEntryCount = 0; 
+    for(SIZE_T nIndex = 0; nIndex < (SIZE_T) m_nSTTS; nIndex++)
+	{
+        SIZE_T nCurrentEntryCount = (SIZE_T) SwapLong(m_pSTTS + 8 + (nIndex * 8));
+		nEntryCount += nCurrentEntryCount;
+	}
+	if(nEntryCount)
+	{
+		pnTimes = (REFERENCE_TIME*) CoTaskMemAlloc(nEntryCount * sizeof *pnTimes);
+		ASSERT(pnTimes);
+		SIZE_T nEntryIndex = 0;
+		REFERENCE_TIME nBaseTime = 0;
+		for(SIZE_T nIndex = 0; nIndex < (SIZE_T) m_nSTTS; nIndex++)
+		{
+			const SIZE_T nCurrentEntryCount = (SIZE_T) SwapLong(m_pSTTS + 8 + (nIndex * 8));
+			const SIZE_T nCurrentDuration = (SIZE_T) SwapLong(m_pSTTS + 8 + 4 + (nIndex * 8));
+			for(SIZE_T nCurrentEntryIndex = 0; nCurrentEntryIndex < nCurrentEntryCount; nCurrentEntryIndex++)
+			{
+				const SIZE_T nSampleIndex = nEntryIndex + nCurrentEntryIndex;
+				const REFERENCE_TIME nSampleTime = nBaseTime + TrackToReftime(nCurrentEntryIndex * nCurrentDuration) + CTSOffset((long) nSampleIndex);
+				pnTimes[nSampleIndex] = nSampleTime;
+			}
+			nEntryIndex += nCurrentEntryCount;
+			nBaseTime += TrackToReftime(nCurrentEntryCount * nCurrentDuration);
+		}
+		ASSERT(nEntryIndex == nEntryCount);
+	} else
+		pnTimes = 0;
+	return nEntryCount;
 }
 
 LONGLONG 
@@ -361,17 +457,16 @@ SampleTimes::SampleToCTS(long nSample)
     {
         long nEntries = SwapLong(m_pSTTS + 8 + (m_idx * 8));
         long nDuration = SwapLong(m_pSTTS + 8 + 4 + (m_idx * 8));
-        LONGLONG tDur = TrackToReftime(nDuration);
         if (nSample < (m_nBaseSample + nEntries))
         {
-            LONGLONG tThis = m_tAtBase + (nSample - m_nBaseSample) * tDur;
+            LONGLONG tThis = m_tAtBase + TrackToReftime((nSample - m_nBaseSample) * nDuration);
 
             // allow for CTS Offset
             tThis += CTSOffset(nSample);
 
             return tThis;
         }
-        m_tAtBase += (nEntries * tDur);
+        m_tAtBase += TrackToReftime(nEntries * nDuration);
         m_nBaseSample += nEntries;
     }
 
@@ -381,7 +476,7 @@ SampleTimes::SampleToCTS(long nSample)
 
 // offset from decode to composition time for this sample
 LONGLONG 
-SampleTimes::CTSOffset(long nSample)
+SampleTimes::CTSOffset(long nSample) const
 {
     if (!m_nCTTS)
     {
@@ -416,7 +511,7 @@ SampleTimes::Duration(long nSample)
     {
         m_idx = 0;
         m_nBaseSample = 0;
-        m_tAtBase = 0;
+        m_tAtBase = m_CTOffset;
     }
     for (; m_idx < m_nSTTS; m_idx++)
     {
@@ -436,9 +531,14 @@ SampleTimes::Duration(long nSample)
 }
 
 LONGLONG 
-SampleTimes::TrackToReftime(LONGLONG nTrack)
+SampleTimes::TrackToReftime(LONGLONG nTrack) const
 {
     // convert times in the track timescale (m_scale units/sec) to 100ns
     return REFERENCE_TIME(nTrack) * UNITS / LONGLONG(m_scale);
+}
+
+LONGLONG SampleTimes::ReftimeToTrack(LONGLONG reftime)
+{
+	return ((reftime * m_scale) + (UNITS/2)) / UNITS;
 }
 

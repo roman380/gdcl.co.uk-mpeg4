@@ -13,7 +13,7 @@
 #include "stdafx.h"
 #include "Mpeg4.h"
 #include "ElemType.h"
-#include "index.h"
+#include "Index.h"
 #include <sstream>
 
 Atom::Atom(AtomReader* pReader, LONGLONG llOffset, LONGLONG llLength, DWORD type, long cHeader)
@@ -64,7 +64,7 @@ Atom::ScanChildrenAt(LONGLONG llOffset)
             // whole remainder
             llLength = m_llLength - llOffset;
         }
-        if (type == DWORD('uuid'))
+        if (type == FOURCC("uuid"))
         {
             cHeader += 16;
         }
@@ -176,10 +176,10 @@ Atom::BufferRelease()
 Movie::Movie(Atom* pRoot)
 : m_pRoot(pRoot)
 {
-    Atom* pMovie = m_pRoot->FindChild(DWORD('moov'));
+    Atom* pMovie = m_pRoot->FindChild(FOURCC("moov"));
     if (pMovie != NULL)
     {
-        Atom* patmHdr = pMovie->FindChild(DWORD('mvhd'));
+        Atom* patmHdr = pMovie->FindChild(FOURCC("mvhd"));
         if (patmHdr)
         {
             AtomCache phdr(patmHdr);
@@ -200,7 +200,8 @@ Movie::Movie(Atom* pRoot)
         for (int i = 0; i < pMovie->ChildCount(); i++)
         {
             Atom* patm = pMovie->Child(i);
-            if (patm->Type() == DWORD('trak'))
+            if ((patm->Type() == FOURCC("trak")) ||
+				(patm->Type() == FOURCC("cctk")))
             {
                 MovieTrackPtr pTrack = new MovieTrack(patm, this, idxTrack++);
                 if (pTrack->Valid())
@@ -230,7 +231,7 @@ MovieTrack::MovieTrack(Atom* pAtom, Movie* pMovie, long idx)
   m_bOldFixedAudio(false)
 {
     // check version/flags entry for track header
-    Atom* pHdr = pAtom->FindChild(DWORD('tkhd'));
+    Atom* pHdr = pAtom->FindChild(FOURCC("tkhd"));
     if (pHdr != NULL)
     {
         BYTE verflags[4];
@@ -239,7 +240,7 @@ MovieTrack::MovieTrack(Atom* pAtom, Movie* pMovie, long idx)
         {
             // edit list may contain offset for first sample
             REFERENCE_TIME tFirst = 0;
-            Atom* patmEDTS = pAtom->FindChild(DWORD('edts'));
+            Atom* patmEDTS = pAtom->FindChild(FOURCC("edts"));
             if (patmEDTS != NULL)
             {
                 LONGLONG first = ParseEDTS(patmEDTS);
@@ -247,7 +248,7 @@ MovieTrack::MovieTrack(Atom* pAtom, Movie* pMovie, long idx)
                 tFirst = first * UNITS / pMovie->Scale();
             }
 
-            Atom* patmMDIA = pAtom->FindChild(DWORD('mdia'));
+            Atom* patmMDIA = pAtom->FindChild(FOURCC("mdia"));
             if (patmMDIA && ParseMDIA(patmMDIA, tFirst))
             {
                 // valid track -- make a name for the pin to use
@@ -257,6 +258,32 @@ MovieTrack::MovieTrack(Atom* pAtom, Movie* pMovie, long idx)
                 m_strName = strm.str();
 
                 m_pRoot = pAtom;
+
+				// sum up and convert ELST for efficiency later
+				if (m_Edits.size() > 0)
+				{
+					LONGLONG sumDurations = 0;
+					for (vector<EditEntry>::iterator it = m_Edits.begin(); it != m_Edits.end(); it++)
+					{
+						// duration is in movie scale; offset is in track scale. 
+						it->duration = it->duration * UNITS / m_pMovie->Scale();
+						if (it->offset > 0)
+						{
+							it->offset = TimesIndex()->TrackToReftime(it->offset);
+						}
+						it->sumDurations = sumDurations;
+						sumDurations += it->duration;
+					}
+				}
+				else
+				{
+					// create dummy edit
+					EditEntry e;
+					e.offset = 0;
+					e.sumDurations = 0;
+					e.duration = TimesIndex()->TotalDuration();
+					m_Edits.push_back(e);
+				}
             }
         }
     }
@@ -265,46 +292,30 @@ MovieTrack::MovieTrack(Atom* pAtom, Movie* pMovie, long idx)
 LONGLONG 
 MovieTrack::ParseEDTS(Atom* patm)
 {
-    LONGLONG tFirst = 0;
-    Atom* patmELST = patm->FindChild(DWORD('elst'));
+    Atom* patmELST = patm->FindChild(FOURCC("elst"));
     if (patmELST != NULL)
     {
-        AtomCache pELST(patmELST);
-
-        // we only support the basic start-offset edit, which has two entries:
-        //      0: media time -1, + duration --> offset
-        //      1: media time 0, + duration of track -> whole of track
-        if (SwapLong(pELST + 4) == 2)   // 2 entries
+		AtomCache pELST = patmELST;
+		long cEdits = SwapLong(pELST + 4);
+		for (long i = 0; i < cEdits; i++)
         {
-            LONGLONG ll[4];     // duration, media time, duration, media time
+			EditEntry e;
             if (pELST[0] == 0)
             {
-                // 32-bit values
-                ll[0] = SwapLong(pELST + 8);
-                ll[1] = SwapLong(pELST + 12);
-                ll[2] = SwapLong(pELST + 20);
-                ll[3] = SwapLong(pELST + 24);
-            } else if (pELST[0] == 1)
+				e.duration = SwapLong(pELST + 8 + (i * 12));
+				e.offset = SwapLong(pELST + 8 + 4 + (i * 12));
+			}
+			else 
             {
-                ll[0] = SwapI64(pELST + 8);
-                ll[1] = SwapI64(pELST + 16);
-                ll[2] = SwapI64(pELST + 28);
-                ll[3] = SwapI64(pELST + 36);
-            } else {
-                // unrecognised version
-                return 0;
-            }
-
-            // media time should be -1 for the first clip
-            // -- ie empty offset, then 0 for the second
-            // (ie whole of track from start).
-            if ((ll[1] == -1) && (ll[3] == 0))
-            {
-                tFirst = ll[0];
-            }
-        }
+				e.duration = SwapI64(pELST + 8 + (i * 20));
+				e.offset = SwapI64(pELST + 8 + 8 + (i * 20));
+			}
+			m_Edits.push_back(e);
+		}
     }
-    return tFirst;
+	// always return 0 for start offset. We now add the ELST above this layer, so the TimesIndex()
+	// should return the actual start of the media, not an offset time. Thus use 0 here.
+    return 0;
 }
 
 // parse the track type information
@@ -312,7 +323,7 @@ bool
 MovieTrack::ParseMDIA(Atom* patm, REFERENCE_TIME tFirst)
 {
     // get track timescale from mdhd
-    Atom* patmMDHD = patm->FindChild(DWORD('mdhd'));
+    Atom* patmMDHD = patm->FindChild(FOURCC("mdhd"));
     if (!patmMDHD)
     {
         return false;
@@ -330,12 +341,12 @@ MovieTrack::ParseMDIA(Atom* patm, REFERENCE_TIME tFirst)
     // that will give us the media type for this
     // track. That is in minf/stbl/stsd
 
-    Atom* patmMINF = patm->FindChild(DWORD('minf'));
+    Atom* patmMINF = patm->FindChild(FOURCC("minf"));
     if (!patmMINF)
     {
         return false;
     }
-    m_patmSTBL = patmMINF->FindChild(DWORD('stbl'));
+    m_patmSTBL = patmMINF->FindChild(FOURCC("stbl"));
     if (!m_patmSTBL)
     {
         return false;
@@ -363,7 +374,7 @@ MovieTrack::ParseMDIA(Atom* patm, REFERENCE_TIME tFirst)
     // for the media type
     REFERENCE_TIME tFrame = m_pMovie->Duration() / m_pSizes->SampleCount();
 
-    Atom* pSTSD = m_patmSTBL->FindChild(DWORD('stsd'));
+    Atom* pSTSD = m_patmSTBL->FindChild(FOURCC("stsd"));
     if (!pSTSD || !ParseSTSD(tFrame, pSTSD))
     {
         return false;
@@ -380,6 +391,65 @@ MovieTrack::ParseMDIA(Atom* patm, REFERENCE_TIME tFirst)
 		m_bOldFixedAudio = true;
 	}
 
+	if (IsVideo())
+	{
+		// attempt to normalise the frame rate
+
+		// first average the first few, discarding outliers
+		int cFrames = min(m_pSizes->SampleCount(), 60L);
+		REFERENCE_TIME total = 0;
+		int cCounted = 0;
+		// outliers are beyond +/- 20%
+		REFERENCE_TIME tMin = tFrame * 80 / 100;
+		REFERENCE_TIME tMax = tFrame * 120 / 100;
+		for (int i = 0; i < cFrames; i++)
+		{
+			REFERENCE_TIME tDur = m_pTimes->Duration(i);
+			if ((tDur > tMin) && (tDur < tMax))
+			{
+				total += tDur;
+				cCounted++;
+			}
+		}
+		if (cCounted > 2)
+		{
+			tFrame = (total / cCounted);
+
+			LONGLONG fpsk = (UNITS * 1000 / tFrame);
+			if (fpsk > 23950)
+			{
+				if (fpsk < 23988)
+				{
+					fpsk = 23976;
+				}
+				else if (fpsk < 24100)
+				{
+					fpsk = 24000;
+				}
+				else if (fpsk > 24800)
+				{
+					if (fpsk < 25200)
+					{
+						fpsk = 25000;
+					} 
+					else if (fpsk > 29800)
+					{
+						if (fpsk < 29985)
+						{
+							fpsk = 29970;
+						}
+						else if (fpsk < 30200)
+						{
+							fpsk = 30000;
+						}
+					}
+				}
+			}
+			tFrame = (UNITS * 1000 / fpsk);
+			m_pType->SetRate(tFrame);
+		}
+
+	}
 
     return true;
 }
@@ -445,3 +515,122 @@ MovieTrack::ReadSample(long nSample, BYTE* pBuffer, long cBytes)
     return GetMovie()->ReadAbsolute(llPos, pBuffer, cBytes);
 }
 
+bool MovieTrack::CheckInSegment(REFERENCE_TIME tNext, bool bSyncBefore, size_t* pnSegment, long* pnSample)
+{
+	for (size_t idx = 0; idx < m_Edits.size(); idx++)
+	{
+		EditEntry* it = &m_Edits[idx];
+        LONGLONG endDuration = it->sumDurations + it->duration;
+        if (tNext < endDuration)
+		{
+			if (it->offset == -1)
+			{
+				// empty edit; skip to next segment start
+				tNext = it->sumDurations + it->duration;
+			}
+			else
+			{
+				// map to sample number
+				LONGLONG rCTS = tNext - it->sumDurations;
+				LONGLONG trackCTS = rCTS + it->offset;
+				long n = TimesIndex()->CTSToSample(trackCTS);
+				if (n < 0)
+				{
+					return false;
+				}
+				if (bSyncBefore)
+				{
+					n = GetKeyMap()->SyncFor(n);
+				}
+
+				*pnSample = n;
+				*pnSegment = idx;
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+void MovieTrack::GetTimeBySegment(
+	long nSample, 
+	size_t segment, 
+	REFERENCE_TIME* ptStart, 
+	REFERENCE_TIME* pDuration)
+{
+	EditEntry* it = &m_Edits[segment];
+	REFERENCE_TIME cts = TimesIndex()->SampleToCTS(nSample);
+	REFERENCE_TIME relCTS = cts - it->offset;
+
+	REFERENCE_TIME duration = TimesIndex()->Duration(nSample);
+	if ((relCTS + duration) > it->duration)
+	{
+		duration = it->duration - relCTS;
+	}
+	*ptStart = relCTS + it->sumDurations;
+	*pDuration = duration;
+}
+
+bool MovieTrack::NextBySegment(long* pnSample, size_t* psegment)
+{
+	int n = *pnSample + 1;
+	EditEntry* it = &m_Edits[*psegment];
+
+
+	if (n < SizeIndex()->SampleCount())
+	{
+		REFERENCE_TIME cts = TimesIndex()->SampleToCTS(n);
+		REFERENCE_TIME relCTS = cts - it->offset;
+		if (relCTS < it->duration)
+		{
+			*pnSample = n;
+			return true;
+		}
+	}
+	REFERENCE_TIME tEdit = it->duration + it->sumDurations;
+	return CheckInSegment(tEdit, false, psegment, pnSample);
+}
+
+SIZE_T MovieTrack::GetTimes(REFERENCE_TIME** ppnStartTimes, REFERENCE_TIME** ppnStopTimes, ULONG** ppnFlags, ULONG** ppnDataSizes)
+{
+	ASSERT(ppnStartTimes);
+	if(!TimesIndex())
+		return 0;
+	ppnStopTimes; ppnDataSizes;
+	ASSERT(!ppnStopTimes && !ppnDataSizes); // Not Implemented
+	const SIZE_T nSampleCount = TimesIndex()->Get(*ppnStartTimes);
+	if(nSampleCount)
+	{
+		if(ppnFlags)
+		{
+			ULONG* pnFlags = (ULONG*) CoTaskMemAlloc(nSampleCount * sizeof *pnFlags);
+			ASSERT(pnFlags);
+			for(SIZE_T nSampleIndex = 0; nSampleIndex < nSampleCount; nSampleIndex++)
+				pnFlags[nSampleIndex] = AM_SAMPLE_TIMEVALID;
+			if(GetKeyMap())
+			{
+				SIZE_T* pnIndexes = NULL;
+				const SIZE_T nIndexCount = GetKeyMap()->Get(pnIndexes);
+				if(nIndexCount)
+				{
+					for(SIZE_T nIndexIndex = 0; nIndexIndex < nIndexCount; nIndexIndex++)
+					{
+						const SIZE_T nSampleIndex = pnIndexes[nIndexIndex];
+						ASSERT(nSampleIndex < nSampleCount);
+						if(nSampleIndex < nSampleCount)
+							pnFlags[nSampleIndex] |= AM_SAMPLE_SPLICEPOINT;
+					}
+				} else
+				{
+					// NOTE: Missing key map means all samples are splice points (all frames are key frames)
+					for(SIZE_T nSampleIndex = 0; nSampleIndex < nSampleCount; nSampleIndex++)
+						pnFlags[nSampleIndex] |= AM_SAMPLE_SPLICEPOINT;
+				}
+				CoTaskMemFree(pnIndexes);
+			}
+			*ppnFlags = pnFlags;
+		}
+	}
+	return nSampleCount;
+}

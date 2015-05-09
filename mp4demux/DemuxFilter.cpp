@@ -17,6 +17,14 @@
 
 #include <math.h>
 
+#if defined(_DEBUG) && FALSE
+	#define TRACE_SEEK
+#endif // defined(_DEBUG)
+#if defined(_DEBUG) || defined(TRACE_SEEK) //|| TRUE
+	#include <stdio.h>
+	#include <tchar.h>
+#endif // defined(_DEBUG) || defined(TRACE_SEEK)
+
 // --- registration tables ----------------
 
 // filter registration -- these are the types that our
@@ -200,57 +208,113 @@ Mpeg4Demultiplexor::GetDuration()
 }
 
 HRESULT 
-Mpeg4Demultiplexor::Seek(REFERENCE_TIME tStart, REFERENCE_TIME tStop, double dRate)
+Mpeg4Demultiplexor::Seek(REFERENCE_TIME& tStart, BOOL bSeekToKeyFrame, REFERENCE_TIME tStop, double dRate)
 {
-    // stop all output pin threads using BeginFlush/StopThread/EndFlush
-    UINT i;
-    if (IsActive())
+	#pragma region Flush, Stop Thread
+    if(IsActive())
     {
-        for (i =0; i < m_Outputs.size(); i++)
+        for(SIZE_T nIndex = 0; nIndex < m_Outputs.size(); nIndex++)
         {
-            DemuxOutputPin* p = Output(i);
-            if (p->IsConnected())
-            {
-                p->DeliverBeginFlush();
-            }
+            DemuxOutputPin* pPin = Output((INT) nIndex);
+            if(!pPin->IsConnected())
+				continue;
+			pPin->DeliverBeginFlush();
         }
-        for (i =0; i < m_Outputs.size(); i++)
+        for(SIZE_T nIndex = 0; nIndex < m_Outputs.size(); nIndex++)
         {
-            DemuxOutputPin* p = Output(i);
-            if (p->IsConnected())
-            {
-                p->StopThread();
-            }
+            DemuxOutputPin* pPin = Output((INT) nIndex);
+            if(!pPin->IsConnected())
+				continue;
+			#if TRUE
+				pPin->BeginRestartThread();
+			#else
+				pPin->StopThread();
+			#endif
         }
-        for (i =0; i < m_Outputs.size(); i++)
+        for(SIZE_T nIndex = 0; nIndex < m_Outputs.size(); nIndex++)
         {
-            DemuxOutputPin* p = Output(i);
-            if (p->IsConnected())
-            {
-                p->DeliverEndFlush();
-            }
+            DemuxOutputPin* pPin = Output((INT) nIndex);
+            if(!pPin->IsConnected())
+				continue;
+            pPin->DeliverEndFlush();
         }
     }
-    
-    // new seeking params
+	#pragma endregion
+	#pragma region Start Time Adjustment
+	if(bSeekToKeyFrame)
+	{
+		DemuxOutputPin* pSeekingPin = m_pSeekingPin;
+		{
+			CAutoLock lock(&m_csSeeking);
+			if(!m_pSeekingPin)
+			{
+				if(m_Outputs.size())
+				{
+					DemuxOutputPin* pConnectedPin = NULL;
+					// Take connected video pin
+					for(vector<DemuxOutputPinPtr>::iterator it = m_Outputs.begin(); it < m_Outputs.end(); it++)
+					{
+						DemuxOutputPin* pPin = static_cast<DemuxOutputPin*>((IPin*) *it);
+						if(!pPin->IsConnected())
+							continue;
+						if(!pConnectedPin)
+							pConnectedPin = pPin;
+						GUID MajorType;
+						if(pPin->GetMajorMediaType(MajorType) && MajorType == MEDIATYPE_Video)
+						{
+							pSeekingPin = pPin;
+							break;
+						}
+					}
+					// Or, take just connected pin
+					if(!pSeekingPin)
+						pSeekingPin = pConnectedPin;
+				}
+			} else
+				pSeekingPin = m_pSeekingPin;
+		}
+		if(pSeekingPin)
+		{
+			#if defined(_DEBUG)
+				TCHAR pszText[1024] = { 0 };
+				_stprintf_s(pszText, _T("%hs: tStart %I64d"), __FUNCTION__, tStart);
+				GUID MajorType;
+				if(pSeekingPin->GetMajorMediaType(MajorType))
+					if(MajorType == MEDIATYPE_Video)
+						_tcscat_s(pszText, _T(", using video pin"));
+					else if(MajorType == MEDIATYPE_Audio)
+						_tcscat_s(pszText, _T(", using audio pin"));
+				pSeekingPin->SeekBackToKeyFrame(tStart);
+				_stprintf_s(pszText + _tcslen(pszText), _countof(pszText) - _tcslen(pszText), _T(", updated m_tStart %I64d"), tStart);
+				_tcscat_s(pszText, _T("\n"));
+				OutputDebugString(pszText);
+			#else
+				pSeekingPin->SeekBackToKeyFrame(tStart);
+			#endif
+		}
+	}
+	#pragma endregion 
+	#pragma region Update
     m_tStart = tStart;
     m_tStop = tStop;
     m_dRate = dRate;
-
-    // restart all threads for connected pins if we are active
-    if (IsActive())
+	#pragma endregion
+	#pragma region Start Thread
+    if(IsActive())
     {
-    
-        for (i =0; i < m_Outputs.size(); i++)
+        for(SIZE_T nIndex = 0; nIndex < m_Outputs.size(); nIndex++)
         {
-            DemuxOutputPin* p = Output(i);
-            if (p->IsConnected())
-            {
-                p->StartThread();
-            }
+            DemuxOutputPin* pPin = Output((INT) nIndex);
+            if(!pPin->IsConnected())
+				continue;
+			#if TRUE
+				pPin->EndRestartThread();
+			#else
+	            pPin->StartThread();
+			#endif
         }
     }
-
+	#pragma endregion
     return S_OK;
 }
 
@@ -325,6 +389,160 @@ Mpeg4Demultiplexor::CompleteConnect(IPin* pPeer)
     return hr;
 }
 
+
+AsyncRequestor::AsyncRequestor()
+: m_bBusy(false),
+  m_ev(true)		// manual reset
+{}
+
+void AsyncRequestor::Active(IAsyncReader* pRdr)
+{
+	CAutoLock lock(&m_csRequests);
+	if (!m_rdr)
+	{
+		m_rdr = pRdr;
+		ZeroMemory(&m_props, sizeof(m_props));
+		m_props.cBuffers = 16;
+		m_props.cbBuffer = max_buffer_size;
+		m_rdr->RequestAllocator(NULL, &m_props, &m_pAlloc);
+		m_pAlloc->Commit();
+	}
+}
+
+void AsyncRequestor::Inactive()
+{
+	CAutoLock lock(&m_csRequests);
+	if (m_rdr)
+	{
+		m_rdr->BeginFlush();
+		m_rdr->EndFlush();
+	}
+	m_rdr = NULL;
+	m_ev.Set();
+	if (m_pAlloc)
+	{
+		m_pAlloc->Decommit();
+	}
+}
+
+HRESULT AsyncRequestor::Read(LONGLONG llOffset, long cBytes, BYTE* pBuffer)
+{
+	// first get a buffer and make a request
+	HRESULT hr = S_OK;
+	IMediaSamplePtr pSample;
+	int startOffset = 0;
+
+	{
+		CAutoLock lock(&m_csRequests);
+		if (!m_rdr || !m_pAlloc)
+		{
+			return VFW_E_WRONG_STATE;
+		}
+		hr = m_pAlloc->GetBuffer(&pSample, NULL, NULL, 0);
+		if (hr != S_OK)
+		{
+			return hr;
+		}
+		
+		// align start, pointer and length. Assume pointer is valid (their allocator).
+		// align start down
+		startOffset = int(llOffset % m_props.cbAlign);
+		LONGLONG pos = llOffset - startOffset;
+
+		// align length up
+		LONGLONG len = (cBytes + startOffset);
+		if (len % m_props.cbAlign)
+		{
+			len += m_props.cbAlign - (len % m_props.cbAlign);
+		}
+
+		if (len > pSample->GetSize())
+		{
+			return VFW_E_BUFFER_OVERFLOW;
+		}
+
+		// byte offset set as start/end time (1 byte = 1 second)
+		REFERENCE_TIME tStart = pos * UNITS;
+		REFERENCE_TIME tEnd = (pos + len) * UNITS;
+		pSample->SetTime(&tStart, &tEnd);
+		hr = m_rdr->Request(pSample, 0);
+		if (FAILED(hr))
+		{
+			return hr;
+		}
+	}
+
+	// now wait for completion. The next completion may be for a different thread, so
+	// we need to queue it.
+	bool bUsWaiting = false;
+	for (;;)
+	{
+		if (!bUsWaiting)
+		{
+			CAutoLock lock(&m_csRequests);
+			// is anyone waiting?
+			if (!m_bBusy)
+			{
+				// no, we're first. Tell next caller that we are waiting
+				m_ev.Reset();
+				m_bBusy = true;
+				bUsWaiting = true;
+			}
+		}
+		if (bUsWaiting)
+		{
+			IMediaSamplePtr pDone;
+			DWORD dw;
+			HRESULT hr = m_rdr->WaitForNext(INFINITE, &pDone, (DWORD_PTR*)&dw);
+			if (hr == S_OK)
+			{
+				CAutoLock lock(&m_csRequests);
+
+				// signal either that we are leaving control
+				// or that other users should look at the list
+				m_ev.Set();
+
+				if (pDone == pSample)
+				{
+					m_bBusy = false;
+					break;
+				}
+				else
+				{
+					m_requests.push_back(pDone);
+				}
+			}
+		}
+		else
+		{
+			m_ev.Wait(250);
+			CAutoLock lock(&m_csRequests);
+			bool bFound = false;
+			for (list<IMediaSamplePtr>::iterator it = m_requests.begin(); it != m_requests.end(); it++)
+			{
+				if (*it == pSample)
+				{
+					m_requests.erase(it);
+					bFound = true;
+					break;
+				}
+			}
+		}
+	}
+	if (pSample->GetActualDataLength() < (startOffset + cBytes))
+	{
+		return E_FAIL;
+	}
+
+	BYTE* pSrc;
+	pSample->GetPointer(&pSrc);
+	pSrc += startOffset;
+	CopyMemory(pBuffer, pSrc, cBytes);
+	return S_OK;
+}
+
+
+
 // -------- input pin -----------------------------------------
 
 DemuxInputPin::DemuxInputPin(Mpeg4Demultiplexor* pFilter, CCritSec* pLock, HRESULT* phr)
@@ -390,11 +608,47 @@ DemuxInputPin::BreakConnect()
     }
     return hr;
 }
+HRESULT 
+DemuxInputPin::Active()
+{
+    IAsyncReaderPtr pRdr = GetConnected();
+    if (pRdr != NULL)
+    {
+		m_requestor.Active(pRdr);
+	}
+	return __super::Active();
+}
+
+HRESULT 
+DemuxInputPin::Inactive()
+{
+	m_requestor.Inactive();
+	return __super::Inactive();
+}
 
 HRESULT 
 DemuxInputPin::Read(LONGLONG llOffset, long cBytes, BYTE* pBuffer)
 {
-    HRESULT hr = E_NOINTERFACE;
+	HRESULT hr = E_FAIL;
+
+#if 0
+	while (cBytes > 32*1024)
+	{
+		int cThis = min(AsyncRequestor::max_buffer_size, cBytes);
+		hr = m_requestor.Read(llOffset, cThis, pBuffer);
+		if (hr != S_OK)
+		{
+			break;
+		}
+		llOffset += cThis;
+		pBuffer += cThis;
+		cBytes -= cThis;
+	}
+#endif
+	if (hr == S_OK)
+	{
+		return S_OK;
+	}
     IAsyncReaderPtr pRdr = GetConnected();
     if (pRdr != NULL)
     {
@@ -432,6 +686,10 @@ DemuxOutputPin::NonDelegatingQueryInterface(REFIID iid, void** ppv)
     if (iid == IID_IMediaSeeking)
     {
         return GetInterface((IMediaSeeking*)this, ppv);
+    } else
+    if (iid == __uuidof(IDemuxOutputPin))
+    {
+        return GetInterface((IDemuxOutputPin*) this, ppv);
     } else
     {
         return CBaseOutputPin::NonDelegatingQueryInterface(iid, ppv);
@@ -529,178 +787,255 @@ DemuxOutputPin::ThreadProc()
         return 0;
     }
 
-    REFERENCE_TIME tStart, tStop;
-    double dRate;
-    m_pParser->GetSeekingParams(&tStart, &tStop, &dRate);
-    DeliverNewSegment(tStart, tStop, dRate);
-
-	m_tLate = 0;
-
-    if (tStart >= m_pTrack->GetMovie()->Duration())
-    {   DeliverEndOfStream();
-        return 0;
-    }
-
-    // find start sample.
-    // Note that this finds the sample to be decoded at tStart,
-    // not presented at tStart -- so we may start a few samples early
-    // This is ok since the timestamping will
-    // be ok (we subtract tStart from all times) and we wind back to the key frame anyway.
-    long nStart = m_pTrack->TimesIndex()->DTSToSample(tStart);
-
-    // start at preceding key frame
-    nStart = m_pTrack->GetKeyMap()->SyncFor(nStart);
-
-    // stop time -- may be "max"
-    long nStop = 0;
-    if (tStop < m_pTrack->GetMovie()->Duration())
-    {
-        nStop = m_pTrack->TimesIndex()->DTSToSample(tStop);
-    }
-    if ((nStop == 0) || (nStop >= m_pTrack->SizeIndex()->SampleCount()))
-    {
-        nStop = m_pTrack->SizeIndex()->SampleCount()-1;
-    }
-
-
-    long nSample = nStart;
-    bool bFirst = true;
-    pHandler->StartStream();
-
-	bool bHandleQuality = false;
-	// for some formats it might make sense to handle quality here, since we
-	// can skip the read as well as the decode.
-	// For now this is only enabled for the (rare and old) Quicktime RLE codec.
-	if (*m_mt.Subtype() == MEDIASUBTYPE_QTRle)
+	for(; ; )
 	{
-		bHandleQuality = true;
-	}
+		if(!InternalRestartThread())
+			break;
 
-    while (!ShouldExit())
-    {
-		if (bHandleQuality)
+		REFERENCE_TIME tStart, tStop;
+		double dRate;
+		m_pParser->GetSeekingParams(&tStart, &tStop, &dRate);
+		DeliverNewSegment(tStart, tStop, dRate);
+
+		m_tLate = 0;
+
+		// wind back to key frame before and check against duration
+		long nSample;
+		size_t segment;
+		if (!m_pTrack->CheckInSegment(tStart, true, &segment, &nSample))
 		{
-			REFERENCE_TIME late;
+			DeliverEndOfStream();
+			return 0;
+		}
+
+		if (tStop > m_pTrack->GetMovie()->Duration())
+		{
+			tStop = m_pTrack->GetMovie()->Duration();
+		}
+		// used only for quality management. No segment support yet
+		long nStop = m_pTrack->TimesIndex()->DTSToSample(tStop);
+
+		bool bFirst = true;
+		pHandler->StartStream();
+
+		bool bHandleQuality = false;
+		// for some formats it might make sense to handle quality here, since we
+		// can skip the read as well as the decode.
+		// For now this is only enabled for the (rare and old) Quicktime RLE codec.
+		if (*m_mt.Subtype() == MEDIASUBTYPE_QTRle)
+		{
+			bHandleQuality = true;
+		}
+
+		////////////////////////////////////////////////
+		// HOTFIX: For zero length samples
+		const GUID& Subtype = *m_mt.Subtype();
+		const BOOL bIsFourCharacterCodeSubtype = memcmp(&Subtype.Data2, &MEDIASUBTYPE_YV12.Data2, sizeof (GUID) - offsetof(GUID, Data2)) == 0;
+		const BOOL bIsAvc1Subtype = bIsFourCharacterCodeSubtype && (Subtype.Data1 == MAKEFOURCC('A', 'V', 'C', '1') || Subtype.Data1 == MAKEFOURCC('a', 'v', 'c', '1'));
+		////////////////////////////////////////////////
+
+		const HANDLE phObjects[] = { ExitEvent(), RestartRequestEvent() };
+		BOOL bRestart = FALSE;
+		for(; ; )
+		{
+			const DWORD nWaitResult = WaitForMultipleObjects(_countof(phObjects), phObjects, FALSE, 0);
+			ASSERT(nWaitResult - WAIT_OBJECT_0 < _countof(phObjects) || nWaitResult == WAIT_TIMEOUT);
+			if(nWaitResult != WAIT_TIMEOUT)
 			{
-				CAutoLock lock(&m_csLate);
-				late = m_tLate;
-			}
-			REFERENCE_TIME perFrame = REFERENCE_TIME(m_pTrack->TimesIndex()->Duration(nSample) / dRate);
-			// if we are more than two frames late, aim to be a frame early
-			if (late > (perFrame * 2))
-			{
-				late += perFrame;
+				bRestart = nWaitResult == WAIT_OBJECT_0 + 1; // m_evRestartRequest
+				break;
 			}
 
-			while (late > (perFrame / 2))
+			REFERENCE_TIME tNext, tDur;
+			m_pTrack->GetTimeBySegment(nSample, segment, &tNext, &tDur);
+
+			if (tNext >= tStop)
 			{
-				// we are more than 3/4 frame late. Should we skip?
-				int next = m_pTrack->GetKeyMap()->Next(nSample);
-				if (next && (next <= nStop))
+				DeliverEndOfStream();
+				break;
+			}
+
+			#pragma region Quality
+			if (bHandleQuality)
+			{
+				// only for uncompressed YUV format -- no segment support yet
+				REFERENCE_TIME late;
 				{
-					REFERENCE_TIME tDiff = m_pTrack->TimesIndex()->SampleToCTS(next) - m_pTrack->TimesIndex()->SampleToCTS(nSample);
-					tDiff = REFERENCE_TIME(tDiff / dRate);
-					if ((next == (nSample+1)) || ((tDiff/2) < late))
+					CAutoLock lock(&m_csLate);
+					late = m_tLate;
+				}
+				REFERENCE_TIME perFrame = REFERENCE_TIME(tDur / dRate);
+				// if we are more than two frames late, aim to be a frame early
+				if (late > (perFrame * 2))
+				{
+					late += perFrame;
+				}
+
+				while (late > (perFrame / 2))
+				{
+					// we are more than 3/4 frame late. Should we skip?
+					int next = m_pTrack->GetKeyMap()->Next(nSample);
+					if (next && (next <= nStop))
 					{
-						// yes -- we are late by at least 1/2 of the distance to the next key frame
-						late -= tDiff;
-						nSample = next;
-						bFirst = true;
+						REFERENCE_TIME tDiff = m_pTrack->TimesIndex()->SampleToCTS(next) - m_pTrack->TimesIndex()->SampleToCTS(nSample);
+						tDiff = REFERENCE_TIME(tDiff / dRate);
+						if ((next == (nSample+1)) || ((tDiff/2) < late))
+						{
+							// yes -- we are late by at least 1/2 of the distance to the next key frame
+							late -= tDiff;
+							nSample = next;
+							bFirst = true;
+						}
+					}
+
+					if (nSample != next)
+					{
+						break;
 					}
 				}
-
-				if (nSample != next)
-				{
-					break;
-				}
 			}
-
-		}
-
-        IMediaSamplePtr pSample;
-        HRESULT hr = GetDeliveryBuffer(&pSample, NULL, NULL, 0);
-        if (hr != S_OK)
-        {
-            break;
-        }
-		REFERENCE_TIME tDur = m_pTrack->TimesIndex()->Duration(nSample);
-        LONGLONG llPos = m_pTrack->SizeIndex()->Offset(nSample);
-
-        long cSample = m_pTrack->SizeIndex()->Size(nSample);
-		long SampleCount = 1;
-		if ((cSample < 16) && (m_pTrack->IsOldAudioFormat()))
-		{
-			// this is the older MOV format: uncompressed audio is indexed by individual samples
-			// fill the buffer with contiguous samples
-			while ((nSample + SampleCount) <= nStop)
+			#pragma endregion 
+			#pragma region Sample
+			IMediaSamplePtr pSample;
+			HRESULT hr = GetDeliveryBuffer(&pSample, NULL, NULL, 0);
+			if (hr != S_OK)
 			{
-				long cNext = m_pTrack->SizeIndex()->Size(nSample);
-				LONGLONG llPosNext = m_pTrack->SizeIndex()->Offset(nSample + SampleCount);
-				if ((cSample + cNext) > pSample->GetSize())
+				break;
+			}
+			#pragma endregion 
+
+			LONGLONG llPos = m_pTrack->SizeIndex()->Offset(nSample);
+			long cSample = m_pTrack->SizeIndex()->Size(nSample);
+			long lastSample = nSample;
+
+			#pragma region Processing
+			if ((cSample < 16) && (m_pTrack->IsOldAudioFormat()))
+			{
+				// this is the older MOV format: uncompressed audio is indexed by individual samples
+				// fill the buffer with contiguous samples
+				long nThis = lastSample;
+				size_t segThis = segment;
+				while (m_pTrack->NextBySegment(&nThis, &segThis))
 				{
+					REFERENCE_TIME tAdd, tDurAdd;
+					m_pTrack->GetTimeBySegment(nThis, segThis, &tAdd, &tDurAdd);
+					if (tAdd >= tStop)
+					{
+						break;
+					}
+					LONGLONG llPosNext = m_pTrack->SizeIndex()->Offset(nThis);
+					if (llPosNext != (llPos + cSample))
+					{
+						break;
+					}
+					long cNext = m_pTrack->SizeIndex()->Size(nThis);
+					if ((cSample + cNext) > pSample->GetSize())
+					{
+						break;
+					}
+					tDur += tDurAdd;
+					cSample += cNext;
+					lastSample = nThis;
+					segment = segThis;
+				}
+			}
+			else if ((cSample < 4) || (tDur < 1))
+			{
+				// some formats have empty frames with non-zero entries of less than 4 bytes
+				////////////////////////////////////////////////
+				// HOTFIX: H.264 video streams might have vital zero length NALs we cannot skip
+				if(!bIsAvc1Subtype)
+				////////////////////////////////////////////////
+					cSample = 0;
+			}
+			#pragma endregion
+			#pragma region Delivery
+			if (cSample > 0)
+			{
+				if (cSample > pSample->GetSize())
+				{
+					// internal error since we checked the sizes
+					// before setting the allocator
+					m_pParser->NotifyEvent(EC_STREAM_ERROR_STOPPED, VFW_E_BUFFER_OVERFLOW, 0);
 					break;
 				}
-				if (llPosNext != (llPos + cSample))
+
+				// format-specific handler does read from file and any conversion/wrapping needed
+				cSample = pHandler->PrepareOutput(pSample, m_pTrack->GetMovie(), llPos, cSample);
+
+				if (cSample > 0)
 				{
-					break;
+					pSample->SetActualDataLength(cSample);
+					if (m_pTrack->GetKeyMap()->SyncFor(nSample) == nSample)
+					{
+						pSample->SetSyncPoint(true);
+					}
+					REFERENCE_TIME tSampleStart = tNext - tStart;
+					if (tSampleStart < 0)
+					{
+						pSample->SetPreroll(true);
+					}
+					REFERENCE_TIME tSampleEnd = tSampleStart + tDur;
+
+					// oops. clearly you need to divide by dRate. At double the rate, each frame lasts half as long.
+					tSampleStart = REFERENCE_TIME(tSampleStart / dRate);
+					tSampleEnd = REFERENCE_TIME(tSampleEnd / dRate);
+
+					pSample->SetTime(&tSampleStart, &tSampleEnd);
+					if (bFirst)
+					{
+						pSample->SetDiscontinuity(true);
+						bFirst = false;
+					}
+					#if defined(TRACE_SEEK)
+						TCHAR pszText[1024] = { 0 };
+						_stprintf(pszText, _T("%hs: tSampleStart %d ms, IsSyncPoint() %d, IsPreroll() %d\n"), __FUNCTION__, (LONG) (tSampleStart / 10000i64), pSample->IsSyncPoint() == S_OK, pSample->IsPreroll() == S_OK);
+						OutputDebugString(pszText);
+					#endif // defined(TRACE_SEEK)
+					Deliver(pSample);
 				}
-				tDur += m_pTrack->TimesIndex()->Duration(nSample + SampleCount);
-				SampleCount++;
-				cSample += cNext;
+			}
+			#pragma endregion
+
+			nSample = lastSample;
+			if (!m_pTrack->NextBySegment(&nSample, &segment))
+			{
+				DeliverEndOfStream();
+				break;
 			}
 		}
-
-        if (cSample > 0)
-        {
-            if (cSample > pSample->GetSize())
-            {
-                // internal error since we checked the sizes
-                // before setting the allocator
-                m_pParser->NotifyEvent(EC_STREAM_ERROR_STOPPED, VFW_E_BUFFER_OVERFLOW, 0);
-                break;
-            }
-
-            // format-specific handler does read from file and any conversion/wrapping needed
-            cSample = pHandler->PrepareOutput(pSample, m_pTrack->GetMovie(), llPos, cSample);
-
-            if (cSample > 0)
-            {
-                pSample->SetActualDataLength(cSample);
-                if (m_pTrack->GetKeyMap()->SyncFor(nSample) == nSample)
-                {
-                    pSample->SetSyncPoint(true);
-                }
-                REFERENCE_TIME tSampleStart = m_pTrack->TimesIndex()->SampleToCTS(nSample) - tStart;
-                if (tSampleStart < 0)
-                {
-                    pSample->SetPreroll(true);
-                }
-                REFERENCE_TIME tSampleEnd = tSampleStart + tDur;
-
-                // oops. clearly you need to divide by dRate. At double the rate, each frame lasts half as long.
-                tSampleStart = REFERENCE_TIME(tSampleStart / dRate);
-                tSampleEnd = REFERENCE_TIME(tSampleEnd / dRate);
-
-				pSample->SetTime(&tSampleStart, &tSampleEnd);
-                if (bFirst)
-                {
-                    pSample->SetDiscontinuity(true);
-                    bFirst = false;
-                }
-                Deliver(pSample);
-            }
-        }
-
-        nSample += SampleCount;
-        if (nSample > nStop)
-        {
-            DeliverEndOfStream();
-            break;
-        }
-    }
+		if(bRestart)
+			continue;
+		break;
+	}
     return 0;
 }
 
+BOOL DemuxOutputPin::GetMajorMediaType(GUID& MajorType) const
+{
+	CAutoLock Lock(m_pLock);
+	if(!m_mt.IsValid())
+		return FALSE;
+	MajorType = *m_mt.Type();
+	return TRUE;
+}
+
+HRESULT DemuxOutputPin::SeekBackToKeyFrame(REFERENCE_TIME& tStart) const
+{
+	// NOTE: This basically duplicates initial seek logic in ThreadProc above
+	if(!m_pTrack)
+		return E_NOINTERFACE;
+	size_t segment;
+	long nSample;
+	if (!m_pTrack->CheckInSegment(tStart, true, &segment, &nSample))
+		return S_FALSE;
+	REFERENCE_TIME tNext, tDur;
+	m_pTrack->GetTimeBySegment(nSample, segment, &tNext, &tDur);
+	if(tNext == tStart)
+		return S_FALSE;
+	tStart = tNext;
+	return S_OK;
+}
 
 // output pin seeking implementation -----------------------
 
@@ -866,6 +1201,23 @@ DemuxOutputPin::SetPositions(
                                  LONGLONG * pStop, 
                                  DWORD dwStopFlags)
 {
+	#if defined(TRACE_SEEK)
+		const BOOL bIsSeekingPin = m_pParser->SelectSeekingPin(this);
+		TCHAR pszText[1024] = { 0 };
+		_stprintf(pszText, _T("%hs: this 0x%p, bIsSeekingPin %d, "), __FUNCTION__, this, bIsSeekingPin);
+		if(pCurrent)
+			_stprintf(pszText + _tcslen(pszText), _T("*pCurrent %I64d, "), *pCurrent);
+		_stprintf(pszText + _tcslen(pszText), _T("dwCurrentFlags 0x%x, "), dwCurrentFlags);
+		if(pCurrent)
+			_stprintf(pszText + _tcslen(pszText), _T("*pStop %I64d, "), *pStop);
+		_stprintf(pszText + _tcslen(pszText), _T("dwStopFlags 0x%x, "), dwStopFlags);
+		_tcscat(pszText, _T("\n"));
+		OutputDebugString(pszText);
+	#endif // defined(TRACE_SEEK)
+
+	ASSERT(!(dwCurrentFlags & (AM_SEEKING_Segment | AM_SEEKING_NoFlush)));
+	ASSERT(!(dwStopFlags & (AM_SEEKING_SeekToKeyFrame | AM_SEEKING_Segment | AM_SEEKING_NoFlush)));
+
     // for media player, with the aggregation bug in DShow, it
     // is better to return success and ignore the call if we are
     // not the controlling pin
@@ -873,6 +1225,10 @@ DemuxOutputPin::SetPositions(
     {
         return S_OK;
     }
+
+	#if defined(TRACE_SEEK)
+		const ULONG nTimeA = GetTickCount();
+	#endif // defined(TRACE_SEEK)
 
     // fetch current properties
     REFERENCE_TIME tStart, tStop;
@@ -900,19 +1256,32 @@ DemuxOutputPin::SetPositions(
         }
     }
 
-    if (dwCurrentFlags & AM_SEEKING_PositioningBitsMask)
+	HRESULT nResult;
+    if(dwCurrentFlags & AM_SEEKING_PositioningBitsMask)
     {
-        return m_pParser->Seek(tStart, tStop, dRate);
-    } else if (dwStopFlags & AM_SEEKING_PositioningBitsMask)
+        nResult = m_pParser->Seek(tStart, dwCurrentFlags & AM_SEEKING_SeekToKeyFrame, tStop, dRate);
+    } else 
+	if(dwStopFlags & AM_SEEKING_PositioningBitsMask)
     {
-        // stop change only
-        return m_pParser->SetStopTime(tStop);
+        nResult = m_pParser->SetStopTime(tStop); // stop change only
     } else
-    {
-        // no operation required
-        return S_FALSE;
-    }
+        return S_FALSE; // no operation required
+	if(SUCCEEDED(nResult))
+	{
+		if(pCurrent && (dwCurrentFlags & AM_SEEKING_ReturnTime))
+			*pCurrent = tStart;
+		if(pStop && (dwStopFlags & AM_SEEKING_ReturnTime))
+			*pStop = tStop;
+	}
 
+	#if defined(TRACE_SEEK)
+		const ULONG nTimeB = GetTickCount();
+		TCHAR pszText[1024] = { 0 };
+		_stprintf(pszText, _T("%hs: this 0x%p, this, Time %d - %d (%d), dwCurrentFlags 0x%X") _T("\n"), __FUNCTION__, this, nTimeA, nTimeB, nTimeB - nTimeA, dwCurrentFlags);
+		OutputDebugString(pszText);
+	#endif // defined(TRACE_SEEK)
+
+	return nResult;
 }
 
 STDMETHODIMP 
@@ -971,4 +1340,20 @@ DemuxOutputPin::GetPreroll(LONGLONG * pllPreroll)
     return S_OK;
 }
 
+// IDemuxOutputPin
+
+STDMETHODIMP DemuxOutputPin::GetMediaSampleTimes(ULONG* pnCount, LONGLONG** ppnStartTimes, LONGLONG** ppnStopTimes, ULONG** ppnFlags, ULONG** ppnDataSizes)
+{
+	if(!pnCount || !ppnStartTimes)
+		return E_POINTER;
+	if(!ppnStopTimes && !ppnFlags && !ppnDataSizes)
+		return E_INVALIDARG; // Nothing to Do
+	if(ppnStopTimes || ppnDataSizes)
+		return E_NOTIMPL;
+	//CAutoLock Lock(m_pLock);
+	if(!m_pTrack)
+		return E_NOINTERFACE;
+	*pnCount = (ULONG) m_pTrack->GetTimes(ppnStartTimes, ppnStopTimes, ppnFlags, ppnDataSizes);
+	return S_OK;
+}
 

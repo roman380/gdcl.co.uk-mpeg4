@@ -13,7 +13,9 @@
 
 #pragma once
 
+#include "Module_i.h"
 #include "MovieWriter.h"
+#include "TemporaryIndexFile.h"
 #include "alloc.h"
 
 // forward declarations
@@ -28,17 +30,51 @@ class MuxAllocator;
 // We use the input buffers to queue the chunks for
 // interleaving, so the input connection must allow
 // us to hold at least 2 seconds of data.
-class MuxAllocator : public CMemAllocator
+class MuxAllocator : public CMemAllocator, public IMuxMemAllocator
 {
 public:
-    MuxAllocator(LPUNKNOWN pUnk, HRESULT* phr, long cMaxBuffer);
+// MuxAllocator
+    MuxAllocator(LPUNKNOWN pUnk, HRESULT* phr, long cMaxBuffer, const CMediaType* pmt);
+	~MuxAllocator();
+	static LONG GetSuggestBufferCount()
+	{
+		return 100;
+	}
 
+// IUnknown
+    DECLARE_IUNKNOWN
+    STDMETHODIMP NonDelegatingQueryInterface(REFIID InterfaceIdentifier, VOID** ppvObject)
+	{
+		#define A(x) if(InterfaceIdentifier == __uuidof(x)) return GetInterface((x*) this, ppvObject);
+		A(IMuxMemAllocator)
+		#undef A
+		return __super::NonDelegatingQueryInterface(InterfaceIdentifier, ppvObject);
+	}
+
+// IMemAllocator
     // we override this just to increase the requested buffer count
     STDMETHODIMP SetProperties(
             ALLOCATOR_PROPERTIES* pRequest,
             ALLOCATOR_PROPERTIES* pActual);
+
+// IMuxMemAllocator
+	STDMETHOD(GetMinimalBufferCount)(LONG* pnMinimalBufferCount)
+	{
+		if(!pnMinimalBufferCount)
+			return E_POINTER;
+		*pnMinimalBufferCount = m_nMinimalBufferCount;
+		return S_OK;
+	}
+	STDMETHOD(SetMinimalBufferCount)(LONG nMinimalBufferCount)
+	{
+		m_nMinimalBufferCount = nMinimalBufferCount;
+		return S_OK;
+	}
+
 private:
 	long m_cMaxBuffer;
+    CMediaType m_mt;
+	LONG m_nMinimalBufferCount;
 };
 
 // input pin, receives data corresponding to one
@@ -47,11 +83,17 @@ private:
 // ensure that there is always one unconnected pin.
 class MuxInput 
 : public CBaseInputPin,
-  public IAMStreamControl
+  public IAMStreamControl,
+  public IMuxInputPin
 {
 public:
     MuxInput(Mpeg4Mux* pFilter, CCritSec* pLock, HRESULT* phr, LPCWSTR pName, int index);
 	~MuxInput();
+
+    INT GetIndex() const
+	{
+		return m_index;
+	}
 
     // lifetime management for pins is normally delegated to the filter, but
     // we need to be able to create and delete them independently, so keep 
@@ -66,13 +108,13 @@ public:
     }
 
     DECLARE_IUNKNOWN
-    STDMETHODIMP NonDelegatingQueryInterface(REFIID iid, void** ppv)
+    STDMETHODIMP NonDelegatingQueryInterface(REFIID InterfaceIdentifier, VOID** ppvObject)
 	{
-		if (iid == IID_IAMStreamControl)
-		{
-			return GetInterface((IAMStreamControl*) this, ppv);
-		}
-		return __super::NonDelegatingQueryInterface(iid, ppv);
+		#define A(x) if(InterfaceIdentifier == __uuidof(x)) return GetInterface((x*) this, ppvObject);
+		A(IAMStreamControl)
+		A(IMuxInputPin)
+		#undef A
+		return __super::NonDelegatingQueryInterface(InterfaceIdentifier, ppvObject);
 	}
 
     // CBasePin overrides
@@ -101,6 +143,9 @@ public:
 	STDMETHOD(StartAt)(const REFERENCE_TIME* ptStart, DWORD dwCookie);
 	STDMETHOD(StopAt)(const REFERENCE_TIME* ptStop, BOOL bSendExtra, DWORD dwCookie);
 	STDMETHOD(GetInfo)(AM_STREAM_INFO* pInfo);
+
+	// IMuxInputPin
+	STDMETHOD(GetMemAllocators)(IUnknown** ppMemAllocatorUnknown, IUnknown** ppCopyMemAllocatorUnknown);
 
 private:
 	bool ShouldDiscard(IMediaSample* pSample);
@@ -146,6 +191,8 @@ public:
     LONGLONG Position();
     HRESULT Replace(LONGLONG pos, const BYTE* pBuffer, long cBytes);
     HRESULT Append(const BYTE* pBuffer, long cBytes);
+	VOID NotifyMediaSampleWrite(INT nTrackIndex, IMediaSample* pMediaSample);
+
 private:
     Mpeg4Mux* m_pMux;
     CCritSec m_csWrite;
@@ -189,14 +236,22 @@ private:
 class DECLSPEC_UUID("5FD85181-E542-4e52-8D9D-5D613C30131B")
 Mpeg4Mux 
 : public CBaseFilter,
-  public IMediaSeeking
+  public IMediaSeeking,
+  public IMuxFilter
 {
 public:
     // constructor method used by class factory
     static CUnknown* WINAPI CreateInstance(LPUNKNOWN pUnk, HRESULT* phr);
 
     DECLARE_IUNKNOWN
-    STDMETHODIMP NonDelegatingQueryInterface(REFIID iid, void** ppv);
+    STDMETHODIMP NonDelegatingQueryInterface(REFIID InterfaceIdentifier, VOID** ppvObject)
+	{
+		#define A(x) if(InterfaceIdentifier == __uuidof(x)) return GetInterface((x*) this, ppvObject);
+		A(IMediaSeeking)
+		A(IMuxFilter)
+		#undef A
+		return __super::NonDelegatingQueryInterface(InterfaceIdentifier, ppvObject);
+	}
 
     // filter registration tables
     static const AMOVIESETUP_MEDIATYPE m_sudType[];
@@ -219,13 +274,15 @@ public:
     void OnEOS();
 	REFERENCE_TIME Start() { return m_tStart;}
 
+	VOID NotifyMediaSampleWrite(INT nTrackIndex, LONGLONG nDataPosition, IMediaSample* pMediaSample);
+
     // we implement IMediaSeeking to allow encoding
     // of specific portions of an input clip, and
     // to report progress via the current position.
     // Calls (apart from current position) are
     // passed upstream to any pins that support seeking
-// IMediaSeeking
 public:
+// IMediaSeeking
     STDMETHODIMP GetCapabilities(DWORD * pCapabilities );
     STDMETHODIMP CheckCapabilities(DWORD * pCapabilities );
     STDMETHODIMP IsFormatSupported(const GUID * pFormat);
@@ -236,17 +293,47 @@ public:
     STDMETHODIMP GetDuration(LONGLONG *pDuration);
     STDMETHODIMP GetStopPosition(LONGLONG *pStop);
     STDMETHODIMP GetCurrentPosition(LONGLONG *pCurrent);
-    STDMETHODIMP ConvertTimeFormat(LONGLONG * pTarget, const GUID * pTargetFormat,
-                              LONGLONG    Source, const GUID * pSourceFormat );
-    STDMETHODIMP SetPositions(LONGLONG * pCurrent, DWORD dwCurrentFlags
-			, LONGLONG * pStop, DWORD dwStopFlags );
-    STDMETHODIMP GetPositions(LONGLONG * pCurrent,
-                              LONGLONG * pStop );
+    STDMETHODIMP ConvertTimeFormat(LONGLONG * pTarget, const GUID * pTargetFormat, LONGLONG Source, const GUID * pSourceFormat );
+    STDMETHODIMP SetPositions(LONGLONG * pCurrent, DWORD dwCurrentFlags, LONGLONG * pStop, DWORD dwStopFlags );
+    STDMETHODIMP GetPositions(LONGLONG * pCurrent, LONGLONG * pStop );
     STDMETHODIMP GetAvailable(LONGLONG * pEarliest, LONGLONG * pLatest );
     STDMETHODIMP SetRate(double dRate);
     STDMETHODIMP GetRate(double * pdRate);
     STDMETHODIMP GetPreroll(LONGLONG * pllPreroll);
 
+// IMuxFilter
+    STDMETHOD(IsTemporaryIndexFileEnabled)()
+	{
+		//_Z4(atlTraceCOM, 4, _T("this 0x%p\n"), this);
+		//_ATLTRY
+		//{
+		    CAutoLock lock(&m_csFilter);
+			if(!m_bTemporaryIndexFileEnabled)
+				return S_FALSE;
+		//}
+		//_ATLCATCH(Exception)
+		//{
+		//	_C(Exception);
+		//}
+		return S_OK;
+	}
+    STDMETHOD(SetTemporaryIndexFileEnabled)(BOOL bEnabled)
+	{
+		//_Z4(atlTraceCOM, 4, _T("this 0x%p, bEnabled %d\n"), this, bEnabled);
+		//_ATLTRY
+		//{
+		    CAutoLock lock(&m_csFilter);
+			if(m_bTemporaryIndexFileEnabled == bEnabled)
+				return S_FALSE;
+			//__D(IsActive(), VFW_E_WRONG_STATE);
+			m_bTemporaryIndexFileEnabled = bEnabled;
+		//}
+		//_ATLCATCH(Exception)
+		//{
+		//	_C(Exception);
+		//}
+		return S_OK;
+	}
 	
 private:
     // construct only via class factory
@@ -262,5 +349,9 @@ private:
 
     // for reporting (via GetCurrentPosition) after completion
     REFERENCE_TIME m_tWritten;
+
+	BOOL m_bTemporaryIndexFileEnabled;
+    CCritSec m_TemporaryIndexFileCriticalSection;
+	CTemporaryIndexFile m_TemporaryIndexFile;
 };
 

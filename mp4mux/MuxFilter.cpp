@@ -102,7 +102,8 @@ Mpeg4Mux::CreateInstance(LPUNKNOWN pUnk, HRESULT* phr)
 
 Mpeg4Mux::Mpeg4Mux(LPUNKNOWN pUnk, HRESULT* phr)
 : CBaseFilter(NAME("Mpeg4Mux"), pUnk, &m_csFilter, *m_sudFilter.clsID),
-  m_tWritten(0)
+  m_tWritten(0),
+  m_bTemporaryIndexFileEnabled(FALSE)
 {
     // create output pin and one free input
     m_pOutput = new MuxOutput(this, &m_csFilter, phr);
@@ -116,18 +117,6 @@ Mpeg4Mux::~Mpeg4Mux()
     {
         m_pInputs[i]->Release();
     }
-}
-
-
-STDMETHODIMP 
-Mpeg4Mux::NonDelegatingQueryInterface(REFIID iid, void** ppv)
-{
-    if (iid == IID_IMediaSeeking)
-    {
-        return GetInterface((IMediaSeeking*) this, ppv);
-    }
-
-    return CBaseFilter::NonDelegatingQueryInterface(iid, ppv);
 }
 
 int 
@@ -206,7 +195,7 @@ Mpeg4Mux::MakeTrack(int index, const CMediaType* pmt)
 {
     CAutoLock lock(&m_csTracks);
     UNREFERENCED_PARAMETER(index);
-    return m_pMovie->MakeTrack(pmt);
+    return m_pMovie->MakeTrack(pmt, m_TemporaryIndexFile.IsActive());
 }
 
 void 
@@ -246,10 +235,11 @@ Mpeg4Mux::Stop()
             // fill remaining file space
             m_pOutput->FillSpace();
         }
+
+		m_TemporaryIndexFile.Terminate();
     }
     return hr;
 }
-    
 
 STDMETHODIMP 
 Mpeg4Mux::Pause()
@@ -258,9 +248,77 @@ Mpeg4Mux::Pause()
     {
         m_pOutput->Reset();
         m_pMovie = new MovieWriter(m_pOutput);
+		#pragma region Temporary Index File
+		// ASSU: Output uses IStream
+		if(m_bTemporaryIndexFileEnabled)
+		{
+			QzCComPtr<IPin> pPin = m_pOutput->GetConnected();
+			if(pPin)
+			{
+				PIN_INFO PinInformation;
+				if(SUCCEEDED(pPin->QueryPinInfo(&PinInformation)) && PinInformation.pFilter)
+				{
+					QzCComPtr<IFileSinkFilter> pFileSinkFilter;
+					PinInformation.pFilter->QueryInterface(__uuidof(IFileSinkFilter), (VOID**) &pFileSinkFilter);
+					PinInformation.pFilter->Release();
+					if(pFileSinkFilter)
+					{
+						LPOLESTR pszPath = NULL;
+						pFileSinkFilter->GetCurFile(&pszPath, NULL);
+						TCHAR pszPathT[MAX_PATH];
+						// ASSU: Unicode build
+						if(pszPath)
+						{
+							_tcsncpy_s(pszPathT, pszPath, _TRUNCATE);
+							CoTaskMemFree(pszPath);
+							LPCTSTR pszFileName = PathFindFileName(pszPathT);
+							CAutoLock TemporaryIndexFileLock(&m_TemporaryIndexFileCriticalSection);
+							if(m_TemporaryIndexFile.Initialize(pszFileName))
+							{
+								m_TemporaryIndexFile.WriteHeader();
+								for(SIZE_T nIndex = 0; nIndex < m_pInputs.size(); nIndex++)
+								{
+									MuxInput* pInput = m_pInputs[nIndex];
+									if(!pInput->IsConnected())
+										continue;
+									CMediaType MediaType;
+									if(FAILED(pInput->ConnectionMediaType(&MediaType)))
+										continue;
+									m_TemporaryIndexFile.WriteInputPin((UINT16) pInput->GetIndex(), MediaType);
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		#pragma endregion 
     }
     return CBaseFilter::Pause();
 }
+
+VOID Mpeg4Mux::NotifyMediaSampleWrite(INT nTrackIndex, LONGLONG nDataPosition, IMediaSample* pMediaSample)
+{ 
+	ASSERT(pMediaSample);
+	if(!pMediaSample)
+		return; // No Media Sample
+	CAutoLock TemporaryIndexFileLock(&m_TemporaryIndexFileCriticalSection);
+	if(!m_TemporaryIndexFile.IsActive())
+		return; // No Index File
+	QzCComPtr<IMediaSample2> pMediaSample2;
+	pMediaSample->QueryInterface(__uuidof(IMediaSample2), (VOID**) &pMediaSample2);
+	if(!pMediaSample2)
+		return; // No Interface
+	AM_SAMPLE2_PROPERTIES Properties;
+	if(FAILED(pMediaSample2->GetProperties(sizeof Properties, (BYTE*) &Properties)))
+		return; // Failure
+	SIZE_T nInputIndex;
+	for(nInputIndex = 0; nInputIndex < m_pInputs.size(); nInputIndex++)
+		if(m_pInputs[nInputIndex]->GetIndex() == nTrackIndex)
+			break;
+	m_TemporaryIndexFile.WriteMediaSample((UINT16) nInputIndex, (UINT64) nDataPosition, Properties);
+}
+
 // ------- input pin -------------------------------------------------------
 
 MuxInput::MuxInput(Mpeg4Mux* pFilter, CCritSec* pLock, HRESULT* phr, LPCWSTR pName, int index)
@@ -275,6 +333,7 @@ MuxInput::MuxInput(Mpeg4Mux* pFilter, CCritSec* pLock, HRESULT* phr, LPCWSTR pNa
 
 MuxInput::~MuxInput()
 {
+	ASSERT(!m_pAllocator);
 	if (m_pCopyAlloc)
 	{
 		m_pCopyAlloc->Release();
@@ -302,6 +361,20 @@ MuxInput::GetMediaType(int iPosition, CMediaType* pmt)
 STDMETHODIMP 
 MuxInput::Receive(IMediaSample* pSample)
 {
+	#if defined(_DEBUG) && FALSE
+		if(pSample)
+		{
+			REFERENCE_TIME nStartTime = 0, nStopTime = 0;
+			const HRESULT nGetTimeResult = pSample->GetTime(&nStartTime, &nStopTime);
+			CHAR pszText[1024] = { 0 };
+			sprintf(pszText, "%hs: " "m_index %d, nGetTimeResult 0x%08x, nStartTime %I64d, nStopTime %I64d\n", __FUNCTION__, 
+				m_index,
+				nGetTimeResult, nStartTime, nStopTime, 
+				0);
+			OutputDebugStringA(pszText);
+		}
+	#endif // defined(_DEBUG)
+
     HRESULT hr = CBaseInputPin::Receive(pSample);
     if (hr != S_OK)
     {
@@ -453,36 +526,41 @@ MuxInput::CompleteConnect(IPin *pReceivePin)
 STDMETHODIMP 
 MuxInput::GetAllocator(IMemAllocator** ppAllocator)
 {
+	*ppAllocator = NULL;
+	QzCComPtr<IMemAllocator>& pAllocator = reinterpret_cast<QzCComPtr<IMemAllocator>&>(*ppAllocator);
     CAutoLock lock(m_pLock);
-
-    HRESULT hr = S_OK;
-
-	// we supply our own allocator whose only purpose is to increase the requested number of
-	// buffers. if possible, we supply a sanity-check max buffer size
-	long cMaxBuffer = 0;
-	TypeHandler* ph = TypeHandler::Make(&m_mt);
-	if (ph)
+	if(!m_pAllocator)
 	{
-		if (ph->IsVideo())
-		{
-			cMaxBuffer = ph->Height() * ph->Width() * 4;
-		}
-		delete ph;
-	}
+		HRESULT hr = S_OK;
 
-	MuxAllocator* pAlloc = new MuxAllocator(NULL, &hr, cMaxBuffer);
-    if (!pAlloc)
-    {
-        return E_OUTOFMEMORY;
-    }
-    pAlloc->QueryInterface(IID_IMemAllocator, (void**)&m_pAllocator);
-    return pAlloc->QueryInterface(IID_IMemAllocator, (void**)ppAllocator);
+		// we supply our own allocator whose only purpose is to increase the requested number of
+		// buffers. if possible, we supply a sanity-check max buffer size
+		long cMaxBuffer = 0;
+		TypeHandler* ph = TypeHandler::Make(&m_mt);
+		if (ph)
+		{
+			if (ph->IsVideo())
+			{
+				cMaxBuffer = ph->Height() * ph->Width() * 4;
+			}
+			delete ph;
+		}
+
+		MuxAllocator* pNewAllocator = new MuxAllocator(NULL, &hr, cMaxBuffer, &m_mt);
+		if(!pNewAllocator)
+			return E_OUTOFMEMORY;
+		ASSERT(SUCCEEDED(hr));
+		reinterpret_cast<QzCComPtr<IMemAllocator>&>(m_pAllocator) = pNewAllocator;
+	}
+	pAllocator = m_pAllocator;
+    return S_OK;
 }
 
 	
 STDMETHODIMP 
 MuxInput::NotifyAllocator(IMemAllocator* pAlloc, BOOL bReadOnly)
 {
+	// WARN: Thread unsafe
 	ALLOCATOR_PROPERTIES propAlloc;
 	pAlloc->GetProperties(&propAlloc);
 
@@ -491,7 +569,7 @@ MuxInput::NotifyAllocator(IMemAllocator* pAlloc, BOOL bReadOnly)
 		// too few buffers -- we need to copy
 		// -- base the buffer size on 100 x buffers, but
 		// restrict to 200MB max
-		int cSpace = propAlloc.cbBuffer * 100;
+		int cSpace = propAlloc.cbBuffer * MuxAllocator::GetSuggestBufferCount();
 		cSpace = min((200 * 1024 * 1024), cSpace);
 		HRESULT hr = m_CopyBuffer.Allocate(cSpace);
 		if (SUCCEEDED(hr))
@@ -508,6 +586,7 @@ MuxInput::NotifyAllocator(IMemAllocator* pAlloc, BOOL bReadOnly)
 			m_pCopyAlloc = NULL;
 		}
 	}
+
 	return __super::NotifyAllocator(pAlloc, bReadOnly);
 }
 	
@@ -573,6 +652,19 @@ MuxInput::GetInfo(AM_STREAM_INFO* pInfo)
 	return S_OK;
 }
 
+// IMuxInputPin
+STDMETHODIMP
+MuxInput::GetMemAllocators(IUnknown** ppMemAllocatorUnknown, IUnknown** ppCopyMemAllocatorUnknown)
+{
+	if(!ppMemAllocatorUnknown || !ppCopyMemAllocatorUnknown)
+		return E_POINTER;
+	QzCComPtr<IMemAllocator>& pMemAllocator = reinterpret_cast<QzCComPtr<IMemAllocator>&>(*ppMemAllocatorUnknown);
+	QzCComPtr<IMemAllocator>& pCopyMemAllocator = reinterpret_cast<QzCComPtr<IMemAllocator>&>(*ppCopyMemAllocatorUnknown);
+	// WARN: Thread unsafe
+	pMemAllocator = m_pAllocator;
+	pCopyMemAllocator = m_pCopyAlloc;
+	return S_OK;
+}
 	
 bool 
 MuxInput::ShouldDiscard(IMediaSample* pSample)
@@ -583,8 +675,10 @@ MuxInput::ShouldDiscard(IMediaSample* pSample)
 		if (m_StreamInfo.dwFlags & AM_STREAM_INFO_START_DEFINED)
 		{
 			REFERENCE_TIME tStart, tStop;
-			if ((SUCCEEDED(pSample->GetTime(&tStart, &tStop))) &&
-				(tStop > m_StreamInfo.tStart))
+			const HRESULT nGetTimeResult = pSample->GetTime(&tStart, &tStop);
+			if(nGetTimeResult == VFW_S_NO_STOP_TIME)
+				tStop = tStart + 1;
+			if(SUCCEEDED(nGetTimeResult) && (tStop > m_StreamInfo.tStart))
 			{
 				m_StreamInfo.dwFlags &= ~(AM_STREAM_INFO_DISCARDING | AM_STREAM_INFO_START_DEFINED);
 				if (m_StreamInfo.dwStartCookie)
@@ -604,7 +698,10 @@ MuxInput::ShouldDiscard(IMediaSample* pSample)
 		if (m_StreamInfo.dwFlags & AM_STREAM_INFO_STOP_DEFINED)
 		{
 			REFERENCE_TIME tStart, tStop;
-			if (SUCCEEDED(pSample->GetTime(&tStart, &tStop)))
+			const HRESULT nGetTimeResult = pSample->GetTime(&tStart, &tStop);
+			//if(nGetTimeResult == VFW_S_NO_STOP_TIME)
+			//	tStop = tStart + 1;
+			if(SUCCEEDED(nGetTimeResult))
 			{
 				DbgLog((LOG_TRACE, 0, "Pending stop %d ms, sample %d", long(m_StreamInfo.tStop/10000), long(tStart/10000)));
 
@@ -627,10 +724,18 @@ MuxInput::ShouldDiscard(IMediaSample* pSample)
 // ----------------------
 
 
-MuxAllocator::MuxAllocator(LPUNKNOWN pUnk, HRESULT* phr, long cMaxBuffer)
+MuxAllocator::MuxAllocator(LPUNKNOWN pUnk, HRESULT* phr, long cMaxBuffer, const CMediaType* pmt)
 : CMemAllocator(NAME("MuxAllocator"), pUnk, phr),
-  m_cMaxBuffer(cMaxBuffer)
+  m_cMaxBuffer(cMaxBuffer),
+  m_mt(*pmt),
+  m_nMinimalBufferCount(GetSuggestBufferCount())
 {
+	NOTE("MuxAllocator::MuxAllocator\n");
+}
+
+MuxAllocator::~MuxAllocator()
+{
+	NOTE("MuxAllocator::~MuxAllocator\n");
 }
 
 // we override this just to increase the requested buffer count
@@ -647,10 +752,8 @@ MuxAllocator::SetProperties(
 	// ask for 100 of those, we will use up the system memory
 	if ((m_cMaxBuffer == 0) || (prop.cbBuffer <= m_cMaxBuffer))
 	{
-		if (prop.cBuffers < 100)
-		{
-			prop.cBuffers = 100;
-		}
+		if (prop.cBuffers < m_nMinimalBufferCount)
+			prop.cBuffers = m_nMinimalBufferCount;
 	}
     return CMemAllocator::SetProperties(&prop, pActual);
 }
@@ -848,6 +951,15 @@ MuxOutput::FillSpace()
             }
         }
     }
+}
+
+VOID MuxOutput::NotifyMediaSampleWrite(INT nTrackIndex, IMediaSample* pMediaSample)
+{ 
+	ASSERT(pMediaSample);
+	const LONG nDataSize = pMediaSample->GetActualDataLength();
+	const LONGLONG nDataPosition = m_llBytes - nDataSize;
+	ASSERT(m_pMux);
+	m_pMux->NotifyMediaSampleWrite(nTrackIndex, nDataPosition, pMediaSample);
 }
 
 // ---- seeking support ------------------------------------------------
@@ -1119,7 +1231,7 @@ Mpeg4Mux::GetPreroll(LONGLONG * pllPreroll)
     for (SeekingAggregator::iterator i = pins.Begin(); i != pins.End(); i++)
     {
         IMediaSeekingPtr pSeek = *i;
-        REFERENCE_TIME t;
+        REFERENCE_TIME t = 0;
         HRESULT hr = pSeek->GetPreroll(&t);
 
         if ((hr == S_OK) && (t > tMax))

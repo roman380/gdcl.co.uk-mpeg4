@@ -62,6 +62,8 @@ public:
     bool Parse(Atom* patmSTBL);
     long SyncFor(long nSample);
 	long Next(long nSample);
+	SIZE_T Get(SIZE_T*& pnIndexes) const;
+
 private:
     Atom* m_patmSTSS;
     const BYTE* m_pSTSS;
@@ -78,11 +80,16 @@ public:
 	bool Parse(long scale, LONGLONG CTOffset, Atom* patmSTBL);
 
     long DTSToSample(LONGLONG tStart);
+	SIZE_T Get(REFERENCE_TIME*& pnTimes) const;
     LONGLONG SampleToCTS(long nSample);
     LONGLONG Duration(long nSample);
-    LONGLONG CTSOffset(long nSample);
+    LONGLONG CTSOffset(long nSample) const;
+    long CTSToSample(LONGLONG tStart);
+    LONGLONG TotalDuration()					{ return m_total; }
 
-    LONGLONG TrackToReftime(LONGLONG nTrack);
+    LONGLONG TrackToReftime(LONGLONG nTrack) const;
+    bool HasCTSTable()  { return m_nCTTS > 0; }
+	LONGLONG ReftimeToTrack(LONGLONG reftime);
 
 private:
     long m_scale;               // track scale units
@@ -101,6 +108,8 @@ private:
     // cache the current position to reduce effort
     long m_nBaseSample;     // sample number at m_idx
     long m_idx;             // table index corresponding to m_nBaseSample
+
+    LONGLONG m_total;       // sum of durations, in reftime
     LONGLONG m_tAtBase;     // total of durations at m_nBaseSample
 };
 

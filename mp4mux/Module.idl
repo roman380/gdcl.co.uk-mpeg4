@@ -1,0 +1,64 @@
+////////////////////////////////////////////////////////////
+// Copyright (c) GDCL 2004-6. All Rights Reserved. 
+// You are free to re-use this as the basis for your own filter development,
+// provided you retain this copyright notice in the source.
+// http://www.gdcl.co.uk
+// 
+// Enhancements by Roman Ryltsov roman@alax.info, 2013-2015
+
+import "oaidl.idl";
+import "ocidl.idl";
+
+[
+	uuid(01C87765-FA54-45C5-ABB4-3C748246AE77),
+	version(1.0),
+]
+library GdclMp4Mux
+{
+	importlib("stdole2.tlb");
+	[
+		object,
+		uuid(B583CDE8-2E32-468A-AA60-36D20C8628A1),
+		//dual,
+		//oleautomation,
+		nonextensible,
+		pointer_default(unique)
+	]
+	interface IMuxMemAllocator : IUnknown
+	{
+		HRESULT GetMinimalBufferCount(LONG* pnMinimalBufferCount);
+		HRESULT SetMinimalBufferCount(LONG nMinimalBufferCount);
+	};
+	[
+		object,
+		uuid(51613985-D540-435B-BEBC-68D25243E239),
+		//dual,
+		//oleautomation,
+		nonextensible,
+		pointer_default(unique)
+	]
+	interface IMuxInputPin : IUnknown
+	{
+		HRESULT GetMemAllocators(IUnknown** ppMemAllocatorUnknown, IUnknown** ppCopyMemAllocatorUnknown);
+	};
+	[
+		object,
+		uuid(6CE45967-F228-4F7B-8B93-83DC599618CA),
+		//dual,
+		//oleautomation,
+		nonextensible,
+		pointer_default(unique)
+	]
+	interface IMuxFilter : IUnknown
+	{
+		HRESULT IsTemporaryIndexFileEnabled();
+		HRESULT SetTemporaryIndexFileEnabled(BOOL bEnabled);
+	};
+	[
+		uuid(5FD85181-E542-4e52-8D9D-5D613C30131B)
+	]
+	coclass MuxFilter
+	{
+		[default] interface IUnknown;
+	};
+};
