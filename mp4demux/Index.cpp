@@ -424,8 +424,9 @@ SIZE_T SampleTimes::Get(REFERENCE_TIME*& pnTimes) const
 		REFERENCE_TIME nBaseTime = 0;
 		for(SIZE_T nIndex = 0; nIndex < (SIZE_T) m_nSTTS; nIndex++)
 		{
-			const SIZE_T nCurrentEntryCount = (SIZE_T) SwapLong(m_pSTTS + 8 + (nIndex * 8));
-			const SIZE_T nCurrentDuration = (SIZE_T) SwapLong(m_pSTTS + 8 + 4 + (nIndex * 8));
+			const BYTE* pSttsEntry = m_pSTTS + 8 + (nIndex * 8);
+			const SIZE_T nCurrentEntryCount = (SIZE_T) SwapLong(pSttsEntry + 0);
+			const SIZE_T nCurrentDuration = (SIZE_T) SwapLong(pSttsEntry + 4);
 			for(SIZE_T nCurrentEntryIndex = 0; nCurrentEntryIndex < nCurrentEntryCount; nCurrentEntryIndex++)
 			{
 				const SIZE_T nSampleIndex = nEntryIndex + nCurrentEntryIndex;

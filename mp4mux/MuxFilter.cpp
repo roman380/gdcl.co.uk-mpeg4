@@ -366,10 +366,12 @@ MuxInput::Receive(IMediaSample* pSample)
 		{
 			REFERENCE_TIME nStartTime = 0, nStopTime = 0;
 			const HRESULT nGetTimeResult = pSample->GetTime(&nStartTime, &nStopTime);
+			static LONG g_nCounter = 0;
 			CHAR pszText[1024] = { 0 };
-			sprintf(pszText, "%hs: " "m_index %d, nGetTimeResult 0x%08x, nStartTime %I64d, nStopTime %I64d\n", __FUNCTION__, 
+			sprintf_s(pszText, "%hs: " "m_index %d, nGetTimeResult 0x%08x, nStartTime %I64d, nStopTime %I64d, (%d)\n", __FUNCTION__, 
 				m_index,
 				nGetTimeResult, nStartTime, nStopTime, 
+				++g_nCounter,
 				0);
 			OutputDebugStringA(pszText);
 		}
@@ -442,6 +444,14 @@ MuxInput::CopySampleProps(IMediaSample* pIn, IMediaSample* pOut)
 STDMETHODIMP 
 MuxInput::EndOfStream()
 {
+	#if defined(_DEBUG) && FALSE
+		CHAR pszText[1024] = { 0 };
+		sprintf_s(pszText, "%hs: " "m_index %d\n", __FUNCTION__, 
+			m_index,
+			0);
+		OutputDebugStringA(pszText);
+	#endif // defined(_DEBUG)
+
     if ((m_pTrack != NULL) && (m_pTrack->OnEOS()))
     {
         // we are the last -- can forward now
