@@ -1545,7 +1545,9 @@ DurationIndex::WriteTable(Atom* patm)
 			if (ToScale(m_tStopLast) > m_TotalDuration)
 			{
 				AddDuration(long(ToScale(m_tStopLast) - m_TotalDuration));
-			}
+			} else
+				// NOTE: We still need some duration recorded, to avoid stts/stsz discrepancy at the very least
+				AddDuration(1);
 		}
 
         // create atom and write table
