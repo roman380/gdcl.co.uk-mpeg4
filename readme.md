@@ -8,6 +8,10 @@ In order to successfully build the solution/projects, baseclasses directory from
 
 ## Update History
 
+### 17 May 2015
+
+ * Fixed problem in multiplexer with stts/stsz atom discrepancy; produced files could be rejected by MainConcept demultiplexer and GDCL demultiplexer would produce final sample on the track with incorrect zero timestamp
+
 ### 08 May 2015
 
  * Projects converted to Visual Studio 2013, stripped older solution/project files; using Windows XP compatible toolset
