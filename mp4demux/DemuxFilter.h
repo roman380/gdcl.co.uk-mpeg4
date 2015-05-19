@@ -155,6 +155,34 @@ public:
     HRESULT Inactive();
     DWORD ThreadProc();
 
+	HRESULT DeliverEndOfStream()
+	{
+		#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+			if(m_pMediaSampleTrace)
+				m_pMediaSampleTrace->RegisterEndOfStream((IBaseFilter*) m_pFilter, (USHORT*) Name(), NULL);
+		#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+
+		return __super::DeliverEndOfStream();
+	}
+    HRESULT DeliverBeginFlush()
+	{
+		#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+			if(m_pMediaSampleTrace)
+				m_pMediaSampleTrace->RegisterComment((IBaseFilter*) m_pFilter, (USHORT*) Name(), (USHORT*) L"Begin Flush");
+		#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+
+		return __super::DeliverBeginFlush();
+	}
+    HRESULT DeliverEndFlush()
+	{
+		#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+			if(m_pMediaSampleTrace)
+				m_pMediaSampleTrace->RegisterComment((IBaseFilter*) m_pFilter, (USHORT*) Name(), (USHORT*) L"End Flush");
+		#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+
+		return __super::DeliverEndFlush();
+	}
+
 	BOOL GetMajorMediaType(GUID& MajorType) const;
 	HRESULT SeekBackToKeyFrame(REFERENCE_TIME& tStart) const;
 
@@ -191,6 +219,10 @@ private:
 	// quality record
 	CCritSec m_csLate;
 	REFERENCE_TIME m_tLate;
+
+	#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+		QzCComPtr<AlaxInfoDirectShowSpy::IMediaSampleTrace> m_pMediaSampleTrace;
+	#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
 };
 typedef IPinPtr DemuxOutputPinPtr;
 

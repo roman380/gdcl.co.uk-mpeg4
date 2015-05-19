@@ -122,6 +122,14 @@ public:
     HRESULT GetMediaType(int iPosition, CMediaType* pmt);
     
     // input
+	STDMETHODIMP NewSegment(REFERENCE_TIME nStartTime, REFERENCE_TIME nStopTime, DOUBLE fRate)
+	{
+		#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+			if(m_pMediaSampleTrace)
+				m_pMediaSampleTrace->RegisterNewSegment((IBaseFilter*) m_pFilter, (USHORT*) Name(), nStartTime, nStopTime, fRate, NULL);
+		#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+		return __super::NewSegment(nStartTime, nStopTime, fRate);
+	}
     STDMETHODIMP Receive(IMediaSample* pSample);
     STDMETHODIMP EndOfStream();
     STDMETHODIMP BeginFlush();
@@ -161,6 +169,10 @@ private:
 
 	ContigBuffer m_CopyBuffer;
 	Suballocator* m_pCopyAlloc;
+
+	#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+		QzCComPtr<AlaxInfoDirectShowSpy::IMediaSampleTrace> m_pMediaSampleTrace;
+	#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
 };
 
 

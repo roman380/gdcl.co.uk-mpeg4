@@ -760,6 +760,17 @@ DemuxOutputPin::Active()
     HRESULT hr = CBaseOutputPin::Active();
     if (SUCCEEDED(hr) && IsConnected())
     {
+		#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+			if(!m_pMediaSampleTrace)
+			{
+				ASSERT(m_pFilter && m_pFilter->GetFilterGraph());
+				QzCComPtr<AlaxInfoDirectShowSpy::ISpy> pSpy;
+				m_pFilter->GetFilterGraph()->QueryInterface(__uuidof(AlaxInfoDirectShowSpy::ISpy), (VOID**) &pSpy);
+				if(pSpy)
+					pSpy->CreateMediaSampleTrace(&m_pMediaSampleTrace);
+			}
+		#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+
         StartThread();
     }
     return hr;
@@ -795,6 +806,12 @@ DemuxOutputPin::ThreadProc()
 		REFERENCE_TIME tStart, tStop;
 		double dRate;
 		m_pParser->GetSeekingParams(&tStart, &tStop, &dRate);
+
+		#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+			if(m_pMediaSampleTrace)
+				m_pMediaSampleTrace->RegisterNewSegment((IBaseFilter*) m_pFilter, (USHORT*) Name(), tStart, tStop, dRate, NULL);
+		#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+
 		DeliverNewSegment(tStart, tStop, dRate);
 
 		m_tLate = 0;
@@ -992,6 +1009,21 @@ DemuxOutputPin::ThreadProc()
 						_stprintf(pszText, _T("%hs: tSampleStart %d ms, IsSyncPoint() %d, IsPreroll() %d\n"), __FUNCTION__, (LONG) (tSampleStart / 10000i64), pSample->IsSyncPoint() == S_OK, pSample->IsPreroll() == S_OK);
 						OutputDebugString(pszText);
 					#endif // defined(TRACE_SEEK)
+
+					#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+						if(m_pMediaSampleTrace)
+						{
+							QzCComPtr<IMediaSample2> pMediaSample2;
+							pSample->QueryInterface(__uuidof(IMediaSample2), (VOID**) &pMediaSample2);
+							if(pMediaSample2)
+							{
+								AM_SAMPLE2_PROPERTIES Properties = { sizeof Properties };
+								pMediaSample2->GetProperties(sizeof Properties, (BYTE*) &Properties);
+								m_pMediaSampleTrace->RegisterMediaSample((IBaseFilter*) m_pFilter, (USHORT*) Name(), (BYTE*) &Properties, NULL);
+							}
+						}
+					#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+
 					Deliver(pSample);
 				}
 			}

@@ -377,6 +377,20 @@ MuxInput::Receive(IMediaSample* pSample)
 		}
 	#endif // defined(_DEBUG)
 
+	#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+		if(m_pMediaSampleTrace)
+		{
+			QzCComPtr<IMediaSample2> pMediaSample2;
+			pSample->QueryInterface(__uuidof(IMediaSample2), (VOID**) &pMediaSample2);
+			if(pMediaSample2)
+			{
+				AM_SAMPLE2_PROPERTIES Properties = { sizeof Properties };
+				pMediaSample2->GetProperties(sizeof Properties, (BYTE*) &Properties);
+				m_pMediaSampleTrace->RegisterMediaSample((IBaseFilter*) m_pFilter, (USHORT*) Name(), (BYTE*) &Properties, NULL);
+			}
+		}
+	#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+
     HRESULT hr = CBaseInputPin::Receive(pSample);
     if (hr != S_OK)
     {
@@ -452,6 +466,11 @@ MuxInput::EndOfStream()
 		OutputDebugStringA(pszText);
 	#endif // defined(_DEBUG)
 
+	#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+		if(m_pMediaSampleTrace)
+			m_pMediaSampleTrace->RegisterEndOfStream((IBaseFilter*) m_pFilter, (USHORT*) Name(), NULL);
+	#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+
     if ((m_pTrack != NULL) && (m_pTrack->OnEOS()))
     {
         // we are the last -- can forward now
@@ -463,6 +482,11 @@ MuxInput::EndOfStream()
 STDMETHODIMP 
 MuxInput::BeginFlush()
 {
+	#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+		if(m_pMediaSampleTrace)
+			m_pMediaSampleTrace->RegisterComment((IBaseFilter*) m_pFilter, (USHORT*) Name(), (USHORT*) L"Begin Flush");
+	#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+
     // ensure no more data accepted, and queued
     // data is discarded, so no threads are blocking
     if (m_pTrack)
@@ -475,6 +499,11 @@ MuxInput::BeginFlush()
 STDMETHODIMP 
 MuxInput::EndFlush()
 {
+	#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+		if(m_pMediaSampleTrace)
+			m_pMediaSampleTrace->RegisterComment((IBaseFilter*) m_pFilter, (USHORT*) Name(), (USHORT*) L"End Flush");
+	#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+
     // we don't re-enable writing -- we support only
     // one contiguous sequence in a file.
     return S_OK;
@@ -486,13 +515,24 @@ MuxInput::Active()
     HRESULT hr = CBaseInputPin::Active();
     if (SUCCEEDED(hr))
     {
+		#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+			if(!m_pMediaSampleTrace)
+			{
+				ASSERT(m_pFilter && m_pFilter->GetFilterGraph());
+				QzCComPtr<AlaxInfoDirectShowSpy::ISpy> pSpy;
+				m_pFilter->GetFilterGraph()->QueryInterface(__uuidof(AlaxInfoDirectShowSpy::ISpy), (VOID**) &pSpy);
+				if(pSpy)
+					pSpy->CreateMediaSampleTrace(&m_pMediaSampleTrace);
+			}
+		#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+
 		if (m_pCopyAlloc)
 		{
 			m_CopyBuffer.ResetAbort();
 		}
 
         m_pTrack = m_pMux->MakeTrack(m_index, &m_mt);
-    }
+	}
     return hr;
 }
 
