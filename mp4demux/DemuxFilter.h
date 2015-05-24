@@ -159,7 +159,7 @@ public:
 	{
 		#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
 			if(m_pMediaSampleTrace)
-				m_pMediaSampleTrace->RegisterEndOfStream((IBaseFilter*) m_pFilter, (USHORT*) Name(), NULL);
+				m_pMediaSampleTrace->RegisterEndOfStream((IBaseFilter*) m_pFilter, (USHORT*) Name(), NULL, 0);
 		#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
 
 		return __super::DeliverEndOfStream();
@@ -168,7 +168,7 @@ public:
 	{
 		#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
 			if(m_pMediaSampleTrace)
-				m_pMediaSampleTrace->RegisterComment((IBaseFilter*) m_pFilter, (USHORT*) Name(), (USHORT*) L"Begin Flush");
+				m_pMediaSampleTrace->RegisterComment((IBaseFilter*) m_pFilter, (USHORT*) Name(), (USHORT*) L"Begin Flush", 0);
 		#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
 
 		return __super::DeliverBeginFlush();
@@ -177,7 +177,7 @@ public:
 	{
 		#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
 			if(m_pMediaSampleTrace)
-				m_pMediaSampleTrace->RegisterComment((IBaseFilter*) m_pFilter, (USHORT*) Name(), (USHORT*) L"End Flush");
+				m_pMediaSampleTrace->RegisterComment((IBaseFilter*) m_pFilter, (USHORT*) Name(), (USHORT*) L"End Flush", 0);
 		#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
 
 		return __super::DeliverEndFlush();

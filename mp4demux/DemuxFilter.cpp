@@ -809,7 +809,7 @@ DemuxOutputPin::ThreadProc()
 
 		#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
 			if(m_pMediaSampleTrace)
-				m_pMediaSampleTrace->RegisterNewSegment((IBaseFilter*) m_pFilter, (USHORT*) Name(), tStart, tStop, dRate, NULL);
+				m_pMediaSampleTrace->RegisterNewSegment((IBaseFilter*) m_pFilter, (USHORT*) Name(), tStart, tStop, dRate, NULL, 0);
 		#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
 
 		DeliverNewSegment(tStart, tStop, dRate);
@@ -1019,7 +1019,7 @@ DemuxOutputPin::ThreadProc()
 							{
 								AM_SAMPLE2_PROPERTIES Properties = { sizeof Properties };
 								pMediaSample2->GetProperties(sizeof Properties, (BYTE*) &Properties);
-								m_pMediaSampleTrace->RegisterMediaSample((IBaseFilter*) m_pFilter, (USHORT*) Name(), (BYTE*) &Properties, NULL);
+								m_pMediaSampleTrace->RegisterMediaSample((IBaseFilter*) m_pFilter, (USHORT*) Name(), (BYTE*) &Properties, NULL, 0);
 							}
 						}
 					#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)

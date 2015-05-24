@@ -386,7 +386,7 @@ MuxInput::Receive(IMediaSample* pSample)
 			{
 				AM_SAMPLE2_PROPERTIES Properties = { sizeof Properties };
 				pMediaSample2->GetProperties(sizeof Properties, (BYTE*) &Properties);
-				m_pMediaSampleTrace->RegisterMediaSample((IBaseFilter*) m_pFilter, (USHORT*) Name(), (BYTE*) &Properties, NULL);
+				m_pMediaSampleTrace->RegisterMediaSample((IBaseFilter*) m_pFilter, (USHORT*) Name(), (BYTE*) &Properties, NULL, 0);
 			}
 		}
 	#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
@@ -468,7 +468,7 @@ MuxInput::EndOfStream()
 
 	#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
 		if(m_pMediaSampleTrace)
-			m_pMediaSampleTrace->RegisterEndOfStream((IBaseFilter*) m_pFilter, (USHORT*) Name(), NULL);
+			m_pMediaSampleTrace->RegisterEndOfStream((IBaseFilter*) m_pFilter, (USHORT*) Name(), NULL, 0);
 	#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
 
     if ((m_pTrack != NULL) && (m_pTrack->OnEOS()))
@@ -484,7 +484,7 @@ MuxInput::BeginFlush()
 {
 	#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
 		if(m_pMediaSampleTrace)
-			m_pMediaSampleTrace->RegisterComment((IBaseFilter*) m_pFilter, (USHORT*) Name(), (USHORT*) L"Begin Flush");
+			m_pMediaSampleTrace->RegisterComment((IBaseFilter*) m_pFilter, (USHORT*) Name(), (USHORT*) L"Begin Flush", 0);
 	#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
 
     // ensure no more data accepted, and queued
@@ -501,7 +501,7 @@ MuxInput::EndFlush()
 {
 	#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
 		if(m_pMediaSampleTrace)
-			m_pMediaSampleTrace->RegisterComment((IBaseFilter*) m_pFilter, (USHORT*) Name(), (USHORT*) L"End Flush");
+			m_pMediaSampleTrace->RegisterComment((IBaseFilter*) m_pFilter, (USHORT*) Name(), (USHORT*) L"End Flush", 0);
 	#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
 
     // we don't re-enable writing -- we support only

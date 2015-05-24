@@ -126,7 +126,7 @@ public:
 	{
 		#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
 			if(m_pMediaSampleTrace)
-				m_pMediaSampleTrace->RegisterNewSegment((IBaseFilter*) m_pFilter, (USHORT*) Name(), nStartTime, nStopTime, fRate, NULL);
+				m_pMediaSampleTrace->RegisterNewSegment((IBaseFilter*) m_pFilter, (USHORT*) Name(), nStartTime, nStopTime, fRate, NULL, 0);
 		#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
 		return __super::NewSegment(nStartTime, nStopTime, fRate);
 	}
