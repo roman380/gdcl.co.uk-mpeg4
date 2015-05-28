@@ -519,10 +519,18 @@ MuxInput::Active()
 			if(!m_pMediaSampleTrace)
 			{
 				ASSERT(m_pFilter && m_pFilter->GetFilterGraph());
+				ASSERT(m_pFilter && m_pFilter->GetFilterGraph());
+				QzCComPtr<AlaxInfoDirectShowSpy::IModuleVersionInformation> pModuleVersionInformation;
 				QzCComPtr<AlaxInfoDirectShowSpy::ISpy> pSpy;
+				m_pFilter->GetFilterGraph()->QueryInterface(__uuidof(AlaxInfoDirectShowSpy::IModuleVersionInformation), (VOID**) &pModuleVersionInformation);
 				m_pFilter->GetFilterGraph()->QueryInterface(__uuidof(AlaxInfoDirectShowSpy::ISpy), (VOID**) &pSpy);
-				if(pSpy)
-					pSpy->CreateMediaSampleTrace(&m_pMediaSampleTrace);
+				if(pModuleVersionInformation && pSpy)
+				{
+					LONGLONG nFileVersion = 0;
+					pModuleVersionInformation->get_FileVersion(&nFileVersion);
+					if(nFileVersion >= ((1i64 << 48) + 1875)) // 1.0.0.1875+
+						pSpy->CreateMediaSampleTrace(&m_pMediaSampleTrace);
+				}
 			}
 		#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
 
