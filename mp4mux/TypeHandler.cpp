@@ -7,12 +7,19 @@
 //////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
-#include "MovieWriter.h"
 #include <dvdmedia.h>
 #include <mmreg.h>  // for a-law and u-law G.711 audio types
-
+#include <wmcodecdsp.h> // MEDIASUBTYPE_DOLBY_DDPLUS
+#include <ks.h>
+#include <ksmedia.h> // FORMAT_UVCH264Video
+#include "MovieWriter.h"
 #include "nalunit.h"
 #include "ParseBuffer.h"
+#include "Bitstream.h"
+#include "logger.h"
+
+#pragma comment(lib, "wmcodecdspuuid.lib")
+#pragma comment(lib, "strmiids.lib")
 
 void WriteVariable(ULONG val, BYTE* pDest, int cBytes)
 {
@@ -288,20 +295,161 @@ private:
     CMediaType m_mt;
 };
 
+///////////////////////////////////////////////////////////////////////////////
+// MPEG-2 Video and Audio support
 
-// -----------------------------------------------------------------------------------------
+class MPEG2VideoHandler : public TypeHandler
+{
+public:
+    MPEG2VideoHandler(const CMediaType* pmt) : m_mt(*pmt) {}
 
-const int WAVE_FORMAT_AAC = 0x00ff;
-const int WAVE_FORMAT_AACEncoder = 0x1234;
+    DWORD Handler()				{ return 'vide'; }
+    void WriteTREF(Atom* patm)	{ UNREFERENCED_PARAMETER(patm); }
+    bool IsVideo()				{ return true;	 }
+    bool IsAudio()				{ return false;  }
+	long SampleRate()			{ return 30;	 } // TODO: value???
+    long Scale()				{ return 90000;  }
+	long Width();
+	long Height();
+
+    void WriteDescriptor(Atom* patm, int id, int dataref, long scale);
+	LONGLONG FrameDuration();
+
+protected:
+    CMediaType m_mt;
+};
+
+class MPEG2AudioHandler : public TypeHandler
+{
+public:
+	MPEG2AudioHandler(const CMediaType* pmt) : m_mt(*pmt) {}
+
+    DWORD Handler()				{ return 'soun'; }
+    void WriteTREF(Atom* patm)	{ UNREFERENCED_PARAMETER(patm); }
+    bool IsVideo()				{ return false;  }
+    bool IsAudio()				{ return true;   }
+	long SampleRate()			{ return 50;	 } // TODO: value???
+	long Width()				{ return 0;		 }
+	long Height()				{ return 0;		 }
+
+	long Scale();
+    void WriteDescriptor(Atom* patm, int id, int dataref, long scale);
+
+private:
+    CMediaType m_mt;
+};
+
+///////////////////////////////////////////////////////////////////////////////
+// Dolby Digital (AC-3) support
+
+struct AC3StreamInfo
+{
+	int fscod;
+	int frmsizcod;
+	int bsid;
+	int bsmod;
+	int acmod;
+	int lfeon;
+	
+	AC3StreamInfo(void);
+	BOOL Parse(const BYTE* pData, int cbData);
+};
+
+class DolbyDigitalHandler : public TypeHandler
+{
+public:
+    DolbyDigitalHandler(const CMediaType* pmt) : 
+		m_mt(*pmt), m_bParsed(FALSE) {}
+
+    DWORD Handler()				{ return 'soun'; }
+    void WriteTREF(Atom* patm)	{ UNREFERENCED_PARAMETER(patm); }
+    bool IsVideo()				{ return false;  }
+    bool IsAudio()				{ return true;	 }
+    long SampleRate()			{ return 50;	 }  // TODO: value???
+	long Width()				{ return 0;		 }
+	long Height()				{ return 0;		 }
+
+	long Scale();
+	HRESULT WriteData(Atom* patm, const BYTE* pData, int cbData, int* pcActual);
+    void WriteDescriptor(Atom* patm, int id, int dataref, long scale);
+
+private:
+    CMediaType m_mt;
+	AC3StreamInfo m_info;
+	BOOL m_bParsed;
+};
+
+///////////////////////////////////////////////////////////////////////////////
+// Dolby Digital Plus (Enhanced AC-3) support
+
+// Table E.1: Stream type
+enum EAC3StreamTypes
+{
+	EAC3IndependentStream,
+	EAC3DependentSubtream,
+	EAC3IndependentAC3Stream,
+	EAC3ReservedStreamType
+};
+
+struct EAC3StreamInfo
+{
+	int frameSize;
+	int bitrate;
+	int strmtyp;
+	int substreamid;
+	int fscod;
+    int bsid;
+    int bsmod;
+    int acmod;
+    int lfeon;
+	int chanmap;
+
+	EAC3StreamInfo(void);
+	BOOL Parse(const BYTE* pData, int cbData);
+};
+
+typedef std::vector<EAC3StreamInfo> EAC3StreamInfoArray;
+
+class DolbyDigitalPlusHandler : public TypeHandler
+{
+public:
+    DolbyDigitalPlusHandler(const CMediaType* pmt) : m_mt(*pmt)	{}
+
+    DWORD Handler()				{ return 'soun'; }
+    void WriteTREF(Atom* patm)	{ UNREFERENCED_PARAMETER(patm); }
+    bool IsVideo()				{ return false;  }
+    bool IsAudio()				{ return true;	 }
+    long SampleRate()			{ return 50;	 }  // TODO: value???
+	long Width()				{ return 0;		 }
+	long Height()				{ return 0;		 }
+
+	long Scale();
+	HRESULT WriteData(Atom* patm, const BYTE* pData, int cbData, int* pcActual);
+    void WriteDescriptor(Atom* patm, int id, int dataref, long scale);
+
+
+private:
+	BOOL StreamInfoExists(const EAC3StreamInfo& info);
+	int GetDependentSubstreams(int substreamid, int& chan_loc);
+
+
+private:
+    CMediaType m_mt;
+	EAC3StreamInfoArray m_streams;
+};
 
 // Broadcom/Cyberlink Byte-Stream H264 subtype
 // CLSID_H264
-class DECLSPEC_UUID("8D2D71CB-243F-45E3-B2D8-5FD7967EC09B") CLSID_H264_BSF;
+class DECLSPEC_UUID("8D2D71CB-243F-45E3-B2D8-5FD7967EC09B") CLSID_H264_BSF; // AKA MEDIASUBTYPE_H264_bis (GraphStudioNext)
+
+const int WAVE_FORMAT_AAC = 0x00ff;
+const int WAVE_FORMAT_AACEncoder = 0x1234;
 
 //static 
 bool
 TypeHandler::CanSupport(const CMediaType* pmt)
 {
+	#pragma region Video
     if (*pmt->Type() == MEDIATYPE_Video)
     {
         // divx
@@ -340,7 +488,15 @@ TypeHandler::CanSupport(const CMediaType* pmt)
 			if (*pmt->FormatType() == FORMAT_MPEG2Video)
 			{
 				return true;
+			}	
+			if (*pmt->FormatType() == FORMAT_UVCH264Video)
+			{
+				return true;
 			}
+		}
+		if (*pmt->Subtype() == MEDIASUBTYPE_MPEG2_VIDEO && *pmt->FormatType() == FORMAT_MPEG2Video)
+		{
+			return true;
 		}
 
 		// uncompressed
@@ -400,7 +556,10 @@ TypeHandler::CanSupport(const CMediaType* pmt)
 				return true;
 			}
 		}
-    } else if (*pmt->Type() == MEDIATYPE_Audio)
+    } else 
+	#pragma endregion
+	#pragma region Audio
+	if (*pmt->Type() == MEDIATYPE_Audio)
     {
         // rely on format tag to identify formats -- for 
         // this, subtype adds nothing
@@ -414,14 +573,22 @@ TypeHandler::CanSupport(const CMediaType* pmt)
             {
                 return true;
             }
-
             if ((pwfx->wFormatTag == WAVE_FORMAT_PCM) ||
                 (pwfx->wFormatTag == WAVE_FORMAT_ALAW) ||
                 (pwfx->wFormatTag == WAVE_FORMAT_MULAW))
             {
                 return true;
             }
-
+			if (pwfx->wFormatTag == WAVE_FORMAT_MPEG ||				// MPEG-2 Audio
+				pwfx->wFormatTag == WAVE_FORMAT_DOLBY_AC3_SPDIF)	// Dolby AC-3 SPDIF
+            {
+                return true;
+            }
+			// Dolby Digital Plus (or E-AC3) (wFormatTag = 0)
+			if (*pmt->Subtype() == MEDIASUBTYPE_DOLBY_DDPLUS)
+			{
+				return true;
+			}
 			// Intel Media SDK uses the 0xFF- aac subtype guid, but
 			// the wFormatTag does not match
 			FOURCCMap aac(WAVE_FORMAT_AAC);
@@ -430,9 +597,9 @@ TypeHandler::CanSupport(const CMediaType* pmt)
 				return true;
 			}
         }
-    }
-	else if ((*pmt->Type() == MEDIATYPE_AUXLine21Data) &&
-		(*pmt->Subtype() == MEDIASUBTYPE_Line21_BytePair))
+    } else 
+	#pragma endregion
+	if(*pmt->Type() == MEDIATYPE_AUXLine21Data && *pmt->Subtype() == MEDIASUBTYPE_Line21_BytePair)
 	{
 		return true;
 	}
@@ -447,6 +614,7 @@ TypeHandler::Make(const CMediaType* pmt)
     {
         return NULL;
     }
+	#pragma region Video
     if (*pmt->Type() == MEDIATYPE_Video)
     {
         // divx
@@ -491,6 +659,17 @@ TypeHandler::Make(const CMediaType* pmt)
 				}
 	            return new H264Handler(pmt);
 			}
+
+			if (*pmt->FormatType() == FORMAT_UVCH264Video)
+			{
+				return new H264ByteStreamHandler(pmt);
+			}
+		}
+
+		if ((*pmt->Subtype() == MEDIASUBTYPE_MPEG2_VIDEO) &&
+			(*pmt->FormatType()	== FORMAT_MPEG2Video))
+		{
+			return new MPEG2VideoHandler(pmt);
 		}
 
 		// other: uncompressed (checked in CanSupport)
@@ -513,7 +692,10 @@ TypeHandler::Make(const CMediaType* pmt)
 			}
 		}
 
-    } else if (*pmt->Type() == MEDIATYPE_Audio)
+    } else 
+	#pragma endregion 
+	#pragma region Audio
+	if (*pmt->Type() == MEDIATYPE_Audio)
     {
         // rely on format tag to identify formats -- for 
         // this, subtype adds nothing
@@ -527,13 +709,25 @@ TypeHandler::Make(const CMediaType* pmt)
             {
                 return new AACHandler(pmt);
             }
-
             if ((pwfx->wFormatTag == WAVE_FORMAT_PCM) ||
                 (pwfx->wFormatTag == WAVE_FORMAT_ALAW) ||
                 (pwfx->wFormatTag == WAVE_FORMAT_MULAW))
             {
                 return new WaveHandler(pmt);
             }
+			if (pwfx->wFormatTag == WAVE_FORMAT_MPEG)
+			{
+				return new MPEG2AudioHandler(pmt);
+			}
+			if (pwfx->wFormatTag == WAVE_FORMAT_DOLBY_AC3_SPDIF)	// Dolby AC-3 SPDIF
+            {
+				return new DolbyDigitalHandler(pmt);
+            }
+			// (wFormatTag = 0)
+			if (*pmt->Subtype() == MEDIASUBTYPE_DOLBY_DDPLUS)
+			{
+				return new DolbyDigitalPlusHandler(pmt);
+			}
 			// Intel Media SDK uses the 0xFF- aac subtype guid, but
 			// the wFormatTag does not match
 			FOURCCMap aac(WAVE_FORMAT_AAC);
@@ -542,9 +736,9 @@ TypeHandler::Make(const CMediaType* pmt)
 				return new AACHandler(pmt);
 			}
         }
-    }
-	else if ((*pmt->Type() == MEDIATYPE_AUXLine21Data) &&
-		(*pmt->Subtype() == MEDIASUBTYPE_Line21_BytePair))
+    } else 
+	#pragma endregion 
+	if(*pmt->Type() == MEDIATYPE_AUXLine21Data && *pmt->Subtype() == MEDIASUBTYPE_Line21_BytePair)
 	{
 		return new CC608Handler(pmt);
 	}
@@ -1642,6 +1836,927 @@ WaveHandler::Truncate(IMediaSample* pSample, REFERENCE_TIME tNewStart)
 
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// MP4 bitstream helper class
+
+class MP4BitstreamWriter : public BitstreamWriter
+{
+public:
+	MP4BitstreamWriter(void) : 
+		BitstreamWriter(m_bits, sizeof(m_bits)) {}
+	
+	MP4BitstreamWriter(BYTE *pData, int cbData) : 
+		BitstreamWriter(pData, cbData) {}
+
+	//void WriteLanguage(LPCSTR pszLanguage);
+	
+	HRESULT AppendTo(Atom* pAtom, long cbLength = -1);
+	void AppendTo(Descriptor* pDesc, long cbLength = -1);
+
+
+protected:
+	BYTE m_bits[256];
+};
+	
+/*
+void MP4BitstreamWriter::WriteLanguage(LPCSTR pszLanguage)
+{
+	// Write packed ISO-639-2/T language code.
+	// http://en.wikipedia.org/wiki/List_of_ISO_639-2_codes ISO 639-2/T
+
+	// 8.4.2.2 - Media Header Box - Syntax
+	char ch;
+	int lang = 0;
+
+	for (int i = 0; i < 3; i++)
+	{
+		ch = *pszLanguage++;
+		
+		ASSERT(ch >= 'a' && ch <= 'z');
+
+		lang = (lang << 5) | (ch - 0x60);
+	}
+
+	Write16(lang);	// pad:				= 0
+					// language:5 [3]	= ISO-639-2/T language code
+}
+*/
+
+HRESULT MP4BitstreamWriter::AppendTo(Atom* pAtom, long cbLength)
+{
+	ASSERT(pAtom);
+	ASSERT(m_pBits);
+
+	if (cbLength < 0)
+		cbLength = GetByteCount();
+
+	ASSERT(cbLength <= static_cast<long>(m_cMaxBits >> 3));
+	return pAtom->Append(m_pBits, cbLength);
+}
+
+void MP4BitstreamWriter::AppendTo(Descriptor* pDesc, long cbLength)
+{
+	ASSERT(pDesc);
+	ASSERT(m_pBits);
+
+	if (cbLength < 0)
+		cbLength = GetByteCount();
+
+	ASSERT(cbLength <= static_cast<long>(m_cMaxBits >> 3));
+	pDesc->Append(m_pBits, cbLength);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// MPEG-2 Video support
+
+LONGLONG MPEG2VideoHandler::FrameDuration()
+{
+	MPEG2VIDEOINFO* pvi = reinterpret_cast<MPEG2VIDEOINFO*>(m_mt.Format());
+	return pvi->hdr.AvgTimePerFrame;
+}
+
+long MPEG2VideoHandler::Width()
+{
+	MPEG2VIDEOINFO* pvi = reinterpret_cast<MPEG2VIDEOINFO*>(m_mt.Format());
+	return pvi->hdr.bmiHeader.biWidth;
+}
+
+long MPEG2VideoHandler::Height()
+{
+	MPEG2VIDEOINFO* pvi = reinterpret_cast<MPEG2VIDEOINFO*>(m_mt.Format());
+	return abs(pvi->hdr.bmiHeader.biHeight);
+}
+
+// ISO/IEC 14496-1 - Table 8-5: objectProfileIndication Values
+// See also: http://www.mp4ra.org/object.html
+
+int GetMPEG2VideoObjectTypeId(MPEG2VIDEOINFO* pvi)
+{
+	static const struct tagMPEG2ProfileToOID
+	{
+		int objectTypeIdentifier;
+		DWORD dwProfile;
+	}
+	aProfileToOidMap[] =
+	{
+		0x60, AM_MPEG2Profile_Simple,				// Visual ISO/IEC 13818-2 Simple Profile
+		0x61, AM_MPEG2Profile_Main,					// Visual ISO/IEC 13818-2 Main Profile
+		0x62, AM_MPEG2Profile_SNRScalable,			// Visual ISO/IEC 13818-2 SNR Profile
+		0x63, AM_MPEG2Profile_SpatiallyScalable,	// Visual ISO/IEC 13818-2 Spatial Profile
+		0x64, AM_MPEG2Profile_High,					// Visual ISO/IEC 13818-2 High Profile
+		//0x65, n/a,								// Visual ISO/IEC 13818-2 422 Profile 
+	};
+
+	if (pvi)
+	{
+		for (size_t i = 0; i < _countof(aProfileToOidMap); i++)
+		{
+			if (pvi->dwProfile == aProfileToOidMap[i].dwProfile)
+			{
+				return aProfileToOidMap[i].objectTypeIdentifier;
+			}
+		}
+	}
+
+	return 0;
+}
+
+void MPEG2VideoHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
+{
+    UNREFERENCED_PARAMETER(scale);
+
+	MPEG2VIDEOINFO* pvi = reinterpret_cast<MPEG2VIDEOINFO*>(m_mt.Format());
+    int width = pvi->hdr.bmiHeader.biWidth;
+    int height = abs(pvi->hdr.bmiHeader.biHeight);
+
+	// SampleEntry
+	// ISO/IEC 14496-12 - 8.5.2.2 - Syntax
+	MP4BitstreamWriter bsw;
+	bsw.ReserveBytes(6);						//  0- 5: reserved:8 [6]		= 0
+	bsw.Write16(static_cast<short>(dataref));	//  6- 7: data-reference-index:16
+
+	// VisualSampleEntry
+	// ISO/IEC 14496-12 - 8.5.2.2 - Syntax
+	bsw.Write16(0);								//  8- 9: pre_defined:16		= 0
+	bsw.Write16(0);								// 10-11: reserved:16			= 0
+	bsw.ReserveBytes(12);						// 12-23: pre_defined:32 [3]	= 0
+    bsw.Write16(static_cast<short>(width));		// 24-25: width:16
+    bsw.Write16(static_cast<short>(height));	// 26-27: height:16
+    bsw.Write32(0x00480000);					// 28-31: horizresolution:32	= 0x00480000 (72dpi)
+    bsw.Write32(0x00480000);					// 32-35: vertresolution:32		= 0x00480000 (72dpi)
+	bsw.Write32(0);								// 36-39: reserved:32			= 0
+    bsw.Write16(1);								// 40-41: Frames count:16		= 1
+	bsw.ReserveBytes(32);						// 42-73: compressorname:8 [32] = 0
+    bsw.Write16(0x0018);						// 74-75: depth:16				= 0x0018 (24bpp)
+    bsw.Write16(-1);							// 76-77: pre_defined:16		= -1
+
+	// MP4VisualSampleEntry
+	// ISO/IEC 14496-14 - 5.6.1 - Syntax
+    smart_ptr<Atom> psd = patm->CreateAtom('mp4v');
+	bsw.AppendTo(psd);
+
+	// ESDescriptor Box
+	smart_ptr<Atom> pesd = psd->CreateAtom('esds');
+	bsw.Rewind();
+	bsw.Write32(0);								//  0- 1: version:8				= 0
+												//  1- 3: flags:24				= 0
+	bsw.AppendTo(pesd);
+
+	// ISO/IEC 14496-1 - 8.3.3 - ES_Descriptor
+	// TODO: MPEG-4 ESDescriptor
+    Descriptor es(Descriptor::ES_Desc);
+	bsw.Rewind();
+	bsw.Write16(static_cast<short>(id));		// ES_ID: 16					= Track Id
+    bsw.Write8(0);								// flags:8
+												//		streamDependenceFlag:1	= 0
+												//		URL_Flag:1				= 0
+												//		OCRstreamFlag:1			= 0
+												//		streamPriority:5		= 0
+    bsw.AppendTo(&es);
+
+	// DecoderConfigDescriptor
+	// ISO/IEC 14496-1 - 8.3.4 - DecoderConfigDescriptor 
+    Descriptor dcfg(Descriptor::Decoder_Config);
+	BYTE oid = static_cast<BYTE>(GetMPEG2VideoObjectTypeId(pvi));
+	bsw.Rewind();
+	bsw.Write8(oid);							// objectProfileIndication:8
+	bsw.Write(0x04, 6);							// streamType:6		= 0x04 (VisualStream)
+	bsw.Write(1, 2);							// upStream:1		= 0
+												// reserved:1		= 1
+    bsw.Write24(0x100000);						// bufferSizeDB:24	= 0x100000 (1024 * 1024)???
+    bsw.Write32(0x7fffffff);					// maxBitRate:32
+    bsw.Write32(0);								// avgBitRate:32	= 0 (variable)
+    bsw.AppendTo(&dcfg);
+
+	// TODO: remove sequence headers from media samples see ISO/IEC 14496-14 (just before 5.6.1 Syntax)
+	// ISO/IEC 14496-1 - 8.3.5 - DecoderSpecificInfo
+	if (pvi->cbSequenceHeader > 0)
+	{
+		Descriptor dsi(Descriptor::Decoder_Specific_Info);
+		BYTE *pExtra = reinterpret_cast<BYTE*>(&pvi->dwSequenceHeader);
+		dsi.Append(pExtra, pvi->cbSequenceHeader);
+		dcfg.Append(&dsi);
+	}
+
+    es.Append(&dcfg);
+    
+	// SLConfigDescriptor (mandatory)
+	// ISO/IEC 14496-1 - 8.3.6 - SLConfigDescriptor
+	// ISO/IEC 14496-1 - 10.2.3 SL Packet Header Configuration
+	Descriptor sl(Descriptor::SL_Config);
+	bsw.Rewind();
+	bsw.Write8(2);								// predefined:8		= 2
+	//bsw.Write8(0x7F);							// OCRstreamFlag:1	= 0
+												// reserved:7		= 0b1111.111 (0x7F) TODO: ????
+	bsw.AppendTo(&sl);
+    
+	es.Append(&sl);
+	es.Write(pesd);
+	
+	pesd->Close();
+    psd->Close();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// MPEG-2 Audio support
+
+long MPEG2AudioHandler::Scale()
+{
+    // for audio, the scale should be the sampling rate but
+    // must not exceed 65535
+	WAVEFORMATEX* pwfx = reinterpret_cast<WAVEFORMATEX*>(m_mt.Format());
+    if (pwfx->nSamplesPerSec > 65535)
+    {
+        return 45000;
+    }
+    else
+    {
+        return pwfx->nSamplesPerSec;
+    }
+}
+
+
+// ISO/IEC 14496-1 - Table 8-5: objectProfileIndication Values
+// See also: http://www.mp4ra.org/object.html
+
+int GetMPEG2AudioObjectTypeId(WAVEFORMATEX* pwfx)
+{
+	ASSERT(pwfx);
+
+	if (pwfx != NULL && pwfx->wFormatTag == WAVE_FORMAT_MPEG)
+	{
+		MPEG1WAVEFORMAT *pmwf = reinterpret_cast<MPEG1WAVEFORMAT*>(pwfx);
+
+		// TODO: is this reliable enough?
+		if (pmwf->fwHeadFlags & ACM_MPEG_ID_MPEG1)
+		{
+			return 0x6B; // Audio ISO/IEC 11172-3
+		}
+		else
+		{
+			return 0x69; // Audio ISO/IEC 13818-3
+		}
+	}
+
+	return 0;
+}
+
+void MPEG2AudioHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
+{
+	WAVEFORMATEX* pwfx = reinterpret_cast<WAVEFORMATEX*>(m_mt.Format());
+
+	// SampleEntry
+	// ISO/IEC 14496-12 - 8.5.2.2 - Syntax
+	MP4BitstreamWriter bsw;
+	bsw.ReserveBytes(6);						//  0- 5: reserved:8 [6]		= 0
+	bsw.Write16(static_cast<short>(dataref));	//  6- 7: data-reference-index:16
+
+	// AudioSampleEntry
+	// ISO/IEC 14496-12 - 8.5.2.2 - Syntax
+	bsw.ReserveBytes(8);						//  8-15: reserved:32 [2]		= 0;
+	bsw.Write16(pwfx->nChannels);				// 16-17: channelcount:16		= 2
+												// 18-19: samplesize:16			= 16
+	bsw.Write16(pwfx->wBitsPerSample ? pwfx->wBitsPerSample : 16);
+	bsw.Write32(0);								// 20-21: pre_defined:16		= 0
+												// 22-23: reserved:16			= 0
+	bsw.Write32(scale << 16);					// 24-27: samplerate:32			= { default samplerate of media} << 16
+	//bsw.Write32(pwfx->nSamplesPerSec << 16);
+	
+	
+	// MP4AudioSampleEntry
+	// ISO/IEC 14496-14 - 5.6.1 - Syntax
+    smart_ptr<Atom> psd = patm->CreateAtom('mp4a');
+	bsw.AppendTo(psd);
+
+	// ES_Descr box
+	smart_ptr<Atom> pesd = psd->CreateAtom('esds');
+	bsw.Rewind();
+	bsw.Write32(0);								//  0   : version:8				= 0
+												//  1- 3: flags:24				= 0
+	bsw.AppendTo(pesd);
+
+	// ES_Descr
+    Descriptor es(Descriptor::ES_Desc);
+	bsw.Rewind();
+	bsw.Write16(static_cast<short>(id));		// ES_ID: 16					= Track Id
+    bsw.Write8(0);								// flags:8
+												//		streamDependenceFlag:1	= 0
+												//		URL_Flag:1				= 0
+												//		reserved:1				= 1 or OCRstreamFlag=0??? TODO: ???
+												//		streamPriority:5		= 0
+    bsw.AppendTo(&es);
+
+	// DecoderConfigDescriptor
+	// ISO/IEC 14496-1 - 8.3.4 - DecoderConfigDescriptor 
+    Descriptor dcfg(Descriptor::Decoder_Config);
+	BYTE oid = static_cast<BYTE>(GetMPEG2AudioObjectTypeId(pwfx));
+	bsw.Rewind();
+	bsw.Write8(oid);							// objectProfileIndication:8
+	bsw.Write(0x05, 6);							// streamType:6		= 0x05 (AudioStream)
+	bsw.Write(1, 2);							// upStream:1		= 0
+												// reserved:1		= 1
+    bsw.Write24(0x003A98);						// bufferSizeDB:24	= 0x003A98 (15000), TODO: ???
+    bsw.Write32(1500000);						// maxBitRate:32
+    bsw.Write32(0);								// avgBitRate:32	= 0 (variable)
+    bsw.AppendTo(&dcfg);
+
+	// TODO: ???? ISO/IEC 14496-1 - 8.3.5 - DecoderSpecificInfo
+////////////
+// 
+/*
+	if (pwfx != NULL && pwfx->wFormatTag == WAVE_FORMAT_MPEG)
+	{
+		MPEG1WAVEFORMAT *pmwf = reinterpret_cast<MPEG1WAVEFORMAT*>(pwfx);
+		Descriptor dsi(Descriptor::Decoder_Specific_Info);
+		bsw.Rewind();
+		bsw.Write16(pmwf->fwHeadLayer);
+		bsw.Write32(pmwf->dwHeadBitRate);
+		bsw.Write16(pmwf->fwHeadMode);
+		bsw.Write16(pmwf->fwHeadModeExt);
+		bsw.Write16(pmwf->wHeadEmphasis);
+		bsw.Write16(pmwf->fwHeadFlags);
+		bsw.Write32(pmwf->dwPTSLow);
+		bsw.Write32(pmwf->dwPTSHigh);
+		bsw.AppendTo(&dsi);
+		dcfg.Append(&dsi);
+	}
+*/
+/*
+    long cExtra = m_mt.FormatLength() - sizeof(WAVEFORMATEX);
+
+	if (cExtra > 0)
+    {
+		Descriptor dsi(Descriptor::Decoder_Specific_Info);
+		BYTE* pExtra = m_mt.Format() + sizeof(WAVEFORMATEX);
+        dsi.Append(pExtra, cExtra);
+		dcfg.Append(&dsi);
+	}
+*/
+/*
+	Descriptor dsi(Descriptor::Decoder_Specific_Info);
+	int cbSize = pwfx->cbSize + sizeof(WAVEFORMATEX);
+	dsi.Append(reinterpret_cast<const BYTE*>(pwfx), cbSize);
+	dcfg.Append(&dsi);
+*/
+	es.Append(&dcfg);
+    
+	// ISO/IEC 14496-1 - 8.3.6 - SLConfigDescriptor
+	// ISO/IEC 14496-1 - 10.2.3 SL Packet Header Configuration
+	Descriptor sl(Descriptor::SL_Config);
+	bsw.Rewind();
+	bsw.Write8(2);								// predefined:8		= 2
+	//bsw.Write8(0x7F);							// OCRstreamFlag:1	= 0 TODO: ???
+												// reserved:7		= 0b1111.111 (0x7F) TODO: ????
+	bsw.AppendTo(&sl);
+
+    es.Append(&sl);
+    es.Write(pesd);
+    
+	pesd->Close();
+    psd->Close();
+}
+	
+///////////////////////////////////////////////////////////////////////////////
+// Dolby Digital (AC-3) Audio support
+// ETSI TS 102 366: Digital Audio Compression (AC-3, Enhanced AC-3) Standard
+// http://www.etsi.org/deliver/etsi_ts/102300_102399/102366/01.02.01_60/ts_102366v010201p.pdf
+
+class DolbyBitstreamReader : public BitstreamReader
+{
+public:
+	DolbyBitstreamReader(const BYTE* pData, int cbData) :
+		BitstreamReader(pData, cbData) {}
+
+	BOOL IsSyncword(void);
+};
+
+BOOL DolbyBitstreamReader::IsSyncword(void)
+{
+	m_bBigEndian = TRUE; // Force BE by default.
+
+	// 4.3.1 - syncinfo - Synchronization information
+	int syncword = Read16();
+
+	if (syncword == 0x0B77)
+	{
+		// Big Endian stream.
+		return TRUE;
+	}
+
+	if (syncword == 0x770B)
+	{
+		// Little Endian stream.
+		m_bBigEndian = FALSE;
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
+AC3StreamInfo::AC3StreamInfo(void) :
+	fscod(0), 
+	frmsizcod(0),
+	bsid(0),
+	bsmod(0),
+	acmod(0),
+	lfeon(0)
+{
+}
+
+BOOL AC3StreamInfo::Parse(const BYTE* pData, int cbData)
+{
+	// Retrieve some required information from the stream.
+	DolbyBitstreamReader bsr(pData, cbData);
+
+	// 4.3.1 - syncinfo - Synchronization information
+	if (!bsr.IsSyncword())			// syncword:16 = 0x0B77
+		return FALSE;
+
+	bsr.Skip(16);					// crc1:16
+
+	fscod = bsr.Read(2);			// fscod:2 - Sampling rate: 00=48K, 01=44.1K, 10=32K, 11=reserved
+
+	if (fscod == 0x3)
+		return FALSE;
+
+	frmsizcod = bsr.Read(6);		// frmsizecod:6 - # of words before next syncword (see Table 4.13).
+
+	
+	// 4.3.2 - bsi - Bit stream information
+	bsid  = bsr.Read(5);			// bsid:5  - Bit stream identification
+	bsmod = bsr.Read(3);			// bsmod:3 - Bit stream mode
+	acmod = bsr.Read(3);			// acmod:3 - Audio coding mode
+
+	// if 3 front channels, read {cmixlev}
+	if ((acmod & 0x1) && (acmod != 0x1)) 
+	{
+		bsr.Skip(2);
+	}
+
+	// if a surround channel exists, read {surmixlev}
+	if (acmod & 0x4)
+	{
+		bsr.Skip(2);
+	}
+
+	// if in 2/0 mode, read {dsurmod}
+	if (acmod == 0x2) 
+	{
+		bsr.Skip(2);
+	}
+
+	lfeon = bsr.Read(1);
+
+	return TRUE;
+}
+
+long DolbyDigitalHandler::Scale()
+{
+    // for audio, the scale should be the sampling rate but
+    // must not exceed 65535
+	WAVEFORMATEX* pwfx = reinterpret_cast<WAVEFORMATEX*>(m_mt.Format());
+    if (pwfx->nSamplesPerSec > 65535)
+    {
+        return 45000;
+    }
+    else
+    {
+        return pwfx->nSamplesPerSec;
+    }
+}
+
+HRESULT DolbyDigitalHandler::WriteData(Atom* patm, const BYTE* pData, int cbData, int* pcActual)
+{
+	if (!m_bParsed)
+	{
+		if (!m_info.Parse(pData, cbData))
+		{
+			return E_INVALIDARG;
+		}
+
+		m_bParsed = TRUE;
+	}
+
+	return __super::WriteData(patm, pData, cbData, pcActual);
+}
+
+void DolbyDigitalHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
+{
+	UNREFERENCED_PARAMETER(id); // TODO: not used???
+
+	// ETSI TS 102 366 - Annex F
+	// AC-3 and Enhanced AC-3 Bitstream Storage in the ISO Base Media File Format
+
+	// F.3 - AC3SampleEntry Box
+	MP4BitstreamWriter bsw;
+	bsw.ReserveBytes(6);						//  0- 5: reserved:8 [6]		= 0
+	bsw.Write16(static_cast<short>(dataref));	//  6- 7: data-reference-index:16
+
+	bsw.ReserveBytes(8);						//  8-15: reserved				= 0	   
+	bsw.Write16(2);								// 16-17: channel count			= 2  (ignored)
+	bsw.Write16(16);							// 18-19: bits per sample		= 16 (ignored)
+    bsw.Write32(0);								// 20-23: reserved				= 0
+    bsw.Write16(static_cast<short>(scale));		// 24-25: sample rate
+	bsw.Write16(0);								// 26-27: reserved				= 0	   
+	
+    smart_ptr<Atom> psd = patm->CreateAtom('ac-3');
+	bsw.AppendTo(psd);
+
+	
+	// F.4 - AC3SpecificBox
+	bsw.Rewind();
+	bsw.Write(m_info.fscod, 2);
+	bsw.Write(m_info.bsid,  5);
+	bsw.Write(m_info.bsmod, 3);
+	bsw.Write(m_info.acmod, 3);
+	bsw.Write(m_info.lfeon, 1);
+	bsw.Write(m_info.frmsizcod / 2, 5);			// see Table F.1: bit_rate_code
+	bsw.Reserve(5);
+
+	smart_ptr<Atom> pdac3 = psd->CreateAtom('dac3');
+	bsw.AppendTo(pdac3);
+
+	pdac3->Close();
+    psd->Close();
+}
+	
+
+///////////////////////////////////////////////////////////////////////////////
+// Dolby Dolby Digital Plus Audio support
+// ETSI TS 102 366: Digital Audio Compression (AC-3, Enhanced AC-3) Standard
+// http://www.etsi.org/deliver/etsi_ts/102300_102399/102366/01.02.01_60/ts_102366v010201p.pdf
+
+EAC3StreamInfo::EAC3StreamInfo(void) :
+	frameSize(0),
+	bitrate(0),
+	strmtyp(0),
+	substreamid(0),
+	fscod(0),
+    bsid(0),
+    bsmod(0),
+    acmod(0),
+    lfeon(0),
+	chanmap(0)
+{
+}
+
+BOOL EAC3StreamInfo::Parse(const BYTE* pData, int cbData)
+{
+	// Table E.3: Number of audio blocks per syncframe
+	static const int aAudBlkPerSyncFrame[]	 = { 1, 2, 3, 6 };
+	
+	// Table E.2: Sample rate codes
+	static const int aSamplingRates[]		 = { 48000, 44100, 32000, 0 };
+
+	// Table E.4: Reduced sampling rates
+	static const int aReducedSamplingRates[] = { 24000, 22050, 16000, 0 };
+
+
+	// Retrieve some required information from the stream.
+	DolbyBitstreamReader bsr(pData, cbData);
+
+	// 4.3.1 - syncinfo - Synchronization information
+	if (!bsr.IsSyncword())						// syncword:16 = 0x0B77
+		return FALSE;
+
+	
+	// E.1.2.2 - bsi - Bit stream information
+	int frmsiz;
+	int fscod2;
+    int numblkscod;
+	int samplerate;
+	int numberOfBlocksPerSyncFrame;
+
+	strmtyp		= bsr.Read(2);
+    substreamid	= bsr.Read(3);
+    frmsiz		= bsr.Read(11);					// Frame size one less of 16-bit words
+    fscod		= bsr.Read(2);
+    
+	if (fscod == 0x3) 
+	{
+        fscod2	   = bsr.Read(2);
+        numblkscod = 0x3;						// six blocks per frame
+		samplerate = aReducedSamplingRates[fscod2];
+    } 
+	else 
+	{
+        numblkscod = bsr.Read(2);
+		samplerate = aSamplingRates[fscod];
+    }
+
+    if (samplerate == 0)
+        return FALSE;
+
+	// words_per_frame = frmsiz + 1
+	numberOfBlocksPerSyncFrame = aAudBlkPerSyncFrame[numblkscod];
+	frameSize = 2 * (frmsiz + 1);				// frame size in bytes = 2 * words_per_frame
+
+    bitrate = samplerate * frameSize * 8 / (numberOfBlocksPerSyncFrame * 256);
+	
+	acmod = bsr.Read(3);
+    lfeon = bsr.Read(1);
+    bsid  = bsr.Read(5);
+    bsr.Skip(5);								// dialnorm
+ 
+    bsr.SkipIfBitSet(8);						// compre; if (compre) {compr}
+ 
+    if (acmod == 0x0)							// if 1+1 mode (dual mono, so some items need a second value)
+	{
+        bsr.Skip(5);							// dialnorm2
+		bsr.SkipIfBitSet(8);					// compr2e; if (compr2e) {compr2}
+    }
+ 
+    if (strmtyp == EAC3DependentSubtream)		// if dependent stream
+	{
+        if (bsr.Read(1))						// if (chanmape) 
+		{
+            chanmap = bsr.Read(16);				// {chanmap}
+        }
+    }
+ 
+    if (bsr.Read(1))							// mixing metadata
+	{     
+        if (acmod > 0x2)						// if more than 2 channels
+		{
+            bsr.Skip(2);						// {dmixmod}
+        }
+ 
+        if ((acmod & 0x1) && (acmod > 0x2))		// if three front channels exist
+		{
+            bsr.Skip(6);						// ltrtcmixlev; lorocmixlev
+        }
+ 
+        if (acmod & 0x4)						// if a surround channel exists
+		{
+            bsr.Skip(6);						// ltrtsurmixlev; lorosurmixlev
+        }
+ 
+        if (lfeon)								// if the LFE channel exists
+		{
+            bsr.SkipIfBitSet(5);				// lfemixlevcode; if (lfemixlevcode) {lfemixlevcod}
+        }
+ 
+        if (strmtyp == EAC3IndependentStream)	// if independent stream
+		{
+            bsr.SkipIfBitSet(6);				// pgmscle; if (pgmscle) {pgmscl}
+ 
+            if (acmod == 0x0)					// if 1+1 mode (dual mono, so some items need a second value)
+			{
+                bsr.SkipIfBitSet(6);			// pgmscl2e; if (pgmscl2e) {pgmscl2}
+            }
+ 
+            bsr.SkipIfBitSet(6);				// extpgmscle; if (extpgmscle) {extpgmscl}
+ 
+            int mixdef = bsr.Read(2);
+ 
+            if (mixdef == 0x1)					// mixing option 2
+			{
+                bsr.Skip(5);					// premixcmpsel:1, drcsrc:1, premixcmpscl:3
+            } 
+			else if (mixdef == 0x2)				// mixing option 3
+			{
+                bsr.Skip(12);					// {mixdata}
+            } 
+			else if (mixdef == 0x3)				// mixing option 4
+			{
+                int mixdeflen = bsr.Read(5);
+ 
+                if (bsr.Read(1))				// mixdata2e
+				{
+                    bsr.Skip(5);				// premixcmpsel:1, drcsrc:1, premixcmpscl:3
+
+					bsr.SkipIfBitSet(4);		// extpgmlscle;   if (extpgmlscle)   extpgmlscl
+					bsr.SkipIfBitSet(4);		// extpgmcscle;   if (extpgmcscle)   extpgmcscl
+					bsr.SkipIfBitSet(4);		// extpgmrscle;   if (extpgmrscle)   extpgmrscl
+					bsr.SkipIfBitSet(4);		// extpgmlsscle;  if (extpgmlsscle)  extpgmlsscl
+					bsr.SkipIfBitSet(4);		// extpgmrsscle;  if (extpgmrsscle)  extpgmrsscl
+					bsr.SkipIfBitSet(4);		// extpgmlfescle; if (extpgmlfescle) extpgmlfescl
+					bsr.SkipIfBitSet(4);		// dmixscle;	  if (dmixscle)      dmixscl
+ 
+                    if (bsr.Read(1))			// addche; if (addche)
+					{
+						bsr.SkipIfBitSet(4);	// extpgmaux1scle; if (extpgmaux1scle) extpgmaux1scl
+						bsr.SkipIfBitSet(4);	// extpgmaux2scle; if (extpgmaux2scle) extpgmaux2scl
+                    }
+                }
+ 
+                if (bsr.Read(1))				// mixdata3e; if (mixdata3e)
+				{
+                    bsr.Skip(5);				// spchdat
+ 
+                    if (bsr.Read(1))			// addspchdate
+					{
+                        bsr.Skip(7);			// spchdat1:5, spchan1att:2
+						bsr.SkipIfBitSet(8);	// addspchdat1e; if (addspdat1e) { spchdat2:5, spchan2att:3 }
+                    }
+                }
+ 
+				// mixdata = (8*(mixdeflen+2)) - no. mixdata bits
+                for (int i = 0; i < (mixdeflen + 2); i++) 
+				{
+                    bsr.Skip(8);				// mixdatafill (0 - 7)
+                }
+            }
+ 
+            if (acmod < 0x2)					// if mono or dual mono source
+			{
+				bsr.SkipIfBitSet(14);			// paninfoe; if (paninfoe) { panmean:8, paninfo:6 }
+ 
+                if (acmod == 0x0)				// if 1+1 mode (dual mono, so some items need a second value)
+				{
+					bsr.SkipIfBitSet(14);		// paninfo2e; if (paninfo2e) { panmean2:8, paninfo2:6 }
+                }
+ 
+                if (bsr.Read(1))				// frmmixcfginfoe; if (frmmixcfginfoe)
+				{
+					// mixing configuration information
+                    if (numblkscod == 0) 
+					{
+                        bsr.Skip(5);
+                    } 
+					else 
+					{
+                        for (int i = 0; i < numberOfBlocksPerSyncFrame; i++) 
+						{
+							bsr.SkipIfBitSet(5);	// blkmixcfginfoe; if (blkmixcfginfoe) {blkmixcfginfo[blk]}
+                        }
+                    }
+                }
+            }
+        }
+    }
+ 
+    if (bsr.Read(1))							// infomdate - informational metadata
+	{ 
+        bsmod = bsr.Read(3);
+
+		// Skip everything else, not used.
+    }
+
+	// Skip everything else, not used.
+
+	return TRUE;
+}
+
+
+long DolbyDigitalPlusHandler::Scale()
+{
+    // for audio, the scale should be the sampling rate but
+    // must not exceed 65535
+	WAVEFORMATEX* pwfx = reinterpret_cast<WAVEFORMATEX*>(m_mt.Format());
+    if (pwfx->nSamplesPerSec > 65535)
+    {
+        return 45000;
+    }
+    else
+    {
+        return pwfx->nSamplesPerSec;
+    }
+}
+
+BOOL DolbyDigitalPlusHandler::StreamInfoExists(const EAC3StreamInfo& info)
+{
+	for (EAC3StreamInfoArray::iterator it = m_streams.begin(); it != m_streams.end(); it++)
+	{
+		if (it->strmtyp != EAC3DependentSubtream && it->substreamid == info.substreamid)
+		{
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
+int DolbyDigitalPlusHandler::GetDependentSubstreams(int substreamid, int& chan_loc)
+{
+	int num_dep_sub = 0;
+	
+	chan_loc = 0;
+
+	for (EAC3StreamInfoArray::iterator it = m_streams.begin(); it != m_streams.end(); it++)
+	{
+		if (it->strmtyp == EAC3DependentSubtream && it->substreamid == substreamid)
+		{
+			num_dep_sub++;
+
+			// Convert Custom channel mapping (Table E.5) to Chan_loc field bit assignments (Table F.2)
+            chan_loc |= ((it->chanmap >> 6) & 0x100) | ((it->chanmap >> 5) & 0xff);
+		}
+	}
+
+	return num_dep_sub;
+}
+
+HRESULT DolbyDigitalPlusHandler::WriteData(Atom* patm, const BYTE* pData, int cbData, int* pcActual)
+{
+	if (m_streams.size() == 0)
+	{
+		const BYTE* pFrame = pData;
+		int cbFrame = cbData;
+
+		while (cbFrame > 0)
+		{
+			EAC3StreamInfo info;
+
+			if (!info.Parse(pFrame, cbFrame))
+				return E_INVALIDARG;
+
+			if (StreamInfoExists(info))
+				break;
+
+			m_streams.push_back(info);
+
+			LOG((TEXT("DD+ cbData=%d, cbFrame=%d, frameSize=%d"), cbData, cbFrame, info.frameSize));
+
+			pFrame += info.frameSize;
+			cbFrame -= info.frameSize;
+		}
+	}
+
+	return __super::WriteData(patm, pData, cbData, pcActual);
+}
+
+void DolbyDigitalPlusHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
+{
+	UNREFERENCED_PARAMETER(id); // TODO: not used???
+
+	// ETSI TS 102 366 - Annex F
+	// AC-3 and Enhanced AC-3 Bitstream Storage in the ISO Base Media File Format
+
+	// F.5 - EAC3SampleEntry Box
+	MP4BitstreamWriter bsw;
+	bsw.ReserveBytes(6);							//  0- 5: reserved:8 [6]		= 0
+	bsw.Write16(static_cast<short>(dataref));		//  6- 7: data-reference-index:16
+
+	bsw.ReserveBytes(8);							//  8-15: reserved				= 0	   
+	bsw.Write16(2);									// 16-17: channel count			= 2  (ignored)
+	bsw.Write16(16);								// 18-19: bits per sample		= 16 (ignored)
+    bsw.Write32(0);									// 20-23: reserved				= 0
+    bsw.Write16(static_cast<short>(scale));			// 24-25: sample rate
+	bsw.Write16(0);									// 26-27: reserved				= 0	   
+	
+	smart_ptr<Atom> psd = patm->CreateAtom('ec-3');
+	bsw.AppendTo(psd);
+
+	// F.6 - EC3SpecificBox
+	int num_ind_sub = 0;
+	int bitrate = 0;
+	int cBytes = 0;
+	int num_dep_sub;
+	int chan_loc;
+
+	bsw.Rewind();
+	bsw.Write16(0);									// data_rate:13 and num_ind_sub:3 will be set later
+
+	for (EAC3StreamInfoArray::iterator it = m_streams.begin(); it != m_streams.end(); it++)
+	{
+		if (it->strmtyp != EAC3DependentSubtream)	// Any other type is an independent stream
+		{
+			num_ind_sub++;
+
+			bsw.Write(it->fscod, 2);
+			bsw.Write(it->bsid,  5);
+			bsw.Write(it->bsmod, 5);
+			bsw.Write(it->acmod, 3);
+			bsw.Write(it->lfeon, 1);
+			bsw.Reserve(3);
+
+			num_dep_sub = GetDependentSubstreams(it->substreamid, chan_loc);
+		
+			bsw.Write(num_dep_sub, 4);
+
+			if (num_dep_sub > 0)
+			{
+				bsw.Write(chan_loc, 9);
+			}
+			else
+			{
+				bsw.Reserve(1);
+			}
+		}
+
+		bitrate += it->bitrate;
+	}
+
+	cBytes = bsw.GetByteCount();
+
+	bsw.Rewind();
+	bsw.Write(bitrate / 1000, 13);	// data_rate:13 in Kb/s
+	bsw.Write(num_ind_sub - 1, 3);	// num_ind_sub:3, one less than the number of independent substreams present
+
+	smart_ptr<Atom> pdec3 = psd->CreateAtom('dec3');
+	bsw.AppendTo(pdec3, cBytes);
+	
+	pdec3->Close();
+    psd->Close();
+}
+	
+
+///////////////////////////////////////////////////////////////////////////////
+
+#pragma endregion
+
+
 // ---- descriptor ------------------------
 
 Descriptor::Descriptor(TagType type)
@@ -1740,31 +2855,36 @@ H264ByteStreamHandler::H264ByteStreamHandler(const CMediaType* pmt)
   m_bSPS(false),
   m_bPPS(false)
 {
-	if (*m_mt.FormatType() == FORMAT_MPEG2Video)
+	if(*m_mt.FormatType() == FORMAT_MPEG2Video)
 	{
 		MPEG2VIDEOINFO* pvi = (MPEG2VIDEOINFO*)m_mt.Format();
 		m_tFrame = pvi->hdr.AvgTimePerFrame;
 		m_cx = pvi->hdr.bmiHeader.biWidth;
 		m_cy = pvi->hdr.bmiHeader.biHeight;
-	}
-	else if (*m_mt.FormatType() == FORMAT_VideoInfo)
+	} else 
+	if(*m_mt.FormatType() == FORMAT_VideoInfo)
 	{
 		VIDEOINFOHEADER* pvi = (VIDEOINFOHEADER*)m_mt.Format();
 		m_tFrame = pvi->AvgTimePerFrame;
 		m_cx = pvi->bmiHeader.biWidth;
 		m_cy = pvi->bmiHeader.biHeight;
-	}
-	else if (*m_mt.FormatType() == FORMAT_VideoInfo2)
+	} else 
+	if(*m_mt.FormatType() == FORMAT_VideoInfo2)
 	{
 		VIDEOINFOHEADER2* pvi = (VIDEOINFOHEADER2*)m_mt.Format();
 		m_tFrame = pvi->AvgTimePerFrame;
 		m_cx = pvi->bmiHeader.biWidth;
 		m_cy = pvi->bmiHeader.biHeight;
-	}
-	else
+	} else 
+	// TODO: or H264Handler
+	if(*m_mt.FormatType() == FORMAT_UVCH264Video)
 	{
+		KS_H264VIDEOINFO* pvi = (KS_H264VIDEOINFO*)m_mt.Format();
+		m_tFrame = pvi->dwFrameInterval;
+		m_cx = pvi->wWidth;
+		m_cy = pvi->wHeight;
+	} else
 		m_tFrame = m_cx = m_cy = 0;
-	}
 }
 
 void 

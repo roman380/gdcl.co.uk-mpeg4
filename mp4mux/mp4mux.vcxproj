@@ -345,6 +345,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="alloc.cpp" />
+    <ClCompile Include="Bitstream.cpp" />
     <ClCompile Include="MovieWriter.cpp">
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -395,6 +396,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="alloc.h" />
+    <ClInclude Include="Bitstream.h" />
     <ClInclude Include="logger.h" />
     <ClInclude Include="MovieWriter.h" />
     <ClInclude Include="MuxFilter.h" />
