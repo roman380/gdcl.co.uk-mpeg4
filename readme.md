@@ -1,4 +1,4 @@
-﻿# DirectShow MPEG-4 Part 14 (.MP4) Multiplexer and Demultiplexer Filters
+# DirectShow MPEG-4 Part 14 (.MP4) Multiplexer and Demultiplexer Filters
 
 These are based on [filters by Geraint Davies](http://www.gdcl.co.uk/mpeg4/) (info at gdcl dot co dot uk) enhanced by Roman Ryltsov (roman at alax dot info).
 
@@ -7,6 +7,11 @@ These are based on [filters by Geraint Davies](http://www.gdcl.co.uk/mpeg4/) (in
 In order to successfully build the solution/projects, baseclasses directory from Windows SDK needs to be copied as a subdirectory in solution file directory.
 
 ## Update History
+
+### 05 Jun 2015
+
+ * merged update by Noël Danjou (added handlers for: MPEG-2 Video and Audio, Dolby Digital (AC-3), Dolby Digital Plus (Enhanced AC-3); added support for FORMAT_UVCH264Video)
+ * minor updates
 
 ### 17 May 2015
 
