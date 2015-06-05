@@ -833,8 +833,9 @@ DivxHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
 	dsi.Append(m_pConfig, m_cConfig);
     dcfg.Append(&dsi);
     es.Append(&dcfg);
-    Descriptor sl(Descriptor::SL_Config);
-    b[0] = 2;
+	Descriptor sl(Descriptor::SL_Config); // ISO 14496-1 8.3.6, 10.2.3
+	b[0] = 2; // Reserved for ISO use???
+	b[1] = 0x7F; // OCRStreamFlag 0, Reserved 1111111
     sl.Append(b, 2);
     es.Append(&sl);
     es.Write(pesd);
@@ -1036,8 +1037,9 @@ AACHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
     }
     dcfg.Append(&dsi);
     es.Append(&dcfg);
-    Descriptor sl(Descriptor::SL_Config);
-    b[0] = 2;
+	Descriptor sl(Descriptor::SL_Config); // ISO 14496-1 8.3.6, 10.2.3
+	b[0] = 2; // Reserved for ISO use???
+	b[1] = 0x7F; // OCRStreamFlag 0, Reserved 1111111
     sl.Append(b, 2);
     es.Append(&sl);
     es.Write(pesd);
@@ -1771,9 +1773,9 @@ WaveHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
 		WriteShort(id, b);
 		b[2] = 0;
 		es.Append(b, 3);
-		Descriptor dcfg(Descriptor::Decoder_Config);
+		Descriptor dcfg(Descriptor::Decoder_Config); // ISO 14496-1 8.3.4
 		b[0] = 0xC0;    // custom object type
-		b[1] = (5 << 2) | 1;    // audio stream
+		b[1] = (5 << 2) | 1;    // audio stream; streamType, ISO 14496-1 8.3.4.1
 
 		// buffer size 15000
 		b[2] = 0;
@@ -1782,15 +1784,16 @@ WaveHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
 		WriteLong(1500000, b+5);    // max bitrate
 		WriteLong(0, b+9);          // avg bitrate 0 = variable
 		dcfg.Append(b, 13);
-		Descriptor dsi(Descriptor::Decoder_Specific_Info);
+		Descriptor dsi(Descriptor::Decoder_Specific_Info); // ISO 14496-1 8.3.5
 
 		// write whole WAVEFORMATEX as decoder specific info
 		int cLen = pwfx->cbSize + sizeof(WAVEFORMATEX);
 		dsi.Append((const BYTE*)pwfx, cLen);
 		dcfg.Append(&dsi);
 		es.Append(&dcfg);
-		Descriptor sl(Descriptor::SL_Config);
-		b[0] = 2;
+		Descriptor sl(Descriptor::SL_Config); // ISO 14496-1 8.3.6, 10.2.3
+		b[0] = 2; // Reserved for ISO use???
+		b[1] = 0x7F; // OCRStreamFlag 0, Reserved 1111111
 		sl.Append(b, 2);
 		es.Append(&sl);
 		es.Write(pesd);
@@ -2046,7 +2049,7 @@ void MPEG2VideoHandler::WriteDescriptor(Atom* patm, int id, int dataref, long sc
 	Descriptor sl(Descriptor::SL_Config);
 	bsw.Rewind();
 	bsw.Write8(2);								// predefined:8		= 2
-	//bsw.Write8(0x7F);							// OCRstreamFlag:1	= 0
+	bsw.Write8(0x7F);							// OCRstreamFlag:1	= 0
 												// reserved:7		= 0b1111.111 (0x7F) TODO: ????
 	bsw.AppendTo(&sl);
     
@@ -2205,7 +2208,7 @@ void MPEG2AudioHandler::WriteDescriptor(Atom* patm, int id, int dataref, long sc
 	Descriptor sl(Descriptor::SL_Config);
 	bsw.Rewind();
 	bsw.Write8(2);								// predefined:8		= 2
-	//bsw.Write8(0x7F);							// OCRstreamFlag:1	= 0 TODO: ???
+	bsw.Write8(0x7F);							// OCRstreamFlag:1	= 0 TODO: ???
 												// reserved:7		= 0b1111.111 (0x7F) TODO: ????
 	bsw.AppendTo(&sl);
 
