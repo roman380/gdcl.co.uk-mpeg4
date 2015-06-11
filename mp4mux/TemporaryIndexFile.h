@@ -79,7 +79,7 @@ public:
 		if(MediaType.FormatLength())
 			WriteFile(m_hFile, MediaType.Format(), (DWORD) MediaType.FormatLength(), &nWriteDataSize, NULL);
 	}
-	VOID WriteMediaSample(UINT16 nIndex, UINT64 nDataPosition, const AM_SAMPLE2_PROPERTIES& Properties)
+	VOID WriteMediaSample(UINT16 nIndex, UINT64 nDataPosition, UINT32 nDataSize, const AM_SAMPLE2_PROPERTIES& Properties)
 	{
 		DWORD nWriteDataSize;
 		static const UINT32 g_nSignature = MAKEFOURCC('S', 'A', 'M', 'P');
@@ -102,7 +102,7 @@ public:
 		MediaSample.nIndex = nIndex;
 		MediaSample.nPosition = nDataPosition;
 		MediaSample.nSampleFlags = (UINT32) Properties.dwSampleFlags;
-		MediaSample.nSize = (UINT32) Properties.lActual;
+		MediaSample.nSize = nDataSize; //(UINT32) Properties.lActual;
 		MediaSample.nStartTime = (UINT64) Properties.tStart;
 		MediaSample.nLengthTime = (UINT32) (Properties.tStop - Properties.tStart);
 		WriteFile(m_hFile, &MediaSample, sizeof MediaSample, &nWriteDataSize, NULL);

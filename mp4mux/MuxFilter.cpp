@@ -297,7 +297,7 @@ Mpeg4Mux::Pause()
     return CBaseFilter::Pause();
 }
 
-VOID Mpeg4Mux::NotifyMediaSampleWrite(INT nTrackIndex, LONGLONG nDataPosition, IMediaSample* pMediaSample)
+VOID Mpeg4Mux::NotifyMediaSampleWrite(INT nTrackIndex, LONGLONG nDataPosition, SIZE_T nDataSize, IMediaSample* pMediaSample)
 { 
 	ASSERT(pMediaSample);
 	if(!pMediaSample)
@@ -316,7 +316,7 @@ VOID Mpeg4Mux::NotifyMediaSampleWrite(INT nTrackIndex, LONGLONG nDataPosition, I
 	for(nInputIndex = 0; nInputIndex < m_pInputs.size(); nInputIndex++)
 		if(m_pInputs[nInputIndex]->GetIndex() == nTrackIndex)
 			break;
-	m_TemporaryIndexFile.WriteMediaSample((UINT16) nInputIndex, (UINT64) nDataPosition, Properties);
+	m_TemporaryIndexFile.WriteMediaSample((UINT16) nInputIndex, (UINT64) nDataPosition, (UINT32) nDataSize, Properties);
 }
 
 // ------- input pin -------------------------------------------------------
@@ -1017,13 +1017,13 @@ MuxOutput::FillSpace()
     }
 }
 
-VOID MuxOutput::NotifyMediaSampleWrite(INT nTrackIndex, IMediaSample* pMediaSample)
+VOID MuxOutput::NotifyMediaSampleWrite(INT nTrackIndex, IMediaSample* pMediaSample, SIZE_T nDataSize)
 { 
 	ASSERT(pMediaSample);
-	const LONG nDataSize = pMediaSample->GetActualDataLength();
+	// NOTE: nDataSize is effectively written number of bytes, which might be different from media sample data in case respective handler added certain formatting
 	const LONGLONG nDataPosition = m_llBytes - nDataSize;
 	ASSERT(m_pMux);
-	m_pMux->NotifyMediaSampleWrite(nTrackIndex, nDataPosition, pMediaSample);
+	m_pMux->NotifyMediaSampleWrite(nTrackIndex, nDataPosition, nDataSize, pMediaSample);
 }
 
 // ---- seeking support ------------------------------------------------

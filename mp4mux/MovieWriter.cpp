@@ -442,10 +442,10 @@ void MovieWriter::RecordBitrate(size_t index, long bitrate)
 	}
 }
 
-VOID MovieWriter::NotifyMediaSampleWrite(INT nTrackIndex, IMediaSample* pMediaSample)
+VOID MovieWriter::NotifyMediaSampleWrite(INT nTrackIndex, IMediaSample* pMediaSample, SIZE_T nDataSize)
 {
 	if(m_pContainer)
-		m_pContainer->NotifyMediaSampleWrite(nTrackIndex, pMediaSample);
+		m_pContainer->NotifyMediaSampleWrite(nTrackIndex, pMediaSample, nDataSize);
 }
 
 // -------- Track -------------------------------------------------------
@@ -788,10 +788,10 @@ TrackWriter::Close(Atom* patm)
     return hr;
 }
 
-VOID TrackWriter::NotifyMediaSampleWrite(IMediaSample* pMediaSample)
+VOID TrackWriter::NotifyMediaSampleWrite(IMediaSample* pMediaSample, SIZE_T nDataSize)
 {
 	if(m_bNotifyMediaSampleWrite && m_pMovie)
-		m_pMovie->NotifyMediaSampleWrite(m_index, pMediaSample);
+		m_pMovie->NotifyMediaSampleWrite(m_index, pMediaSample, nDataSize);
 }
 
 // -- Media Chunk ----------------------
@@ -955,8 +955,7 @@ MediaChunk::Write(Atom* patm)
 			nSamples++;
         }
 
-		ASSERT((LONG) cActual == pSample->GetActualDataLength());
-		m_pTrack->NotifyMediaSampleWrite(pSample);
+		m_pTrack->NotifyMediaSampleWrite(pSample, (SIZE_T) cActual);
 	}
 
     // add chunk position to index

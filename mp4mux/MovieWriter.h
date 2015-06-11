@@ -70,7 +70,10 @@ public:
     virtual HRESULT Replace(LONGLONG pos, const BYTE* pBuffer, long cBytes) = 0;
     virtual HRESULT Append(const BYTE* pBuffer, long cBytes) = 0;
 
-	virtual VOID NotifyMediaSampleWrite(INT nTrackIndex, IMediaSample* pMediaSample) { nTrackIndex; pMediaSample; }
+	virtual VOID NotifyMediaSampleWrite(INT nTrackIndex, IMediaSample* pMediaSample, SIZE_T nDataSize)
+	{ 
+		nTrackIndex; pMediaSample; nDataSize;
+	}
 };
 
 // basic container structure for MPEG-4 file format.
@@ -491,7 +494,7 @@ public:
 		return false;
 	}
 
-	VOID NotifyMediaSampleWrite(IMediaSample* pMediaSample);
+	VOID NotifyMediaSampleWrite(IMediaSample* pMediaSample, SIZE_T nDataSize);
 
 private:
     MovieWriter* m_pMovie;
@@ -565,7 +568,7 @@ public:
 	}
 	void RecordBitrate(size_t index, long bitrate);
 
-	VOID NotifyMediaSampleWrite(INT nTrackIndex, IMediaSample* pMediaSample);
+	VOID NotifyMediaSampleWrite(INT nTrackIndex, IMediaSample* pMediaSample, SIZE_T nDataSize);
 
 private:
     void MakeIODS(Atom* pmoov);
