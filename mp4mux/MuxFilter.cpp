@@ -326,6 +326,7 @@ MuxInput::MuxInput(Mpeg4Mux* pFilter, CCritSec* pLock, HRESULT* phr, LPCWSTR pNa
   m_index(index),
   m_pTrack(NULL),
   m_pCopyAlloc(NULL),
+  m_nMaximalCopyBufferCapacity(200 << 20), // 200 MB
   CBaseInputPin(NAME("MuxInput"), pFilter, pLock, phr, pName)
 {
 	ZeroMemory(&m_StreamInfo, sizeof(m_StreamInfo));
@@ -634,7 +635,8 @@ MuxInput::NotifyAllocator(IMemAllocator* pAlloc, BOOL bReadOnly)
 		// -- base the buffer size on 100 x buffers, but
 		// restrict to 200MB max
 		INT64 cSpace = (INT64) propAlloc.cbBuffer * MuxAllocator::GetSuggestBufferCount();
-		cSpace = min((200i64 << 20), cSpace);
+		cSpace = min((INT64) m_nMaximalCopyBufferCapacity, cSpace);
+		// TODO: The idea of allocating contigous buffer going that large definitely needs a revisit
 		HRESULT hr = m_CopyBuffer.Allocate((SIZE_T) cSpace);
 		if (SUCCEEDED(hr))
 		{
@@ -716,20 +718,6 @@ MuxInput::GetInfo(AM_STREAM_INFO* pInfo)
 	return S_OK;
 }
 
-// IMuxInputPin
-STDMETHODIMP
-MuxInput::GetMemAllocators(IUnknown** ppMemAllocatorUnknown, IUnknown** ppCopyMemAllocatorUnknown)
-{
-	if(!ppMemAllocatorUnknown || !ppCopyMemAllocatorUnknown)
-		return E_POINTER;
-	QzCComPtr<IMemAllocator>& pMemAllocator = reinterpret_cast<QzCComPtr<IMemAllocator>&>(*ppMemAllocatorUnknown);
-	QzCComPtr<IMemAllocator>& pCopyMemAllocator = reinterpret_cast<QzCComPtr<IMemAllocator>&>(*ppCopyMemAllocatorUnknown);
-	// WARN: Thread unsafe
-	pMemAllocator = m_pAllocator;
-	pCopyMemAllocator = m_pCopyAlloc;
-	return S_OK;
-}
-	
 bool 
 MuxInput::ShouldDiscard(IMediaSample* pSample)
 {

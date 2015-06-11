@@ -4,7 +4,7 @@
 
 
  /* File created by MIDL compiler version 7.00.0555 */
-/* at Sun May 24 17:53:34 2015
+/* at Thu Jun 11 17:16:16 2015
  */
 /* Compiler settings for Module.idl:
     Oicf, W1, Zp8, env=Win32 (32b run), target_arch=X86 7.00.0555 
@@ -106,10 +106,10 @@ DEFINE_GUID(IID_IMuxMemAllocator,0xB583CDE8,0x2E32,0x468A,0xAA,0x60,0x36,0xD2,0x
     {
     public:
         virtual HRESULT STDMETHODCALLTYPE GetMinimalBufferCount( 
-            LONG *pnMinimalBufferCount) = 0;
+            /* [out] */ LONG *pnMinimalBufferCount) = 0;
         
         virtual HRESULT STDMETHODCALLTYPE SetMinimalBufferCount( 
-            LONG nMinimalBufferCount) = 0;
+            /* [in] */ LONG nMinimalBufferCount) = 0;
         
     };
     
@@ -133,11 +133,11 @@ DEFINE_GUID(IID_IMuxMemAllocator,0xB583CDE8,0x2E32,0x468A,0xAA,0x60,0x36,0xD2,0x
         
         HRESULT ( STDMETHODCALLTYPE *GetMinimalBufferCount )( 
             IMuxMemAllocator * This,
-            LONG *pnMinimalBufferCount);
+            /* [out] */ LONG *pnMinimalBufferCount);
         
         HRESULT ( STDMETHODCALLTYPE *SetMinimalBufferCount )( 
             IMuxMemAllocator * This,
-            LONG nMinimalBufferCount);
+            /* [in] */ LONG nMinimalBufferCount);
         
         END_INTERFACE
     } IMuxMemAllocatorVtbl;
@@ -195,8 +195,11 @@ DEFINE_GUID(IID_IMuxInputPin,0x51613985,0xD540,0x435B,0xBE,0xBC,0x68,0xD2,0x52,0
     {
     public:
         virtual HRESULT STDMETHODCALLTYPE GetMemAllocators( 
-            IUnknown **ppMemAllocatorUnknown,
-            IUnknown **ppCopyMemAllocatorUnknown) = 0;
+            /* [out] */ IUnknown **ppMemAllocatorUnknown,
+            /* [out] */ IUnknown **ppCopyMemAllocatorUnknown) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE SetMaximalCopyMemAllocatorCapacity( 
+            /* [in] */ ULONG nCapacity) = 0;
         
     };
     
@@ -220,8 +223,12 @@ DEFINE_GUID(IID_IMuxInputPin,0x51613985,0xD540,0x435B,0xBE,0xBC,0x68,0xD2,0x52,0
         
         HRESULT ( STDMETHODCALLTYPE *GetMemAllocators )( 
             IMuxInputPin * This,
-            IUnknown **ppMemAllocatorUnknown,
-            IUnknown **ppCopyMemAllocatorUnknown);
+            /* [out] */ IUnknown **ppMemAllocatorUnknown,
+            /* [out] */ IUnknown **ppCopyMemAllocatorUnknown);
+        
+        HRESULT ( STDMETHODCALLTYPE *SetMaximalCopyMemAllocatorCapacity )( 
+            IMuxInputPin * This,
+            /* [in] */ ULONG nCapacity);
         
         END_INTERFACE
     } IMuxInputPinVtbl;
@@ -248,6 +255,9 @@ DEFINE_GUID(IID_IMuxInputPin,0x51613985,0xD540,0x435B,0xBE,0xBC,0x68,0xD2,0x52,0
 
 #define IMuxInputPin_GetMemAllocators(This,ppMemAllocatorUnknown,ppCopyMemAllocatorUnknown)	\
     ( (This)->lpVtbl -> GetMemAllocators(This,ppMemAllocatorUnknown,ppCopyMemAllocatorUnknown) ) 
+
+#define IMuxInputPin_SetMaximalCopyMemAllocatorCapacity(This,nCapacity)	\
+    ( (This)->lpVtbl -> SetMaximalCopyMemAllocatorCapacity(This,nCapacity) ) 
 
 #endif /* COBJMACROS */
 
@@ -278,7 +288,7 @@ DEFINE_GUID(IID_IMuxFilter,0x6CE45967,0xF228,0x4F7B,0x8B,0x93,0x83,0xDC,0x59,0x9
         virtual HRESULT STDMETHODCALLTYPE IsTemporaryIndexFileEnabled( void) = 0;
         
         virtual HRESULT STDMETHODCALLTYPE SetTemporaryIndexFileEnabled( 
-            BOOL bEnabled) = 0;
+            /* [in] */ BOOL bEnabled) = 0;
         
     };
     
@@ -305,7 +315,7 @@ DEFINE_GUID(IID_IMuxFilter,0x6CE45967,0xF228,0x4F7B,0x8B,0x93,0x83,0xDC,0x59,0x9
         
         HRESULT ( STDMETHODCALLTYPE *SetTemporaryIndexFileEnabled )( 
             IMuxFilter * This,
-            BOOL bEnabled);
+            /* [in] */ BOOL bEnabled);
         
         END_INTERFACE
     } IMuxFilterVtbl;

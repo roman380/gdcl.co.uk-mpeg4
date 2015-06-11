@@ -26,8 +26,8 @@ library GdclMp4Mux
 	]
 	interface IMuxMemAllocator : IUnknown
 	{
-		HRESULT GetMinimalBufferCount(LONG* pnMinimalBufferCount);
-		HRESULT SetMinimalBufferCount(LONG nMinimalBufferCount);
+		HRESULT GetMinimalBufferCount([out] LONG* pnMinimalBufferCount);
+		HRESULT SetMinimalBufferCount([in] LONG nMinimalBufferCount);
 	};
 	[
 		object,
@@ -39,7 +39,8 @@ library GdclMp4Mux
 	]
 	interface IMuxInputPin : IUnknown
 	{
-		HRESULT GetMemAllocators(IUnknown** ppMemAllocatorUnknown, IUnknown** ppCopyMemAllocatorUnknown);
+		HRESULT GetMemAllocators([out] IUnknown** ppMemAllocatorUnknown, [out] IUnknown** ppCopyMemAllocatorUnknown);
+		HRESULT SetMaximalCopyMemAllocatorCapacity([in] ULONG nCapacity);
 	};
 	[
 		object,
@@ -52,7 +53,7 @@ library GdclMp4Mux
 	interface IMuxFilter : IUnknown
 	{
 		HRESULT IsTemporaryIndexFileEnabled();
-		HRESULT SetTemporaryIndexFileEnabled(BOOL bEnabled);
+		HRESULT SetTemporaryIndexFileEnabled([in] BOOL bEnabled);
 	};
 	[
 		uuid(5FD85181-E542-4e52-8D9D-5D613C30131B)

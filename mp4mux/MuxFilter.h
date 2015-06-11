@@ -144,16 +144,31 @@ public:
     HRESULT CompleteConnect(IPin *pReceivePin);
 
     // support custom allocator
-    STDMETHODIMP GetAllocator(IMemAllocator** ppAllocator);
-	STDMETHODIMP NotifyAllocator(IMemAllocator* pAlloc, BOOL bReadOnly);
+    STDMETHOD(GetAllocator)(IMemAllocator** ppAllocator) override;
+	STDMETHOD(NotifyAllocator)(IMemAllocator* pAlloc, BOOL bReadOnly) override;
 
 	// IAMStreamControl methods
-	STDMETHOD(StartAt)(const REFERENCE_TIME* ptStart, DWORD dwCookie);
-	STDMETHOD(StopAt)(const REFERENCE_TIME* ptStop, BOOL bSendExtra, DWORD dwCookie);
-	STDMETHOD(GetInfo)(AM_STREAM_INFO* pInfo);
+	STDMETHOD(StartAt)(const REFERENCE_TIME* ptStart, DWORD dwCookie) override;
+	STDMETHOD(StopAt)(const REFERENCE_TIME* ptStop, BOOL bSendExtra, DWORD dwCookie) override;
+	STDMETHOD(GetInfo)(AM_STREAM_INFO* pInfo) override;
 
 	// IMuxInputPin
-	STDMETHOD(GetMemAllocators)(IUnknown** ppMemAllocatorUnknown, IUnknown** ppCopyMemAllocatorUnknown);
+	STDMETHOD(GetMemAllocators)(IUnknown** ppMemAllocatorUnknown, IUnknown** ppCopyMemAllocatorUnknown) override
+	{
+		if(!ppMemAllocatorUnknown || !ppCopyMemAllocatorUnknown)
+			return E_POINTER;
+		QzCComPtr<IMemAllocator>& pMemAllocator = reinterpret_cast<QzCComPtr<IMemAllocator>&>(*ppMemAllocatorUnknown);
+		QzCComPtr<IMemAllocator>& pCopyMemAllocator = reinterpret_cast<QzCComPtr<IMemAllocator>&>(*ppCopyMemAllocatorUnknown);
+		// WARN: Thread unsafe
+		pMemAllocator = m_pAllocator;
+		pCopyMemAllocator = m_pCopyAlloc;
+		return S_OK;
+	}
+	STDMETHOD(SetMaximalCopyMemAllocatorCapacity)(ULONG nCapacity) override
+	{
+		m_nMaximalCopyBufferCapacity = (SIZE_T) nCapacity;
+		return S_OK;
+	}
 
 private:
 	bool ShouldDiscard(IMediaSample* pSample);
@@ -167,6 +182,7 @@ private:
 	CCritSec m_csStreamControl;
 	AM_STREAM_INFO m_StreamInfo;
 
+	SIZE_T m_nMaximalCopyBufferCapacity;
 	ContigBuffer m_CopyBuffer;
 	Suballocator* m_pCopyAlloc;
 
