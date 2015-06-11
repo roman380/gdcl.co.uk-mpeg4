@@ -366,11 +366,17 @@ MuxInput::Receive(IMediaSample* pSample)
 		{
 			REFERENCE_TIME nStartTime = 0, nStopTime = 0;
 			const HRESULT nGetTimeResult = pSample->GetTime(&nStartTime, &nStopTime);
+			BYTE* pnData = NULL;
+			pSample->GetPointer(&pnData);
+			const LONG nDataSize = pSample->GetActualDataLength();
+			CHAR pszData[1024] = { 0 };
+			for(SIZE_T nIndex = 0; nIndex < nDataSize; nIndex++)
 			static LONG g_nCounter = 0;
 			CHAR pszText[1024] = { 0 };
-			sprintf_s(pszText, "%hs: " "m_index %d, nGetTimeResult 0x%08x, nStartTime %I64d, nStopTime %I64d, (%d)\n", __FUNCTION__, 
+			sprintf_s(pszText, "%hs: " "m_index %d, nGetTimeResult 0x%08x, nStartTime %I64d, nStopTime %I64d, nDataSize %d (%d)\n", __FUNCTION__, 
 				m_index,
 				nGetTimeResult, nStartTime, nStopTime, 
+				nDataSize,
 				++g_nCounter,
 				0);
 			OutputDebugStringA(pszText);
@@ -627,9 +633,9 @@ MuxInput::NotifyAllocator(IMemAllocator* pAlloc, BOOL bReadOnly)
 		// too few buffers -- we need to copy
 		// -- base the buffer size on 100 x buffers, but
 		// restrict to 200MB max
-		int cSpace = propAlloc.cbBuffer * MuxAllocator::GetSuggestBufferCount();
-		cSpace = min((200 * 1024 * 1024), cSpace);
-		HRESULT hr = m_CopyBuffer.Allocate(cSpace);
+		INT64 cSpace = (INT64) propAlloc.cbBuffer * MuxAllocator::GetSuggestBufferCount();
+		cSpace = min((200i64 << 20), cSpace);
+		HRESULT hr = m_CopyBuffer.Allocate((SIZE_T) cSpace);
 		if (SUCCEEDED(hr))
 		{
 			m_pCopyAlloc = new Suballocator(&m_CopyBuffer, &hr);

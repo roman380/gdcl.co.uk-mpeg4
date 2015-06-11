@@ -9,31 +9,31 @@
 #pragma once
 
 #include <utility>
-typedef std::pair<int, int> lock_t;
+typedef std::pair<SIZE_T, SIZE_T> lock_t;
 typedef std::list<lock_t> lock_list_t;
 
 class ContigBuffer
 {
 public:
-	ContigBuffer(int cSpace = 0);
+	ContigBuffer(SIZE_T cSpace = 0);
 	~ContigBuffer();
-	HRESULT Allocate(int cSpace);
+	HRESULT Allocate(SIZE_T cSpace);
 
-	BYTE* Append(const BYTE* p, int c);
-	HRESULT Consume(const BYTE* p, int c);
+	BYTE* Append(const BYTE* p, SIZE_T c);
+	HRESULT Consume(const BYTE* p, SIZE_T c);
 
-	HRESULT Lock(const BYTE* p, int c);
-	HRESULT Unlock(const BYTE* p, int c);
+	HRESULT Lock(const BYTE* p, SIZE_T c);
+	HRESULT Unlock(const BYTE* p, SIZE_T c);
 
-	BYTE* AppendAndLock(const BYTE* p, int c);
+	BYTE* AppendAndLock(const BYTE* p, SIZE_T c);
 
 	BYTE* ValidRegion();
-	int ValidLength();
+	SIZE_T ValidLength();
 
 	void Abort();
 	void ResetAbort();
 private:
-	bool SearchLocks(int index, int indexEnd);
+	bool SearchLocks(SIZE_T index, SIZE_T indexEnd);
 
 private:
 	CCritSec m_csLocks;
@@ -41,9 +41,9 @@ private:
 	lock_list_t m_locks;
 	bool m_bAbort;
 
-	int m_idxRead;
-	int m_cValid;
-	int m_cSpace;
+	SIZE_T m_idxRead;
+	SIZE_T m_cValid;
+	SIZE_T m_cSpace;
 	BYTE* m_pBuffer;
 };
 

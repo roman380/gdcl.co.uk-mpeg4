@@ -10,7 +10,7 @@
 #include "alloc.h"
 #include "logger.h"
 
-ContigBuffer::ContigBuffer(int cSpace)
+ContigBuffer::ContigBuffer(SIZE_T cSpace)
 : m_pBuffer(NULL), 
   m_cSpace(0),
   m_cValid(0),
@@ -26,7 +26,7 @@ ContigBuffer::~ContigBuffer()
 	delete[] m_pBuffer;
 }
 
-HRESULT ContigBuffer::Allocate(int cSpace)
+HRESULT ContigBuffer::Allocate(SIZE_T cSpace)
 {
 	if ((m_cValid > 0) || !m_locks.empty())
 	{
@@ -45,7 +45,7 @@ HRESULT ContigBuffer::Allocate(int cSpace)
 	return S_OK;
 }
 
-bool ContigBuffer::SearchLocks(int index, int indexEnd)
+bool ContigBuffer::SearchLocks(SIZE_T index, SIZE_T indexEnd)
 {
 	for (lock_list_t::iterator it = m_locks.begin(); it != m_locks.end(); it++)
 	{
@@ -57,7 +57,7 @@ bool ContigBuffer::SearchLocks(int index, int indexEnd)
 	return false;
 }
 
-BYTE* ContigBuffer::Append(const BYTE* p, int cBytes)
+BYTE* ContigBuffer::Append(const BYTE* p, SIZE_T cBytes)
 {
 	for (;;)
 	{
@@ -74,7 +74,7 @@ BYTE* ContigBuffer::Append(const BYTE* p, int cBytes)
 				LOG((TEXT("Whole buffer too small for packet %d"), cBytes));
 				return NULL;
 			}
-			int index = m_idxRead + m_cValid;
+			SIZE_T index = m_idxRead + m_cValid;
 			if ((m_cSpace - index) < cBytes)
 			{
 				LOG((TEXT("Allocator wrapping to start")));
@@ -117,7 +117,7 @@ BYTE* ContigBuffer::Append(const BYTE* p, int cBytes)
 	}
 }
 
-HRESULT ContigBuffer::Consume(const BYTE* p, int c)
+HRESULT ContigBuffer::Consume(const BYTE* p, SIZE_T c)
 {
 	CAutoLock lock(&m_csLocks);
 	if ((c >= m_cValid) && m_locks.empty())
@@ -140,15 +140,15 @@ HRESULT ContigBuffer::Consume(const BYTE* p, int c)
 	return S_OK;
 }
 
-HRESULT ContigBuffer::Lock(const BYTE* p, int c)
+HRESULT ContigBuffer::Lock(const BYTE* p, SIZE_T c)
 {
 	if ((p < m_pBuffer) || (p > (m_pBuffer + m_cSpace)) || (c > m_cSpace) || ((p+c) > (m_pBuffer + m_cSpace)))
 	{
 		LOG((TEXT("Invalid lock region")));
 		return E_INVALIDARG;
 	}
-	int index = int(p - m_pBuffer);
-	int indexEnd = index + c;
+	SIZE_T index = int(p - m_pBuffer);
+	SIZE_T indexEnd = index + c;
 
 	CAutoLock lock(&m_csLocks);
 	m_locks.push_back(lock_t(index, indexEnd));
@@ -156,15 +156,15 @@ HRESULT ContigBuffer::Lock(const BYTE* p, int c)
 	return S_OK;
 }
 
-HRESULT ContigBuffer::Unlock(const BYTE* p, int c)
+HRESULT ContigBuffer::Unlock(const BYTE* p, SIZE_T c)
 {
 	if ((p < m_pBuffer) || (p > (m_pBuffer + m_cSpace)) || (c > m_cSpace) || ((p+c) > (m_pBuffer + m_cSpace)))
 	{
 		LOG((TEXT("Invalid unlock region")));
 		return E_INVALIDARG;
 	}
-	int index = int(p - m_pBuffer);
-	int indexEnd = index + c;
+	SIZE_T index = p - m_pBuffer;
+	SIZE_T indexEnd = index + c;
 
 	CAutoLock lock(&m_csLocks);
 	for (lock_list_t::iterator it = m_locks.begin(); it != m_locks.end(); it++)
@@ -187,7 +187,7 @@ HRESULT ContigBuffer::Unlock(const BYTE* p, int c)
 	return E_INVALIDARG;
 }
 
-BYTE* ContigBuffer::AppendAndLock(const BYTE* p, int c)
+BYTE* ContigBuffer::AppendAndLock(const BYTE* p, SIZE_T c)
 {
 	BYTE* pDest = Append(p, c);
 	if (!pDest)
@@ -208,7 +208,7 @@ BYTE* ContigBuffer::ValidRegion()
 	return m_pBuffer + m_idxRead;
 }
 
-int ContigBuffer::ValidLength()
+SIZE_T ContigBuffer::ValidLength()
 {
 	return m_cValid;
 }
