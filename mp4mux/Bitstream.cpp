@@ -32,7 +32,7 @@ BitstreamWriter::BitstreamWriter(BYTE* pBuffer, UINT cBytes, bool bBigEndian) :
 void BitstreamWriter::Clear(void)
 {
 	ASSERT(m_pBits);
-	SecureZeroMemory(m_pBits, m_cMaxBits >> 3);
+	ZeroMemory(m_pBits, m_cMaxBits >> 3);
 }
 
 void BitstreamWriter::ReserveBytes(UINT cBytes)
@@ -46,7 +46,7 @@ void BitstreamWriter::ReserveBytes(UINT cBytes)
 	
 	if (GetBitLeft() >= cBits)
 	{
-		SecureZeroMemory(&m_pBits[m_nCurBit >> 3], cBytes);
+		ZeroMemory(&m_pBits[m_nCurBit >> 3], cBytes);
 		m_nCurBit += cBits;
 	}
 }

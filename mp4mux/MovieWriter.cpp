@@ -12,7 +12,8 @@
 #include "stdafx.h"
 #include "MovieWriter.h"
 #include "TypeHandler.h"
-    
+#include "logger.h"
+
 Atom::Atom(AtomWriter* pContainer, LONGLONG llOffset, DWORD type)
 : m_pContainer(pContainer),
   m_cBytes(0),
@@ -853,11 +854,12 @@ MediaChunk::AddSample(IMediaSample* pSample)
     return S_OK;
 }
 
-HRESULT 
+
+HRESULT
 MediaChunk::Write(Atom* patm)
 {
-    // record chunk start position
-    LONGLONG posChunk = patm->Position() + patm->Length();
+	// record chunk start position
+	LONGLONG posChunk = patm->Position() + patm->Length();
 
 	if (m_bOldIndexFormat)
 	{
@@ -893,7 +895,7 @@ MediaChunk::Write(Atom* patm)
 			{
 				cThis = cAvail;
 			}
-			
+
 			int cActual = 0;
 			m_pTrack->Handler()->WriteData(patm, pBuffer, cThis, &cActual);
 			cBytes += cActual;
@@ -903,7 +905,7 @@ MediaChunk::Write(Atom* patm)
 			if (cBytes >= max_bytes)
 			{
 				m_pTrack->OldIndex(posChunk, cBytes);
-				posChunk = patm->Position() + patm->Length();				
+				posChunk = patm->Position() + patm->Length();
 				cBytes = 0;
 			}
 		}
@@ -914,54 +916,56 @@ MediaChunk::Write(Atom* patm)
 		return S_OK;
 	}
 
-    // Remember that large H264 samples may be broken 
-    // across several buffers, with Sync flag at start and
-    // time on last buffer.
-    bool bSync = false;
-    long cBytes = 0;
+	// Remember that large H264 samples may be broken 
+	// across several buffers, with Sync flag at start and
+	// time on last buffer.
+	bool bSync = false;
+	long cBytes = 0;
 	long nSamples = 0;
 
-    // loop once through the samples writing the data
-    list<IMediaSample*>::iterator it;
-    for (it = m_Samples.begin(); it != m_Samples.end(); it++)
-    {
-        IMediaSample* pSample = *it;
+	// loop once through the samples writing the data
+	list<IMediaSample*>::iterator it;
+	for (it = m_Samples.begin(); it != m_Samples.end(); it++)
+	{
+		IMediaSample* pSample = *it;
 
-        // record positive sync flag, but for
-        // multiple-buffer samples, only one sync flag will be present
-        // so don't overwrite with later negatives.
-        if (pSample->IsSyncPoint() == S_OK)
-        {
-            bSync = true;
-        }
+		// record positive sync flag, but for
+		// multiple-buffer samples, only one sync flag will be present
+		// so don't overwrite with later negatives.
+		if (pSample->IsSyncPoint() == S_OK)
+		{
+			bSync = true;
+		}
 
 		// write payload, including any transformation (eg BSF to length-prepended)
-        BYTE* pBuffer;
-        pSample->GetPointer(&pBuffer);
+		BYTE* pBuffer;
+		pSample->GetPointer(&pBuffer);
 		int cActual = 0;
 		m_pTrack->Handler()->WriteData(patm, pBuffer, pSample->GetActualDataLength(), &cActual);
 		cBytes += cActual;
-        REFERENCE_TIME tStart, tEnd;
-        HRESULT hr = pSample->GetTime(&tStart, &tEnd);
-		if(hr == VFW_S_NO_STOP_TIME)
+		REFERENCE_TIME tStart, tEnd;
+		HRESULT hr = pSample->GetTime(&tStart, &tEnd);
+		if (hr == VFW_S_NO_STOP_TIME)
 			tEnd = tStart + 1;
-        if(SUCCEEDED(hr))
-        {
+		if (SUCCEEDED(hr))
+		{
 			// this is the last buffer in the sample
 			m_pTrack->IndexSample(bSync, tStart, tEnd, cBytes);
-            // reset for new sample
-            bSync = false;
+			// reset for new sample
+			bSync = false;
 			cBytes = 0;
 			nSamples++;
-        }
+		}
 
 		m_pTrack->NotifyMediaSampleWrite(pSample, (SIZE_T) cActual);
 	}
 
-    // add chunk position to index
+	// add chunk position to index
 	m_pTrack->IndexChunk(posChunk, nSamples);
 
-    return S_OK;
+	LOG((TEXT("Writing %ld samples to track"), nSamples));
+
+	return S_OK;
 }
 
 bool 

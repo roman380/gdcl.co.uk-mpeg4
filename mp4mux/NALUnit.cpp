@@ -246,7 +246,13 @@ NALUnit::GetSE()
 SeqParamSet::SeqParamSet()
 : m_cx(0),
   m_cy(0),
-  m_FrameBits(0)
+  m_FrameBits(0),
+
+  m_bFrameOnly(true),
+  m_Profile(0),
+  m_Level(0),
+  m_Compatibility(0)
+
 {
 #ifdef WIN32
     SetRect(&m_rcFrame, 0, 0, 0, 0);

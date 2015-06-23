@@ -405,7 +405,7 @@ struct EAC3StreamInfo
 	int chanmap;
 
 	EAC3StreamInfo(void);
-	BOOL Parse(const BYTE* pData, int cbData);
+	bool Parse(const BYTE* pData, int cbData);
 };
 
 typedef std::vector<EAC3StreamInfo> EAC3StreamInfoArray;
@@ -429,7 +429,7 @@ public:
 
 
 private:
-	BOOL StreamInfoExists(const EAC3StreamInfo& info);
+	bool StreamInfoExists(const EAC3StreamInfo& info);
 	int GetDependentSubstreams(int substreamid, int& chan_loc);
 
 
@@ -2403,7 +2403,7 @@ EAC3StreamInfo::EAC3StreamInfo(void) :
 {
 }
 
-BOOL EAC3StreamInfo::Parse(const BYTE* pData, int cbData)
+bool EAC3StreamInfo::Parse(const BYTE* pData, int cbData)
 {
 	// Table E.3: Number of audio blocks per syncframe
 	static const int aAudBlkPerSyncFrame[]	 = { 1, 2, 3, 6 };
@@ -2420,7 +2420,7 @@ BOOL EAC3StreamInfo::Parse(const BYTE* pData, int cbData)
 
 	// 4.3.1 - syncinfo - Synchronization information
 	if (!bsr.IsSyncword())						// syncword:16 = 0x0B77
-		return FALSE;
+		return false;
 
 	
 	// E.1.2.2 - bsi - Bit stream information
@@ -2448,7 +2448,7 @@ BOOL EAC3StreamInfo::Parse(const BYTE* pData, int cbData)
     }
 
     if (samplerate == 0)
-        return FALSE;
+        return false;
 
 	// words_per_frame = frmsiz + 1
 	numberOfBlocksPerSyncFrame = aAudBlkPerSyncFrame[numblkscod];
@@ -2598,7 +2598,7 @@ BOOL EAC3StreamInfo::Parse(const BYTE* pData, int cbData)
 
 	// Skip everything else, not used.
 
-	return TRUE;
+	return true;
 }
 
 
@@ -2617,17 +2617,17 @@ long DolbyDigitalPlusHandler::Scale()
     }
 }
 
-BOOL DolbyDigitalPlusHandler::StreamInfoExists(const EAC3StreamInfo& info)
+bool DolbyDigitalPlusHandler::StreamInfoExists(const EAC3StreamInfo& info)
 {
 	for (EAC3StreamInfoArray::iterator it = m_streams.begin(); it != m_streams.end(); it++)
 	{
 		if (it->strmtyp != EAC3DependentSubtream && it->substreamid == info.substreamid)
 		{
-			return TRUE;
+			return true;
 		}
 	}
 
-	return FALSE;
+	return false;
 }
 
 int DolbyDigitalPlusHandler::GetDependentSubstreams(int substreamid, int& chan_loc)
@@ -2669,12 +2669,14 @@ HRESULT DolbyDigitalPlusHandler::WriteData(Atom* patm, const BYTE* pData, int cb
 
 			m_streams.push_back(info);
 
-			LOG((TEXT("DD+ cbData=%d, cbFrame=%d, frameSize=%d"), cbData, cbFrame, info.frameSize));
+			//LOG((TEXT("DD+ cbData=%d, cbFrame=%d, frameSize=%d"), cbData, cbFrame, info.frameSize));
 
 			pFrame += info.frameSize;
 			cbFrame -= info.frameSize;
 		}
 	}
+
+	//LOG((TEXT("Writing DD+ data")));
 
 	return __super::WriteData(patm, pData, cbData, pcActual);
 }
@@ -2756,8 +2758,6 @@ void DolbyDigitalPlusHandler::WriteDescriptor(Atom* patm, int id, int dataref, l
 	
 
 ///////////////////////////////////////////////////////////////////////////////
-
-#pragma endregion
 
 
 // ---- descriptor ------------------------

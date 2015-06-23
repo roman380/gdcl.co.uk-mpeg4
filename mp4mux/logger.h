@@ -14,10 +14,10 @@ public:
 	Logger(const TCHAR* pFile)
 	: m_hFile(NULL)
 	{
-		// to turn this on, create the file c:\GMFBridge.txt
+		// to turn this on, create the file <Documents>\MP4Mux.txt
 
 		TCHAR szPath[MAX_PATH];
-		if (SUCCEEDED(SHGetFolderPath(NULL, CSIDL_PERSONAL, NULL, 0, szPath)))
+		if (SUCCEEDED(SHGetFolderPath(NULL, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT, szPath)))
 		{
 			StringCbCat(szPath, sizeof(szPath), TEXT("\\"));
 			StringCbCat(szPath, sizeof(szPath), pFile);
@@ -107,4 +107,9 @@ private:
 	HANDLE m_hFile;
 };
 extern Logger theLogger;
-#define LOG(x)	theLogger.Log x
+
+#if defined(_DEBUG)
+	#define LOG(x)	theLogger.Log x
+#else
+	#define LOG(x)
+#endif
