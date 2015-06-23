@@ -12,10 +12,11 @@
 //////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
-#include "MuxFilter.h"
+#include <wmcodecdsp.h> // MEDIASUBTYPE_DOLBY_DDPLUS
 #include <sstream>
-
+#include "MuxFilter.h"
 #include "logger.h"
+
 Logger theLogger(TEXT("MP4Mux.txt"));
 
 // --- registration tables ----------------
@@ -576,7 +577,6 @@ MuxInput::BreakConnect()
     return hr;
 }
 
-
 HRESULT 
 MuxInput::CompleteConnect(IPin *pReceivePin)
 {
@@ -621,38 +621,37 @@ MuxInput::GetAllocator(IMemAllocator** ppAllocator)
     return S_OK;
 }
 
-	
-STDMETHODIMP 
+STDMETHODIMP
 MuxInput::NotifyAllocator(IMemAllocator* pAlloc, BOOL bReadOnly)
 {
 	// WARN: Thread unsafe
 	ALLOCATOR_PROPERTIES propAlloc;
 	pAlloc->GetProperties(&propAlloc);
-
-	if (propAlloc.cBuffers < 20)
+	LOG((TEXT("[%d] NotifyAllocator: cbBuffer = %ld, cBuffers = %ld"), m_index, propAlloc.cbBuffer, propAlloc.cBuffers));
+	if(m_pCopyAlloc)
 	{
-		// too few buffers -- we need to copy
-		// -- base the buffer size on 100 x buffers, but
-		// restrict to 200MB max
-		INT64 cSpace = (INT64) propAlloc.cbBuffer * MuxAllocator::GetSuggestBufferCount();
-		cSpace = min((INT64) m_nMaximalCopyBufferCapacity, cSpace);
+		m_pCopyAlloc->Release();
+		m_pCopyAlloc = NULL;
+	}
+	if(propAlloc.cBuffers < 20)
+	{
 		// TODO: The idea of allocating contigous buffer going that large definitely needs a revisit
+		INT64 cSpace = (INT64) propAlloc.cbBuffer * MuxAllocator::GetSuggestBufferCount();
+		#pragma region Minimal Buffer Size (per Major Type)
+		// NOTE: Since we maintain contiguous buffer internally, it makes sense to allocate reasonable space to be able to append/accumulate data right there
+		if(m_mt.majortype == MEDIATYPE_Video)
+			cSpace = max(cSpace, 25 << 20); // 25 MB
+		if(m_mt.majortype == MEDIATYPE_Audio)
+			cSpace = max(cSpace, 1 << 20); // 1 MB
+		#pragma endregion
+		cSpace = min((INT64) m_nMaximalCopyBufferCapacity, cSpace);
 		HRESULT hr = m_CopyBuffer.Allocate((SIZE_T) cSpace);
-		if (SUCCEEDED(hr))
+		if(SUCCEEDED(hr))
 		{
 			m_pCopyAlloc = new Suballocator(&m_CopyBuffer, &hr);
 			m_pCopyAlloc->AddRef();
 		}
 	}
-	else
-	{
-		if (m_pCopyAlloc)
-		{
-			m_pCopyAlloc->Release();
-			m_pCopyAlloc = NULL;
-		}
-	}
-
 	return __super::NotifyAllocator(pAlloc, bReadOnly);
 }
 	
@@ -668,7 +667,7 @@ MuxInput::StartAt(const REFERENCE_TIME* ptStart, DWORD dwCookie)
 		// cancels a start request (but does not stop)
 		m_StreamInfo.dwFlags &= ~(AM_STREAM_INFO_START_DEFINED);
 
-		// if running, and stop pending, then by some wierd overloading of the spec, this means start now
+		// if running, and stop pending, then by some weird overloading of the spec, this means start now
 		if (m_pMux->IsActive() && (m_StreamInfo.dwFlags & AM_STREAM_INFO_STOP_DEFINED))
 		{
 			m_StreamInfo.dwFlags &= ~AM_STREAM_INFO_DISCARDING;

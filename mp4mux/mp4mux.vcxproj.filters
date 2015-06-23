@@ -36,9 +36,6 @@
     <ClCompile Include="TypeHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="alloc.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="Bitstream.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

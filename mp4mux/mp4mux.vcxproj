@@ -344,7 +344,6 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="alloc.cpp" />
     <ClCompile Include="Bitstream.cpp" />
     <ClCompile Include="MovieWriter.cpp">
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>

@@ -3,6 +3,8 @@
 // provided you retain this copyright notice in the source.
 // http://www.gdcl.co.uk
 
+#pragma once
+
 // writes log output to a text file in home directory if present
 
 #include <strsafe.h>
@@ -108,8 +110,8 @@ private:
 };
 extern Logger theLogger;
 
-#if defined(_DEBUG)
+#if defined(_DEBUG) && FALSE
 	#define LOG(x)	theLogger.Log x
 #else
-	#define LOG(x)
+	#define LOG(x)	0
 #endif
