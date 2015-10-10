@@ -404,10 +404,9 @@ MuxInput::Receive(IMediaSample* pSample)
     {
         return hr;
     }
+	// WARN: m_pTrack needs m_pLock protection for thread safety (see #2)
     if (!m_pTrack)
-    {
         return E_FAIL;
-    }
 
 	if (ShouldDiscard(pSample))
 	{
@@ -425,11 +424,19 @@ MuxInput::Receive(IMediaSample* pSample)
 		}
 		if (SUCCEEDED(hr))
 		{
+			// HOTFIX: m_pTrack needs m_pLock protection for thread safety, we have to make sure m_pTrack is still valid (see #2)
+		    CAutoLock Lock(m_pLock);
+			if(!m_pTrack)
+				return E_FAIL;
 			hr = m_pTrack->Add(pOurs);
 		}
 		return hr;
 	}
 
+	// HOTFIX: m_pTrack needs m_pLock protection for thread safety, we have to make sure m_pTrack is still valid (see #2)
+	CAutoLock Lock(m_pLock);
+	if(!m_pTrack)
+		return E_FAIL;
     return m_pTrack->Add(pSample);
 }
 
