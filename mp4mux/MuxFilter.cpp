@@ -364,18 +364,25 @@ STDMETHODIMP
 MuxInput::Receive(IMediaSample* pSample)
 {
 	#if defined(_DEBUG) && FALSE
+		AM_SAMPLE2_PROPERTIES Properties;
+		ZeroMemory(&Properties, sizeof Properties);
 		if(pSample)
 		{
+			QzCComPtr<IMediaSample2> pMediaSample2;
+			if(SUCCEEDED(pSample->QueryInterface(&pMediaSample2)))
+			{
+				const HRESULT nGetPropertiesResult = pMediaSample2->GetProperties(sizeof Properties, (BYTE*) &Properties);
+			}
 			REFERENCE_TIME nStartTime = 0, nStopTime = 0;
 			const HRESULT nGetTimeResult = pSample->GetTime(&nStartTime, &nStopTime);
 			BYTE* pnData = NULL;
 			pSample->GetPointer(&pnData);
 			const LONG nDataSize = pSample->GetActualDataLength();
-			CHAR pszData[1024] = { 0 };
-			for(SIZE_T nIndex = 0; nIndex < nDataSize; nIndex++)
+			//CHAR pszData[1024] = { 0 };
+			//for(SIZE_T nIndex = 0; nIndex < nDataSize; nIndex++)
 			static LONG g_nCounter = 0;
 			CHAR pszText[1024] = { 0 };
-			sprintf_s(pszText, "%hs: " "m_index %d, nGetTimeResult 0x%08x, nStartTime %I64d, nStopTime %I64d, nDataSize %d (%d)\n", __FUNCTION__, 
+			sprintf_s(pszText, "%hs: " "m_index %d, nGetTimeResult 0x%08X, nStartTime %I64d, nStopTime %I64d, nDataSize %d (%d)\n", __FUNCTION__, 
 				m_index,
 				nGetTimeResult, nStartTime, nStopTime, 
 				nDataSize,
@@ -399,6 +406,8 @@ MuxInput::Receive(IMediaSample* pSample)
 		}
 	#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
 
+	if(pSample->IsPreroll() != S_FALSE)
+		return S_OK;
     HRESULT hr = CBaseInputPin::Receive(pSample);
     if (hr != S_OK)
     {
