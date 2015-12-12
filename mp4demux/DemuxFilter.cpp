@@ -160,10 +160,8 @@ void
 Mpeg4Demultiplexor::DeselectSeekingPin(DemuxOutputPin* pPin)
 {
     CAutoLock lock(&m_csSeeking);
-    if (pPin == m_pSeekingPin)
-    {
-        m_pSeekingPin = pPin;
-    }
+    if(pPin == m_pSeekingPin)
+        m_pSeekingPin = NULL;
 }
 
 void 
