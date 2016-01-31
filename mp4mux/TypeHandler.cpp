@@ -505,55 +505,51 @@ TypeHandler::CanSupport(const CMediaType* pmt)
 		// also works for ffdshow encoder outputs, so I'm returning to an 
 		// explicit list. 
 
-		#pragma region 24/32-bit RGB
-		if (*pmt->FormatType() == FORMAT_VideoInfo)
+		const GUID& Subtype = *pmt->Subtype();
+		if(*pmt->FormatType() == FORMAT_VideoInfo)
 		{
-			VIDEOINFOHEADER* pvi = (VIDEOINFOHEADER*)pmt->Format();
-			if ((pvi->bmiHeader.biCompression == BI_RGB) && DIBSIZE(pvi->bmiHeader) == pmt->GetSampleSize())
+			const VIDEOINFOHEADER* pvi = (const VIDEOINFOHEADER*) pmt->Format();
+			#pragma region 24/32-bit RGB
+			if(pvi->bmiHeader.biCompression == BI_RGB && DIBSIZE(pvi->bmiHeader) == pmt->GetSampleSize())
 			{
-				if ((*pmt->Subtype() == MEDIASUBTYPE_RGB32) && (pvi->bmiHeader.biBitCount == 32) ||
-					(*pmt->Subtype() == MEDIASUBTYPE_RGB24) && (pvi->bmiHeader.biBitCount == 24)
-					)
+				const WORD nBitCount = pvi->bmiHeader.biBitCount;
+				if((Subtype == MEDIASUBTYPE_ARGB32 || Subtype == MEDIASUBTYPE_RGB32) && nBitCount == 32 || Subtype == MEDIASUBTYPE_RGB24 && nBitCount == 24)
+					return true;
+			}
+			#pragma endregion
+			FOURCCMap fcc(Subtype.Data1);
+			if(fcc == Subtype)
+			{
+				if((pvi->bmiHeader.biBitCount > 0) && (DIBSIZE(pvi->bmiHeader) == pmt->GetSampleSize()))
+				{
+					FOURCCMap yuy2(DWORD('2YUY')); // YUY2
+					FOURCCMap uyvy(DWORD('YVYU')); // UYVY
+					FOURCCMap hdyc(DWORD('CYDH')); // HDYC
+					FOURCCMap yv12(DWORD('21VY')); // YV12
+					FOURCCMap nv12(DWORD('21VN')); // NV12
+					FOURCCMap i420(DWORD('024I')); // I420
+					if ((*pmt->Subtype() == yuy2) ||
+						(*pmt->Subtype() == uyvy) ||
+						(*pmt->Subtype() == hdyc) ||
+						(*pmt->Subtype() == yv12) ||
+						(*pmt->Subtype() == nv12) ||
+						//(*pmt->Subtype() == MEDIASUBTYPE_RGB32) ||
+						//(*pmt->Subtype() == MEDIASUBTYPE_RGB24) ||
+						(*pmt->Subtype() == i420)
+						)
+					{
+						return true;
+					}
+				}
+				FOURCCMap MJPG(DWORD('GPJM'));
+				FOURCCMap jpeg(DWORD('gepj'));
+				FOURCCMap mjpg(DWORD('gpjm'));
+				if ((*pmt->Subtype() == MJPG) ||
+					(*pmt->Subtype() == jpeg) ||
+					(*pmt->Subtype() == mjpg))
 				{
 					return true;
 				}
-			}
-		}
-		#pragma endregion
-
-		FOURCCMap fcc(pmt->subtype.Data1);
-		if ((fcc == *pmt->Subtype()) && (*pmt->FormatType() == FORMAT_VideoInfo))
-		{
-			VIDEOINFOHEADER* pvi = (VIDEOINFOHEADER*)pmt->Format();
-			if ((pvi->bmiHeader.biBitCount > 0) && (DIBSIZE(pvi->bmiHeader) == pmt->GetSampleSize()))
-			{
-				FOURCCMap yuy2(DWORD('2YUY')); // YUY2
-				FOURCCMap uyvy(DWORD('YVYU')); // UYVY
-				FOURCCMap hdyc(DWORD('CYDH')); // HDYC
-				FOURCCMap yv12(DWORD('21VY')); // YV12
-				FOURCCMap nv12(DWORD('21VN')); // NV12
-				FOURCCMap i420(DWORD('024I')); // I420
-				if ((*pmt->Subtype() == yuy2) ||
-					(*pmt->Subtype() == uyvy) ||
-					(*pmt->Subtype() == hdyc) ||
-					(*pmt->Subtype() == yv12) ||
-					(*pmt->Subtype() == nv12) ||
-					//(*pmt->Subtype() == MEDIASUBTYPE_RGB32) ||
-					//(*pmt->Subtype() == MEDIASUBTYPE_RGB24) ||
-					(*pmt->Subtype() == i420)
-					)
-				{
-					return true;
-				}
-			}
-			FOURCCMap MJPG(DWORD('GPJM'));
-			FOURCCMap jpeg(DWORD('gepj'));
-			FOURCCMap mjpg(DWORD('gpjm'));
-			if ((*pmt->Subtype() == MJPG) ||
-				(*pmt->Subtype() == jpeg) ||
-				(*pmt->Subtype() == mjpg))
-			{
-				return true;
 			}
 		}
     } else 
@@ -617,7 +613,7 @@ TypeHandler::Make(const CMediaType* pmt)
 	#pragma region Video
     if (*pmt->Type() == MEDIATYPE_Video)
     {
-        // divx
+		#pragma region DivX
         FOURCCMap divx(DWORD('xvid'));
         FOURCCMap xvidCaps(DWORD('XVID'));
         FOURCCMap divxCaps(DWORD('DIVX'));
@@ -628,14 +624,13 @@ TypeHandler::Make(const CMediaType* pmt)
 			(*pmt->Subtype() == dx50)) 
         {
             return new DivxHandler(pmt);
-        }
-
+        }	
+		#pragma	endregion 
+		#pragma region MPEG-4 Part 10 H.264
 		FOURCCMap x264(DWORD('462x'));
 		FOURCCMap H264(DWORD('462H'));
 		FOURCCMap h264(DWORD('462h'));
 		FOURCCMap avc1(DWORD('1CVA'));
-
-		// H264
 		if ((*pmt->Subtype() == x264) || 
 			(*pmt->Subtype() == H264) ||
 			(*pmt->Subtype() == h264) ||
@@ -665,33 +660,43 @@ TypeHandler::Make(const CMediaType* pmt)
 				return new H264ByteStreamHandler(pmt);
 			}
 		}
-
+		#pragma	endregion 
+		#pragma region MPEG-2
 		if ((*pmt->Subtype() == MEDIASUBTYPE_MPEG2_VIDEO) &&
 			(*pmt->FormatType()	== FORMAT_MPEG2Video))
 		{
 			return new MPEG2VideoHandler(pmt);
 		}
-
-		// other: uncompressed (checked in CanSupport)
-		FOURCCMap fcc(pmt->subtype.Data1);
-		if ((fcc == *pmt->Subtype()) && (*pmt->FormatType() == FORMAT_VideoInfo))
+		#pragma	endregion 
+		#pragma region Other (Raw, FourCC)
+		// NOTE: As checked in CanSupport
+		if(*pmt->FormatType() == FORMAT_VideoInfo)
 		{
-			VIDEOINFOHEADER* pvi = (VIDEOINFOHEADER*)pmt->Format();
-			if ((pvi->bmiHeader.biBitCount > 0) && (DIBSIZE(pvi->bmiHeader) == pmt->GetSampleSize()))
+			const VIDEOINFOHEADER* pvi = (const VIDEOINFOHEADER*) pmt->Format();
+			#pragma region 24/32-bit RGB
+			if(pmt->subtype == MEDIASUBTYPE_ARGB32 || pmt->subtype == MEDIASUBTYPE_RGB32 || pmt->subtype == MEDIASUBTYPE_RGB24)
+				if(pvi->bmiHeader.biCompression == BI_RGB && DIBSIZE(pvi->bmiHeader) == pmt->GetSampleSize())
+					return new FOURCCVideoHandler(pmt);
+			#pragma	endregion 
+			FOURCCMap fcc(pmt->subtype.Data1);
+			if(fcc == *pmt->Subtype())
 			{
-				return new FOURCCVideoHandler(pmt);
-			}
-			FOURCCMap MJPG(DWORD('GPJM'));
-			FOURCCMap jpeg(DWORD('gepj'));
-			FOURCCMap mjpg(DWORD('gpjm'));
-			if ((*pmt->Subtype() == MJPG) ||
-				(*pmt->Subtype() == jpeg) ||
-				(*pmt->Subtype() == mjpg))
-			{
-				return new FOURCCVideoHandler(pmt);
+				if((pvi->bmiHeader.biBitCount > 0) && (DIBSIZE(pvi->bmiHeader) == pmt->GetSampleSize()))
+					return new FOURCCVideoHandler(pmt);
+				#pragma region M-JPEG
+				FOURCCMap MJPG(DWORD('GPJM'));
+				FOURCCMap jpeg(DWORD('gepj'));
+				FOURCCMap mjpg(DWORD('gpjm'));
+				if ((*pmt->Subtype() == MJPG) ||
+					(*pmt->Subtype() == jpeg) ||
+					(*pmt->Subtype() == mjpg))
+				{
+					return new FOURCCVideoHandler(pmt);
+				}
+				#pragma endregion 
 			}
 		}
-
+		#pragma	endregion 
     } else 
 	#pragma endregion 
 	#pragma region Audio
