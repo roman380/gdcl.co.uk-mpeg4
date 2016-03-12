@@ -809,8 +809,11 @@ DemuxOutputPin::ThreadProc()
 			break;
 
 		REFERENCE_TIME tStart, tStop;
-		double dRate;
-		m_pParser->GetSeekingParams(&tStart, &tStop, &dRate);
+		// HOTFIX: Volatile specifier is not really necessary here but it fixes a nasty problem with MainConcept AVC SDK violating x64 calling convention;
+		//         MS compiler might choose to keep dRate in XMM6 register and the value would be destroyed by the violating call leading to incorrect 
+		//         further streaming (wrong time stamps)
+		volatile DOUBLE dRate;
+		m_pParser->GetSeekingParams(&tStart, &tStop, (DOUBLE*) &dRate);
 
 		#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
 			if(m_pMediaSampleTrace)
