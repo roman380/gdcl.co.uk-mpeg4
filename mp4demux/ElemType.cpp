@@ -450,7 +450,8 @@ ElementaryType::Parse(REFERENCE_TIME tFrame, Atom* patm)
         m_cx = (pSD[24] << 8) + pSD[25];
         m_cy = (pSD[26] << 8) + pSD[27];
         cOffset = 78;
-    } else if (patm->Type() == FOURCC("jvt1")) 
+    } else 
+	if (patm->Type() == FOURCC("jvt1")) 
     {
 		// this is an older format that I think is not in use
         m_type = Video_H264;
@@ -458,27 +459,27 @@ ElementaryType::Parse(REFERENCE_TIME tFrame, Atom* patm)
         m_cx = (pSD[24] << 8) + pSD[25];
         m_cy = (pSD[26] << 8) + pSD[27];
         cOffset = 78;
-	} else if ((patm->Type() == FOURCC("s263")) || (patm->Type() == FOURCC("M263")))
+	} else 
+	if ((patm->Type() == FOURCC("s263")) || (patm->Type() == FOURCC("M263")))
 	{
 		m_type = Video_H263;
 		m_shortname = "H263 Video";
         m_cx = (pSD[24] << 8) + pSD[25];
         m_cy = (pSD[26] << 8) + pSD[27];
         cOffset = 78;
-    } else if (patm->Type() == FOURCC("avc1"))
-	{
-		// this is 14496-15: there is no descriptor in this case
-        m_type = Video_H264;
-		m_shortname = "H264 Video";
-        m_cx = (pSD[24] << 8) + pSD[25];
-        m_cy = (pSD[26] << 8) + pSD[27];
-		cOffset = 78;
-		bDescriptor = false;
+    } else 
+	//if (patm->Type() == FOURCC("avc1"))
+	//{
+	//	// this is 14496-15: there is no descriptor in this case
+	//	m_type = Video_H264;
+	//	m_shortname = "H264 Video";
+	//	m_cx = (pSD[24] << 8) + pSD[25];
+	//	m_cy = (pSD[26] << 8) + pSD[27];
+	//	cOffset = 78;
+	//	bDescriptor = false;
+	//} else 
 	#pragma region 24/32-bit RGB
-	} else if ((patm->Type() == BI_RGB) ||
-				(patm->Type() == Swap4Bytes(MEDIASUBTYPE_RGB24.Data1)) || 
-				(patm->Type() == Swap4Bytes(MEDIASUBTYPE_RGB32.Data1))
-				)
+	if ((patm->Type() == BI_RGB) || (patm->Type() == Swap4Bytes(MEDIASUBTYPE_RGB24.Data1)) || (patm->Type() == Swap4Bytes(MEDIASUBTYPE_RGB32.Data1)))
 	{
 		m_type = Video_FOURCC;
 		m_fourcc = BI_RGB;
@@ -492,55 +493,74 @@ ElementaryType::Parse(REFERENCE_TIME tFrame, Atom* patm)
 
 		// no further info needed
 		return true;
+	} else 
 	#pragma endregion
-	} else if ((patm->Type() == FOURCC("rle ")) ||
-				(patm->Type() == FOURCC("YUY2")) ||
-				(patm->Type() == FOURCC("UYVY")) ||
-				(patm->Type() == FOURCC("HDYC")) ||
-				(patm->Type() == FOURCC("YV12")) ||
-				(patm->Type() == FOURCC("NV12")) ||
-				(patm->Type() == FOURCC("I420")) ||
-				(patm->Type() == FOURCC("dvc ")) ||
-				(patm->Type() == FOURCC("dvcp")) ||
-				(patm->Type() == FOURCC("dvsd")) ||
-				(patm->Type() == FOURCC("dvh5")) ||
-				(patm->Type() == FOURCC("dvhq")) ||
-				(patm->Type() == FOURCC("dvhd")) ||
-				(patm->Type() == FOURCC("jpeg")) ||
-				(patm->Type() == FOURCC("mjpg")) ||
-				(patm->Type() == FOURCC("MJPG")) ||
-				(patm->Type() == FOURCC("mjpa")) ||
-				(patm->Type() == FOURCC("apcn")) 
-				)
+	if ((patm->Type() == FOURCC("rle ")) ||
+		(patm->Type() == FOURCC("YUY2")) ||
+		(patm->Type() == FOURCC("UYVY")) ||
+		(patm->Type() == FOURCC("HDYC")) ||
+		(patm->Type() == FOURCC("YV12")) ||
+		(patm->Type() == FOURCC("NV12")) ||
+		(patm->Type() == FOURCC("I420")) ||
+		(patm->Type() == FOURCC("dvc ")) ||
+		(patm->Type() == FOURCC("dvcp")) ||
+		(patm->Type() == FOURCC("dvsd")) ||
+		(patm->Type() == FOURCC("dvh5")) ||
+		(patm->Type() == FOURCC("dvhq")) ||
+		(patm->Type() == FOURCC("dvhd")) ||
+		(patm->Type() == FOURCC("jpeg")) ||
+		(patm->Type() == FOURCC("mjpg")) ||
+		(patm->Type() == FOURCC("MJPG")) ||
+		(patm->Type() == FOURCC("mjpa")) ||
+		(patm->Type() == FOURCC("apcn")) ||
+        (patm->Type() == FOURCC("hap1")) ||
+        (patm->Type() == FOURCC("HAP1")) ||
+        (patm->Type() == FOURCC("Hap1")) ||
+        (patm->Type() == FOURCC("hap5")) ||
+        (patm->Type() == FOURCC("HAP5")) ||
+        (patm->Type() == FOURCC("Hap5")) ||
+        (patm->Type() == FOURCC("hapy")) ||
+        (patm->Type() == FOURCC("HAPY")) ||
+        (patm->Type() == FOURCC("HapY"))
+		)
 	{
 		m_type = Video_FOURCC;
 		m_shortname = "Video";
 
 		// some decoders (eg mainconcept) only accept basic dv types, so map to these types:
 		DWORD fcc = patm->Type();
-		if ((fcc == FOURCC("dvc ")) ||
-			(fcc == FOURCC("dvcp"))
-			)
+		if((fcc == FOURCC("dvc ")) || (fcc == FOURCC("dvcp")))
 		{
 			fcc = FOURCC("dvsd");
 			m_shortname = "DV Video";
-		}
-		else if ((fcc == FOURCC("dvhq")) ||
-				(fcc == FOURCC("dvh5"))
-				)
+		} else 
+		if((fcc == FOURCC("dvhq")) || (fcc == FOURCC("dvh5")))
 		{
 			fcc = FOURCC("dvhd");
 			m_shortname = "DV Video";
-		}
-		else if ((fcc == FOURCC("jpeg")) ||
-				 (fcc == FOURCC("mjpa")) ||
-				 (fcc == FOURCC("mjpg")))
+		} else 
+		if((fcc == FOURCC("jpeg")) || (fcc == FOURCC("mjpa")) || (fcc == FOURCC("mjpg")))
 		{
 			fcc = FOURCC("MJPG");
 			m_shortname = "Motion JPEG Video";
+		} else 
+		if((fcc == FOURCC("hap1")) || (fcc == FOURCC("HAP1")) || (fcc == FOURCC("Hap1")))
+		{
+			fcc = FOURCC("hap1");
+			m_shortname = "Hap";
+		} else 
+		if((fcc == FOURCC("hap5")) || (fcc == FOURCC("HAP5")) || (fcc == FOURCC("Hap5")))
+		{
+			fcc = FOURCC("hap5");
+			m_shortname = "Hap Alpha";
+		} else 
+		if((fcc == FOURCC("hapy")) || (fcc == FOURCC("HAPY")) || (fcc == FOURCC("HapY")))
+		{
+			fcc = FOURCC("hapy");
+			m_shortname = "Hap Alpha";
 		}
-		m_fourcc = Swap4Bytes(fcc);
 
+		m_fourcc = Swap4Bytes(fcc);
 
 		// casting this to the structure makes it clearer what
 		// info is there, but remember all shorts and longs are byte swapped
