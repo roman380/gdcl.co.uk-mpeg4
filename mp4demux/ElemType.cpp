@@ -468,16 +468,16 @@ ElementaryType::Parse(REFERENCE_TIME tFrame, Atom* patm)
         m_cy = (pSD[26] << 8) + pSD[27];
         cOffset = 78;
     } else 
-	//if (patm->Type() == FOURCC("avc1"))
-	//{
-	//	// this is 14496-15: there is no descriptor in this case
-	//	m_type = Video_H264;
-	//	m_shortname = "H264 Video";
-	//	m_cx = (pSD[24] << 8) + pSD[25];
-	//	m_cy = (pSD[26] << 8) + pSD[27];
-	//	cOffset = 78;
-	//	bDescriptor = false;
-	//} else 
+	if (patm->Type() == FOURCC("avc1"))
+	{
+		// this is 14496-15: there is no descriptor in this case
+		m_type = Video_H264;
+		m_shortname = "H264 Video";
+		m_cx = (pSD[24] << 8) + pSD[25];
+		m_cy = (pSD[26] << 8) + pSD[27];
+		cOffset = 78;
+		bDescriptor = false;
+	} else 
 	#pragma region 24/32-bit RGB
 	if ((patm->Type() == BI_RGB) || (patm->Type() == Swap4Bytes(MEDIASUBTYPE_RGB24.Data1)) || (patm->Type() == Swap4Bytes(MEDIASUBTYPE_RGB32.Data1)))
 	{
