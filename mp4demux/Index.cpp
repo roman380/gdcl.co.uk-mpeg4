@@ -394,7 +394,7 @@ SampleTimes::DTSToSample(LONGLONG tStart)
 			nDuration = 1;
 		}
         LONGLONG tLimit = m_tAtBase + TrackToReftime(nEntries * nDuration) + CTSOffset(m_nBaseSample + nEntries);
-        if (tStart < tLimit)
+        if (tStart < tLimit || m_idx + 1 == m_nSTTS)
         {
 			LONGLONG trackoffset = ReftimeToTrack(tStart - m_tAtBase);
             return m_nBaseSample + long(trackoffset / nDuration);
