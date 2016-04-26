@@ -1418,6 +1418,12 @@ HRESULT FOURCCVideoHandler::WriteData(Atom* patm, const BYTE* pData, int cBytes,
 		{
 			if (cBytes < 2)
 			{
+				// HOTFIX: Microsoft stock MJPEG Compressor Filter https://msdn.microsoft.com/en-us/library/windows/desktop/dd390690
+				//         adds extra 0xFF padding which causes underflow here and results in bad unplayable output; the hotfix is mostly
+				//         fine and files are accepted by most players, even though Windows 10 Movies and TV won't like it anyway.
+				//         Note this is a problem of Motion JPEG compressor, since alternate compresors are free from this issue and the MP4 is OK
+				if(cBytes == 1)
+					break;
 				return VFW_E_BUFFER_UNDERFLOW;
 			} 
 			if (pData[1] == 0xff)
