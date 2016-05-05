@@ -330,7 +330,7 @@ public:
     STDMETHODIMP GetPreroll(LONGLONG * pllPreroll);
 
 // IMuxFilter
-    STDMETHOD(IsTemporaryIndexFileEnabled)()
+    STDMETHOD(IsTemporaryIndexFileEnabled)() override
 	{
 		//_Z4(atlTraceCOM, 4, _T("this 0x%p\n"), this);
 		//_ATLTRY
@@ -345,16 +345,80 @@ public:
 		//}
 		return S_OK;
 	}
-    STDMETHOD(SetTemporaryIndexFileEnabled)(BOOL bEnabled)
+    STDMETHOD(SetTemporaryIndexFileEnabled)(BOOL bTemporaryIndexFileEnabled) override
 	{
 		//_Z4(atlTraceCOM, 4, _T("this 0x%p, bEnabled %d\n"), this, bEnabled);
 		//_ATLTRY
 		//{
 		    CAutoLock lock(&m_csFilter);
-			if(m_bTemporaryIndexFileEnabled == bEnabled)
+			if(m_bTemporaryIndexFileEnabled == bTemporaryIndexFileEnabled)
 				return S_FALSE;
 			//__D(IsActive(), VFW_E_WRONG_STATE);
-			m_bTemporaryIndexFileEnabled = bEnabled;
+			m_bTemporaryIndexFileEnabled = bTemporaryIndexFileEnabled;
+		//}
+		//_ATLCATCH(Exception)
+		//{
+		//	_C(Exception);
+		//}
+		return S_OK;
+	}
+	STDMETHOD(GetAlignTrackStartTimeDisabled)() override
+	{
+		//_Z4(atlTraceCOM, 4, _T("this 0x%p\n"), this);
+		//_ATLTRY
+		//{
+		    CAutoLock lock(&m_csFilter);
+			if(!m_bAlignTrackStartTimeDisabled)
+				return S_FALSE;
+		//}
+		//_ATLCATCH(Exception)
+		//{
+		//	_C(Exception);
+		//}
+		return S_OK;
+	}
+	STDMETHOD(SetAlignTrackStartTimeDisabled)(BOOL bAlignTrackStartTimeDisabled) override
+	{
+		//_Z4(atlTraceCOM, 4, _T("this 0x%p, bAlignTrackStartTimeDisabled %d\n"), this, bAlignTrackStartTimeDisabled);
+		//_ATLTRY
+		//{
+		    CAutoLock lock(&m_csFilter);
+			if(m_bAlignTrackStartTimeDisabled == bAlignTrackStartTimeDisabled)
+				return S_FALSE;
+			//__D(IsActive(), VFW_E_WRONG_STATE);
+			m_bAlignTrackStartTimeDisabled = bAlignTrackStartTimeDisabled;
+		//}
+		//_ATLCATCH(Exception)
+		//{
+		//	_C(Exception);
+		//}
+		return S_OK;
+	}
+	STDMETHOD(GetMinimalMovieDuration)(LONGLONG* pnMinimalMovieDuration) override
+	{
+		//_Z4(atlTraceCOM, 4, _T("this 0x%p\n"), this);
+		//_ATLTRY
+		//{
+		//	__D(pnMinimalMovieDuration, E_POINTER);
+			CAutoLock lock(&m_csFilter);
+			*pnMinimalMovieDuration = (LONGLONG) m_nMinimalMovieDuration;
+		//}
+		//_ATLCATCH(Exception)
+		//{
+		//	_C(Exception);
+		//}
+		return S_OK;
+	}
+	STDMETHOD(SetMinimalMovieDuration)(LONGLONG nMinimalMovieDuration) override
+	{
+		//_Z4(atlTraceCOM, 4, _T("this 0x%p, nMinimalMovieDuration %I64d\n"), this, nMinimalMovieDuration);
+		//_ATLTRY
+		//{
+			CAutoLock lock(&m_csFilter);
+			if(m_nMinimalMovieDuration == (REFERENCE_TIME) nMinimalMovieDuration)
+				return S_FALSE;
+			//__D(IsActive(), VFW_E_WRONG_STATE);
+			m_nMinimalMovieDuration = (REFERENCE_TIME) nMinimalMovieDuration;
 		//}
 		//_ATLCATCH(Exception)
 		//{
@@ -377,6 +441,9 @@ private:
 
     // for reporting (via GetCurrentPosition) after completion
     REFERENCE_TIME m_tWritten;
+
+	BOOL m_bAlignTrackStartTimeDisabled;
+	REFERENCE_TIME m_nMinimalMovieDuration;
 
 	BOOL m_bTemporaryIndexFileEnabled;
     CCritSec m_TemporaryIndexFileCriticalSection;

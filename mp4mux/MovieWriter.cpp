@@ -54,6 +54,8 @@ Atom::CreateAtom(DWORD type)
 
 MovieWriter::MovieWriter(AtomWriter* pContainer)
 : m_pContainer(pContainer),
+  m_bAlignTrackStartTimeDisabled(FALSE),
+  m_nMinimalMovieDuration(0),
   m_bStopped(false),
   m_bFTYPInserted(false),
   m_tInterleave(UNITS)
@@ -100,13 +102,16 @@ MovieWriter::Close(REFERENCE_TIME* pDuration)
     for (it = m_Tracks.begin(); it != m_Tracks.end(); it++)
     {
         TrackWriter* pTrack = *it;
-        pTrack->AdjustStart(tAdj);
+		if(!m_bAlignTrackStartTimeDisabled)
+			pTrack->AdjustStart(tAdj);
         tThis = pTrack->Duration();
         if (tThis > tDur)
         {
             tDur = tThis;
         }
     }
+	if(m_nMinimalMovieDuration && tDur < m_nMinimalMovieDuration)
+		tDur = m_nMinimalMovieDuration;
     *pDuration = tDur;
     LONGLONG tScaledDur = tDur * MovieScale() / UNITS;
 

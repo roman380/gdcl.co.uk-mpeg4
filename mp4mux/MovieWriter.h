@@ -529,6 +529,12 @@ class MovieWriter
 public:
     MovieWriter(AtomWriter* pContainer);
 
+	VOID Initialize(BOOL bAlignTrackStartTimeDisabled, REFERENCE_TIME nMinimalMovieDuration)
+	{
+		m_bAlignTrackStartTimeDisabled = bAlignTrackStartTimeDisabled;
+		m_nMinimalMovieDuration = nMinimalMovieDuration;
+	}
+
     TrackWriter* MakeTrack(const CMediaType* pmt, BOOL bNotifyMediaSampleWrite = FALSE);
     HRESULT Close(REFERENCE_TIME* pDuration);
 
@@ -577,6 +583,10 @@ private:
 
 private:
     AtomWriter* m_pContainer;
+
+	BOOL m_bAlignTrackStartTimeDisabled;
+	REFERENCE_TIME m_nMinimalMovieDuration;
+
     CCritSec m_csWrite;
     bool m_bStopped;
     bool m_bFTYPInserted;

@@ -104,6 +104,8 @@ Mpeg4Mux::CreateInstance(LPUNKNOWN pUnk, HRESULT* phr)
 Mpeg4Mux::Mpeg4Mux(LPUNKNOWN pUnk, HRESULT* phr)
 : CBaseFilter(NAME("Mpeg4Mux"), pUnk, &m_csFilter, *m_sudFilter.clsID),
   m_tWritten(0),
+  m_bAlignTrackStartTimeDisabled(FALSE),
+  m_nMinimalMovieDuration(0),
   m_bTemporaryIndexFileEnabled(FALSE)
 {
     // create output pin and one free input
@@ -249,6 +251,7 @@ Mpeg4Mux::Pause()
     {
         m_pOutput->Reset();
         m_pMovie = new MovieWriter(m_pOutput);
+		m_pMovie->Initialize(m_bAlignTrackStartTimeDisabled, m_nMinimalMovieDuration);
 		#pragma region Temporary Index File
 		// ASSU: Output uses IStream
 		if(m_bTemporaryIndexFileEnabled)
