@@ -995,6 +995,13 @@ DemuxOutputPin::ThreadProc()
 					{
 						pSample->SetSyncPoint(true);
 					}
+
+					{
+						REFERENCE_TIME& nMediaStartTime = tNext;
+						REFERENCE_TIME nMediaStopTime = nMediaStartTime + tDur;
+						pSample->SetMediaTime(&nMediaStartTime, &nMediaStopTime);
+					}
+
 					REFERENCE_TIME tSampleStart = tNext - tStart;
 					if (tSampleStart < 0)
 					{
