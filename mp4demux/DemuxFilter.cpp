@@ -402,8 +402,10 @@ void AsyncRequestor::Active(IAsyncReader* pRdr)
 		ZeroMemory(&m_props, sizeof(m_props));
 		m_props.cBuffers = 16;
 		m_props.cbBuffer = max_buffer_size;
+		// TODO: Handle errors accurately
 		m_rdr->RequestAllocator(NULL, &m_props, &m_pAlloc);
-		m_pAlloc->Commit();
+		if(m_pAlloc)
+			m_pAlloc->Commit();
 	}
 }
 
