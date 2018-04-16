@@ -51,8 +51,8 @@ END
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION  1, 0, 0, 405
- PRODUCTVERSION 1,0,0,11
+ FILEVERSION  1, 0, 0, 410
+ PRODUCTVERSION 1, 0, 0, 12
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -69,12 +69,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "GDCL (www.gdcl.co.uk)"
             VALUE "FileDescription", "GDCL Mpeg-4 Demux; see https://github.com/roman380/gdcl.co.uk-mpeg4 for details"
-            VALUE "FileVersion",  "1, 0, 0, 405\0"
+            VALUE "FileVersion",  "1, 0, 0, 410"
             VALUE "InternalName", "mp4demux"
             VALUE "LegalCopyright", "Copyright © 2006-2013 GDCL. All rights reserved."
             VALUE "OriginalFilename", "mp4demux.dll"
             VALUE "ProductName", "GDCL Mpeg4 Demux"
-            VALUE "ProductVersion", "1.0.0.11"
+            VALUE "ProductVersion", "1, 0, 0, 12"
         END
     END
     BLOCK "VarFileInfo"
