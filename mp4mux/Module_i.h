@@ -3,11 +3,11 @@
 /* this ALWAYS GENERATED file contains the definitions for the interfaces */
 
 
- /* File created by MIDL compiler version 7.00.0555 */
-/* at Thu Jun 11 17:16:16 2015
+ /* File created by MIDL compiler version 8.01.0622 */
+/* at Tue Jan 19 05:14:07 2038
  */
 /* Compiler settings for Module.idl:
-    Oicf, W1, Zp8, env=Win32 (32b run), target_arch=X86 7.00.0555 
+    Oicf, W1, Zp8, env=Win32 (32b run), target_arch=X86 8.01.0622 
     protocol : dce , ms_ext, c_ext, robust
     error checks: allocation ref bounds_check enum stub_data 
     VC __declspec() decoration level: 
@@ -16,12 +16,11 @@
 */
 /* @@MIDL_FILE_HEADING(  ) */
 
-#pragma warning( disable: 4049 )  /* more than 64k source lines */
 
 
 /* verify that the <rpcndr.h> version is high enough to compile this file*/
 #ifndef __REQUIRED_RPCNDR_H_VERSION__
-#define __REQUIRED_RPCNDR_H_VERSION__ 475
+#define __REQUIRED_RPCNDR_H_VERSION__ 500
 #endif
 
 #include "rpc.h"
@@ -29,7 +28,7 @@
 
 #ifndef __RPCNDR_H_VERSION__
 #error this stub requires an updated version of <rpcndr.h>
-#endif // __RPCNDR_H_VERSION__
+#endif /* __RPCNDR_H_VERSION__ */
 
 
 #ifndef __Module_i_h__
@@ -44,18 +43,21 @@
 #ifndef __IMuxMemAllocator_FWD_DEFINED__
 #define __IMuxMemAllocator_FWD_DEFINED__
 typedef interface IMuxMemAllocator IMuxMemAllocator;
+
 #endif 	/* __IMuxMemAllocator_FWD_DEFINED__ */
 
 
 #ifndef __IMuxInputPin_FWD_DEFINED__
 #define __IMuxInputPin_FWD_DEFINED__
 typedef interface IMuxInputPin IMuxInputPin;
+
 #endif 	/* __IMuxInputPin_FWD_DEFINED__ */
 
 
 #ifndef __IMuxFilter_FWD_DEFINED__
 #define __IMuxFilter_FWD_DEFINED__
 typedef interface IMuxFilter IMuxFilter;
+
 #endif 	/* __IMuxFilter_FWD_DEFINED__ */
 
 
@@ -112,6 +114,7 @@ DEFINE_GUID(IID_IMuxMemAllocator,0xB583CDE8,0x2E32,0x468A,0xAA,0x60,0x36,0xD2,0x
             /* [in] */ LONG nMinimalBufferCount) = 0;
         
     };
+    
     
 #else 	/* C style interface */
 
@@ -203,6 +206,7 @@ DEFINE_GUID(IID_IMuxInputPin,0x51613985,0xD540,0x435B,0xBE,0xBC,0x68,0xD2,0x52,0
         
     };
     
+    
 #else 	/* C style interface */
 
     typedef struct IMuxInputPinVtbl
@@ -288,9 +292,21 @@ DEFINE_GUID(IID_IMuxFilter,0x6CE45967,0xF228,0x4F7B,0x8B,0x93,0x83,0xDC,0x59,0x9
         virtual HRESULT STDMETHODCALLTYPE IsTemporaryIndexFileEnabled( void) = 0;
         
         virtual HRESULT STDMETHODCALLTYPE SetTemporaryIndexFileEnabled( 
-            /* [in] */ BOOL bEnabled) = 0;
+            /* [in] */ BOOL bTemporaryIndexFileEnabled) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE GetAlignTrackStartTimeDisabled( void) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE SetAlignTrackStartTimeDisabled( 
+            /* [in] */ BOOL bAlignTrackStartTimeDisabled) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE GetMinimalMovieDuration( 
+            /* [out] */ LONGLONG *pnMinimalMovieDuration) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE SetMinimalMovieDuration( 
+            /* [in] */ LONGLONG nMinimalMovieDuration) = 0;
         
     };
+    
     
 #else 	/* C style interface */
 
@@ -315,7 +331,22 @@ DEFINE_GUID(IID_IMuxFilter,0x6CE45967,0xF228,0x4F7B,0x8B,0x93,0x83,0xDC,0x59,0x9
         
         HRESULT ( STDMETHODCALLTYPE *SetTemporaryIndexFileEnabled )( 
             IMuxFilter * This,
-            /* [in] */ BOOL bEnabled);
+            /* [in] */ BOOL bTemporaryIndexFileEnabled);
+        
+        HRESULT ( STDMETHODCALLTYPE *GetAlignTrackStartTimeDisabled )( 
+            IMuxFilter * This);
+        
+        HRESULT ( STDMETHODCALLTYPE *SetAlignTrackStartTimeDisabled )( 
+            IMuxFilter * This,
+            /* [in] */ BOOL bAlignTrackStartTimeDisabled);
+        
+        HRESULT ( STDMETHODCALLTYPE *GetMinimalMovieDuration )( 
+            IMuxFilter * This,
+            /* [out] */ LONGLONG *pnMinimalMovieDuration);
+        
+        HRESULT ( STDMETHODCALLTYPE *SetMinimalMovieDuration )( 
+            IMuxFilter * This,
+            /* [in] */ LONGLONG nMinimalMovieDuration);
         
         END_INTERFACE
     } IMuxFilterVtbl;
@@ -343,8 +374,20 @@ DEFINE_GUID(IID_IMuxFilter,0x6CE45967,0xF228,0x4F7B,0x8B,0x93,0x83,0xDC,0x59,0x9
 #define IMuxFilter_IsTemporaryIndexFileEnabled(This)	\
     ( (This)->lpVtbl -> IsTemporaryIndexFileEnabled(This) ) 
 
-#define IMuxFilter_SetTemporaryIndexFileEnabled(This,bEnabled)	\
-    ( (This)->lpVtbl -> SetTemporaryIndexFileEnabled(This,bEnabled) ) 
+#define IMuxFilter_SetTemporaryIndexFileEnabled(This,bTemporaryIndexFileEnabled)	\
+    ( (This)->lpVtbl -> SetTemporaryIndexFileEnabled(This,bTemporaryIndexFileEnabled) ) 
+
+#define IMuxFilter_GetAlignTrackStartTimeDisabled(This)	\
+    ( (This)->lpVtbl -> GetAlignTrackStartTimeDisabled(This) ) 
+
+#define IMuxFilter_SetAlignTrackStartTimeDisabled(This,bAlignTrackStartTimeDisabled)	\
+    ( (This)->lpVtbl -> SetAlignTrackStartTimeDisabled(This,bAlignTrackStartTimeDisabled) ) 
+
+#define IMuxFilter_GetMinimalMovieDuration(This,pnMinimalMovieDuration)	\
+    ( (This)->lpVtbl -> GetMinimalMovieDuration(This,pnMinimalMovieDuration) ) 
+
+#define IMuxFilter_SetMinimalMovieDuration(This,nMinimalMovieDuration)	\
+    ( (This)->lpVtbl -> SetMinimalMovieDuration(This,nMinimalMovieDuration) ) 
 
 #endif /* COBJMACROS */
 
