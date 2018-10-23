@@ -1003,6 +1003,7 @@ REFERENCE_TIME MediaChunk::GetDuration()
 
 // ---- index classes --------------------
 
+/*
 ListOfLongs::ListOfLongs()
 : m_nEntriesInLast(0)
 {
@@ -1108,6 +1109,7 @@ ListOfI64::Write(Atom* patm)
     }
     return S_OK;
 }
+*/
 
 ListOfPairs::ListOfPairs()
 : m_cEntries(0),

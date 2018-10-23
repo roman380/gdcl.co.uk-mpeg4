@@ -31,7 +31,7 @@ using namespace std;
 
 #include "smartptr.h"
 
-//#if defined(_DEBUG) //&& FALSE
+//#if defined(_DEBUG) && FALSE
 	// NOTE: This enables DirectShow Spy integration to review filter graphs being created;
 	//       DirectShowSpy has to be installed to compile (and run) this, see http://alax.info/blog/777;
 	//       This section can be safely commented out otherwise

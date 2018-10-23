@@ -160,9 +160,21 @@ typedef smart_ptr<MediaChunk> MediaChunkPtr;
 
 
 // --- indexing ---
+/*
+entiendo que aunque esta utilizando un 'smart array' en realidad el uso es super simple
+* tiene un append, que cuando llena un buffer, crea uno nuevo y lo añade a la lista
+* al cierre del archivo, los indices mandan llamar su Write(Atom) que al final desencadena en una escritura
+* al pin de salida.  Write itera todos los bloques almacenados en memoria de manera secuencial, por lo que podemos
+* leer los bloques almacenados en disco.
+* La única lectura que se hace de los bloques es cuando tiene que cambiar de offsets de 32 bits a offsets de 64 bits
+* Es un acceso secuencial, por lo que podemos mantener adicional al bloque activo (de escritura) un bloque de
+* lectura
+*/
 
-typedef smart_array<BYTE> BytePtr;
+//typedef smart_array<BYTE> BytePtr;
+#define BASE_EXIT_CODE 7200
 
+/*
 // a growable list of 32-bit values maintained in
 // file byte order for writing directly to one of the
 // index atoms
@@ -185,7 +197,148 @@ private:
     vector<BytePtr> m_Blocks;
     long m_nEntriesInLast;
 };
+*/
 
+
+
+// sgor: disk-backed list intended to reduce memory consumption of large recordings
+template<class T> class ListOf {
+public:
+   
+   enum {
+      EntriesPerBlock = 4096 / sizeof(T),
+   };
+
+   ListOf() : _backingFile(NULL)
+            , _chunkReadIdx(0)
+   {
+      _readPos.HighPart = DWORD_MAX;
+      TCHAR pTempPath[MAX_PATH];
+      TCHAR pTempFileName[MAX_PATH];
+      DWORD ret = GetTempPath(MAX_PATH, pTempPath);
+      if( ret <= 0 || ret > MAX_PATH )
+         exit(BASE_EXIT_CODE);
+
+      if( GetTempFileName(pTempPath, TEXT("mp4"), 0, pTempFileName) == 0 )
+         exit(BASE_EXIT_CODE + 1);
+      
+      _backingFile = CreateFile(
+         pTempFileName,
+         GENERIC_READ | GENERIC_WRITE,
+         0,
+         NULL,
+         CREATE_ALWAYS,
+         FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE,
+         NULL
+      );
+      if( _backingFile == INVALID_HANDLE_VALUE )
+         exit(BASE_EXIT_CODE + 2);
+   }
+   ~ListOf() {
+      if( _backingFile != NULL )
+         CloseHandle(_backingFile);
+   }
+   void Append(T item) {
+      // Calls for append are relatively sparse, we won't optimize this and will append every received T in the file
+      // individually
+      DWORD _;
+      LARGE_INTEGER toMove = { 0 };
+      SetFilePointerEx(_backingFile, toMove, NULL, FILE_END);
+      BYTE buff[8];
+      if constexpr( sizeof(T) == 4 ) {
+         WriteLong((long)item, buff);
+      } else if constexpr( sizeof(T) == 8 ) {
+         WriteI64((LONGLONG)item, buff);
+      } else {
+         static_assert("unsupported type");
+      }
+      if( !WriteFile(_backingFile, buff, sizeof(T), &_, NULL) )
+         exit(BASE_EXIT_CODE + 3); 
+      _readPos.HighPart = DWORD_MAX; // invalidate read-position cursor
+   }
+   HRESULT Write(Atom* patm) {
+      LARGE_INTEGER fileSz;
+      LARGE_INTEGER toMove = { 0 };
+      if( !SetFilePointerEx(_backingFile, toMove, &fileSz, FILE_END) ||
+          !SetFilePointerEx(_backingFile, toMove, NULL, FILE_BEGIN) ) 
+      {
+         return E_FAIL;
+      }
+      
+      UINT fullBlockCount  = (UINT)(fileSz.QuadPart / (EntriesPerBlock * sizeof(T)));
+      UINT partialBlockLen = (UINT)(fileSz.QuadPart % (EntriesPerBlock * sizeof(T)));
+      
+      DWORD _;
+      BYTE block[EntriesPerBlock * sizeof(T)];
+      for( UINT i = 0; i < fullBlockCount; i++ ) {
+         if( !ReadFile(_backingFile, block, sizeof(block), &_, NULL) )
+            return E_FAIL;
+         HRESULT hr = patm->Append(block, sizeof(block));
+         if( FAILED(hr) ) {
+            return hr;
+         }
+      }
+      if( !ReadFile(_backingFile, block, partialBlockLen, &_, NULL) )
+         return E_FAIL;
+      return patm->Append(block, partialBlockLen);
+   }
+   long Entries() {
+      LARGE_INTEGER fileSz;
+      LARGE_INTEGER curPos;
+      LARGE_INTEGER toMove = { 0 };
+      
+      if( !SetFilePointerEx(_backingFile, toMove, &curPos, FILE_CURRENT) ||   // remember current position
+          !SetFilePointerEx(_backingFile, toMove, &fileSz, FILE_END    ) ||   // move to end-of-file and extract pos
+          !SetFilePointerEx(_backingFile, curPos, NULL,    FILE_BEGIN  )      // restore current position
+      ) {
+         return E_FAIL;
+      }
+      return (long)(fileSz.QuadPart / sizeof(T));
+   }
+   T Entry(long nEntry) {
+      // Optimized for linear access (inspection of client-code shows this is the access pattern, but works with random 
+      // access too (albeit very slowly), in case I missed random-access logic somewhere else in the project
+      LARGE_INTEGER pos;
+      pos.QuadPart = nEntry * sizeof(T);
+      // Perform seek only if our read cursor position mismatches the real file cursor position
+      if( pos.QuadPart != _readPos.QuadPart ) {
+         if( !SetFilePointerEx(_backingFile, pos, NULL, FILE_BEGIN) )
+            exit(BASE_EXIT_CODE + 4);
+         _chunkReadIdx = EntriesPerBlock;  // Force reading new chunk
+      }
+      if( _chunkReadIdx >= EntriesPerBlock ) {
+         // We have processed the whole chunk (or the read cursor has been repositioned), read next chunk
+         if( !ReadFile(_backingFile, (void*)_chunk, EntriesPerBlock * sizeof(T), &_chunkActualEntries, NULL) )
+            exit(BASE_EXIT_CODE + 5);
+         _chunkActualEntries /= sizeof(T);
+         _chunkReadIdx = 0;
+      }
+      if( _chunkReadIdx >= _chunkActualEntries )  // detect read past end-of-file
+         exit(BASE_EXIT_CODE + 6);
+      T entry;
+      if constexpr( sizeof(T) == 4 ) {
+         entry = (T)ReadLong((BYTE*)&_chunk[_chunkReadIdx++]);
+      } else if constexpr( sizeof(T) == 8) {
+         entry = (T)ReadI64((BYTE*)&_chunk[_chunkReadIdx++]);
+      } else {
+         static_assert("unsupported type");
+      }
+      _readPos.QuadPart += sizeof(T);
+      return entry;
+   }
+
+private:
+   HANDLE _backingFile;
+   LARGE_INTEGER _readPos;
+   DWORD _chunkReadIdx;
+   DWORD _chunkActualEntries;
+   T _chunk[EntriesPerBlock];
+};
+
+using ListOfLongs = ListOf<long>;
+using ListOfI64 = ListOf<LONGLONG>;
+
+/*
 // growable list of 64-bit values
 class ListOfI64
 {
@@ -204,6 +357,7 @@ private:
     vector<BytePtr> m_Blocks;
     long m_nEntriesInLast;
 };
+*/
 
 // pairs of <count, value> longs -- this is essentially an RLE compression
 // scheme for some index tables; instead of a list of values, consecutive
