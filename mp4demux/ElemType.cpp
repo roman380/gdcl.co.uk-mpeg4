@@ -17,18 +17,6 @@
 #include "ElemType.h"
 #include <dvdmedia.h>
 
-inline WORD Swap2Bytes(USHORT x)
-{
-	return ((x & 0xff) << 8) | ((x >> 8) & 0xff);
-}
-inline DWORD Swap4Bytes(DWORD x)
-{
-	return ((x & 0xff) << 24) |
-		   ((x & 0xff00) << 8) |
-		   ((x & 0xff0000) >> 8) |
-		   ((x >> 24) & 0xff);
-}
-
 // ----- format-specific handlers -------------------
 
 // default no-translation

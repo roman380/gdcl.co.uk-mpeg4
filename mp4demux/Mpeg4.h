@@ -12,19 +12,21 @@
 
 #pragma once
 
-// byte re-ordering
-inline long SwapLong(const BYTE* pByte)
+inline UINT16 Swap2Bytes(UINT16 Value)
 {
-    return (pByte[0] << 24) |
-            (pByte[1] << 16) |
-            (pByte[2] << 8)  |
-            pByte[3];
+	return _byteswap_ushort(Value);
 }
-
-inline LONGLONG SwapI64(const BYTE* pByte)
+inline UINT32 Swap4Bytes(UINT32 Value)
 {
-    return ((LONGLONG)SwapLong(pByte))<< 32 |
-            (unsigned long)(SwapLong(pByte + 4));
+	return _byteswap_ulong(Value);
+}
+inline UINT32 SwapLong(const BYTE* Value)
+{
+	return _byteswap_ulong(*((const UINT32*) Value));
+}
+inline UINT64 SwapI64(const BYTE* Value)
+{
+	return _byteswap_uint64(*((const UINT64*) Value));
 }
 
 class Atom;
