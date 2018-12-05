@@ -6,4 +6,6 @@
 
 *.user
 *.bak
+*.aps
 _Bin
+.vs
