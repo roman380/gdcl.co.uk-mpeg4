@@ -413,7 +413,7 @@ SIZE_T SampleTimes::Get(REFERENCE_TIME*& pnTimes) const
 	SIZE_T nEntryCount = 0; 
     for(SIZE_T nIndex = 0; nIndex < (SIZE_T) m_nSTTS; nIndex++)
 	{
-        SIZE_T nCurrentEntryCount = (SIZE_T) SwapLong(m_pSTTS + 8 + (nIndex * 8));
+        const SIZE_T nCurrentEntryCount = (SIZE_T) SwapLong(m_pSTTS + 8 + (nIndex * 8));
 		nEntryCount += nCurrentEntryCount;
 	}
 	if(nEntryCount)

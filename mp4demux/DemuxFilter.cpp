@@ -493,8 +493,8 @@ HRESULT AsyncRequestor::Read(LONGLONG llOffset, long cBytes, BYTE* pBuffer)
 		{
 			IMediaSamplePtr pDone;
 			DWORD dw;
-			HRESULT hr = m_rdr->WaitForNext(INFINITE, &pDone, (DWORD_PTR*)&dw);
-			if (hr == S_OK)
+			const HRESULT WaitForNextResult = m_rdr->WaitForNext(INFINITE, &pDone, (DWORD_PTR*)&dw);
+			if (WaitForNextResult == S_OK)
 			{
 				CAutoLock lock(&m_csRequests);
 
