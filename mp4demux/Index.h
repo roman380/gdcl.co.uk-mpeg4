@@ -75,6 +75,61 @@ private:
 class SampleTimes
 {
 public:
+
+	class CompositionTimeOffset
+	{
+	public:
+		UINT32 m_BaseSampleIndex;
+		UINT32 m_SampleCount;
+		UINT32 m_Value;
+
+	public:
+	// CompositionTimeOffset
+		CompositionTimeOffset()
+		{
+		}
+		CompositionTimeOffset(UINT32 BaseSampleIndex, UINT32 SampleCount, UINT32 Value) :
+			m_BaseSampleIndex(BaseSampleIndex),
+			m_SampleCount(SampleCount),
+			m_Value(Value)
+		{
+		}
+		static UINT32 LookupValue(const std::vector<CompositionTimeOffset>& Vector, UINT32 SampleIndex)
+		{
+			ASSERT(!Vector.empty());
+			ASSERT(SampleIndex <= Vector.back().m_BaseSampleIndex + Vector.back().m_SampleCount);
+			SIZE_T L = 0, R = Vector.size();
+			for(; ; )
+			{
+				const CompositionTimeOffset& E = Vector[L];
+				if(SampleIndex - E.m_BaseSampleIndex < E.m_SampleCount)
+					return E.m_Value;
+				ASSERT(R - L >= 2);
+				const SIZE_T C = (L + R) / 2;
+				if(SampleIndex < Vector[C].m_BaseSampleIndex)
+					R = C;
+				else
+					L = C;
+			}
+			ASSERT(FALSE);
+			return 0;
+		}
+		static UINT32 IncrementalLookupValue(const std::vector<CompositionTimeOffset>& Vector, SIZE_T& Index, UINT32 SampleIndex)
+		{
+			ASSERT(!Vector.empty());
+			ASSERT(Index < Vector.size());
+			const CompositionTimeOffset& E0 = Vector[Index];
+			ASSERT(SampleIndex >= E0.m_BaseSampleIndex);
+			if(SampleIndex - E0.m_BaseSampleIndex < E0.m_SampleCount)
+				return E0.m_Value;
+			const CompositionTimeOffset& E1 = Vector[++Index];
+			ASSERT(SampleIndex >= E1.m_BaseSampleIndex);
+			ASSERT(SampleIndex - E1.m_BaseSampleIndex < E1.m_SampleCount);
+			return E1.m_Value;
+		}
+	};
+
+public:
     SampleTimes();
 
 	bool Parse(long scale, LONGLONG CTOffset, Atom* patmSTBL);
@@ -84,6 +139,7 @@ public:
     LONGLONG SampleToCTS(long nSample);
     LONGLONG Duration(long nSample);
     LONGLONG CTSOffset(long nSample) const;
+	void GetCompositionTimeOffsetVector(std::vector<CompositionTimeOffset>& CompositionTimeOffsetVector) const;
     long CTSToSample(LONGLONG tStart);
     LONGLONG TotalDuration()					{ return m_total; }
 

@@ -418,6 +418,9 @@ SIZE_T SampleTimes::Get(REFERENCE_TIME*& pnTimes) const
 	}
 	if(nEntryCount)
 	{
+		std::vector<CompositionTimeOffset> CompositionTimeOffsetVector;
+		GetCompositionTimeOffsetVector(CompositionTimeOffsetVector);
+		SIZE_T CompositionTimeOffsetVectorIndex = 0;
 		pnTimes = (REFERENCE_TIME*) CoTaskMemAlloc(nEntryCount * sizeof *pnTimes);
 		ASSERT(pnTimes);
 		SIZE_T nEntryIndex = 0;
@@ -430,8 +433,7 @@ SIZE_T SampleTimes::Get(REFERENCE_TIME*& pnTimes) const
 			for(SIZE_T nCurrentEntryIndex = 0; nCurrentEntryIndex < nCurrentEntryCount; nCurrentEntryIndex++)
 			{
 				const SIZE_T nSampleIndex = nEntryIndex + nCurrentEntryIndex;
-				const REFERENCE_TIME nSampleTime = nBaseTime + TrackToReftime(nCurrentEntryIndex * nCurrentDuration) + CTSOffset((long) nSampleIndex);
-				pnTimes[nSampleIndex] = nSampleTime;
+				pnTimes[nSampleIndex] = nBaseTime + TrackToReftime(nCurrentEntryIndex * nCurrentDuration) + CompositionTimeOffset::IncrementalLookupValue(CompositionTimeOffsetVector, CompositionTimeOffsetVectorIndex, (UINT32) nSampleIndex);
 			}
 			nEntryIndex += nCurrentEntryCount;
 			nBaseTime += TrackToReftime(nCurrentEntryCount * nCurrentDuration);
@@ -477,25 +479,41 @@ SampleTimes::SampleToCTS(long nSample)
 
 // offset from decode to composition time for this sample
 LONGLONG 
-SampleTimes::CTSOffset(long nSample) const
+SampleTimes::CTSOffset(long SampleIndex) const
 {
-    if (!m_nCTTS)
-    {
+	ASSERT(SampleIndex >= 0);
+    if(!m_nCTTS)
         return 0;
-    }
-    long nBase = 0;
-    for (long i = 0; i < m_nCTTS; i++)
+    UINT32 BaseEntryCount = 0;
+	const UINT8* Data = (const UINT8*) (m_pCTTS + 8);
+    for(long TableIndex = 0; TableIndex < m_nCTTS; TableIndex++)
     {
-        long nEntries = SwapLong(m_pCTTS + 8 + (i * 8));
-        if (nSample < (nBase + nEntries))
-        {
-			LONGLONG tOffset = TrackToReftime(SwapLong(m_pCTTS + 8 + 4 + (i * 8)));
-            return tOffset;
-        }
-        nBase += nEntries;
+        const UINT32 EntryCount = SwapLong(Data + (TableIndex * 8));
+        if((UINT32) SampleIndex < (BaseEntryCount + EntryCount))
+            return TrackToReftime(SwapLong(Data + (TableIndex * 8) + 4));
+        BaseEntryCount += EntryCount;
     }
-    // should not get here
+	//ASSERT(FALSE); // should not get here
     return 0;
+}
+
+void SampleTimes::GetCompositionTimeOffsetVector(std::vector<CompositionTimeOffset>& CompositionTimeOffsetVector) const
+{
+	ASSERT(CompositionTimeOffsetVector.empty());
+    if(m_nCTTS)
+	{
+		const UINT8* Data = (const UINT8*) (m_pCTTS + 8);
+		CompositionTimeOffsetVector.reserve(m_nCTTS);
+		UINT32 BaseEntryCount = 0;
+		for(long TableIndex = 0; TableIndex < m_nCTTS; TableIndex++)
+		{
+			const UINT32 EntryCount = SwapLong(Data + (TableIndex * 8));
+			const UINT32 Value = SwapLong(Data + (TableIndex * 8) + 4);
+			CompositionTimeOffsetVector.emplace_back(BaseEntryCount, EntryCount, Value);
+	        BaseEntryCount += EntryCount;
+		}
+		ASSERT(CompositionTimeOffsetVector.size() == (SIZE_T) m_nCTTS);
+	}
 }
 
 LONGLONG 
