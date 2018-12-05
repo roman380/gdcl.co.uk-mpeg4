@@ -1022,10 +1022,10 @@ AACHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
 				break;
 			}
 		}
-		BYTE b[2];
-		b[0] = (BYTE) ((ObjectType << 3) | ((RateIndex >> 1) & 7));
-		b[1] = (BYTE) (((RateIndex & 1) << 7) | (ChannelIndex << 3));
-		dsi.Append(b, 2);
+		BYTE b2[2];
+		b2[0] = (BYTE) ((ObjectType << 3) | ((RateIndex >> 1) & 7));
+		b2[1] = (BYTE) (((RateIndex & 1) << 7) | (ChannelIndex << 3));
+		dsi.Append(b2, 2);
 	}
     if (cExtra > 0)
     {
