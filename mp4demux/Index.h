@@ -116,7 +116,8 @@ public:
 		}
 		static UINT32 IncrementalLookupValue(const std::vector<CompositionTimeOffset>& Vector, SIZE_T& Index, UINT32 SampleIndex)
 		{
-			ASSERT(!Vector.empty());
+			if(Vector.empty())
+				return 0;
 			ASSERT(Index < Vector.size());
 			const CompositionTimeOffset& E0 = Vector[Index];
 			ASSERT(SampleIndex >= E0.m_BaseSampleIndex);
