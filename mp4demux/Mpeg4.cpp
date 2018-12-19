@@ -174,7 +174,7 @@ Atom::BufferRelease()
 // -- main movie header, contains list of tracks ---------------
 
 Movie::Movie(Atom* pRoot)
-: m_pRoot(pRoot)
+: m_pRoot(pRoot), m_invalidTrackCount(0)
 {
     Atom* pMovie = m_pRoot->FindChild(FOURCC("moov"));
     if (pMovie != NULL)
@@ -207,7 +207,8 @@ Movie::Movie(Atom* pRoot)
                 if (pTrack->Valid())
                 {
                     m_Tracks.push_back(pTrack);
-                }
+                } else
+					m_invalidTrackCount++;
             }
         }
     }

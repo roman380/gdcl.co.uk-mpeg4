@@ -228,11 +228,19 @@ typedef IPinPtr DemuxOutputPinPtr;
 
 class DECLSPEC_UUID("025BE2E4-1787-4da4-A585-C5B2B9EEB57C")
 Mpeg4Demultiplexor
-: public CBaseFilter
+: public CBaseFilter, public IDemuxFilter
 {
 public:
     // constructor method used by class factory
     static CUnknown* WINAPI CreateInstance(LPUNKNOWN pUnk, HRESULT* phr);
+
+	DECLARE_IUNKNOWN
+	STDMETHODIMP NonDelegatingQueryInterface(REFIID iid, void** ppv)
+	{
+		if(iid == __uuidof(IDemuxFilter))
+			return GetInterface((IDemuxFilter*) this, ppv);
+		return __super::NonDelegatingQueryInterface(iid, ppv);
+	}
 
     // filter registration tables
     static const AMOVIESETUP_MEDIATYPE m_sudType[];
@@ -257,6 +265,19 @@ public:
     HRESULT Seek(REFERENCE_TIME& tStart, BOOL bSeekToKeyFrame, REFERENCE_TIME tStop, double dRate);
     HRESULT SetRate(double dRate);
     HRESULT SetStopTime(REFERENCE_TIME tStop);
+
+// IDemuxFilter
+    STDMETHOD(GetInvalidTrackCount)(ULONG* pnInvalidTrackCount) override
+	{
+		if(!pnInvalidTrackCount)
+			return E_POINTER;
+		ULONG nInvalidTrackCount = 0;
+		// WARN: Thread unsafe
+		if(m_pMovie)
+			nInvalidTrackCount = (ULONG) m_pMovie->InvalidTrackCount();
+		*pnInvalidTrackCount = nInvalidTrackCount;
+		return S_OK;
+	}
 
 private:
     // construct only via class factory

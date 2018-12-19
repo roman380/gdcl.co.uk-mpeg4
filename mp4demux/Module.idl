@@ -29,10 +29,22 @@ library GdclMp4Demux
 	    HRESULT GetMediaSampleTimes([out] ULONG* pnCount, [out] LONGLONG** ppnStartTimes, [out] LONGLONG** ppnStopTimes, [out] ULONG** ppnFlags, [out] ULONG** ppnDataSizes);
 	};
 	[
+		object,
+		uuid(F05F893D-02D7-4256-8EFA-2ACC26352566),
+		//dual,
+		//oleautomation,
+		nonextensible,
+		pointer_default(unique)
+	]
+	interface IDemuxFilter : IUnknown
+	{
+	    HRESULT GetInvalidTrackCount([out] ULONG* pnInvalidTrackCount);
+	};
+	[
 		uuid(025BE2E4-1787-4da4-A585-C5B2B9EEB57C)
 	]
 	coclass DemuxFilter
 	{
-		[default] interface IUnknown;
+		[default] interface IDemuxFilter;
 	};
 };

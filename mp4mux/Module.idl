@@ -64,6 +64,6 @@ library GdclMp4Mux
 	]
 	coclass MuxFilter
 	{
-		[default] interface IUnknown;
+		[default] interface IMuxFilter;
 	};
 };

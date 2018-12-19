@@ -265,6 +265,10 @@ public:
         return m_Tracks[nTrack];
     }
         
+	SIZE_T InvalidTrackCount() const
+	{
+		return m_invalidTrackCount;
+	}
     REFERENCE_TIME Duration()
     {
         return m_tDuration;
@@ -279,6 +283,7 @@ public:
 private:
     smart_ptr<Atom> m_pRoot;
     vector<MovieTrackPtr> m_Tracks;
+	SIZE_T m_invalidTrackCount;
     long m_scale;
     LONGLONG m_duration;
     REFERENCE_TIME m_tDuration;

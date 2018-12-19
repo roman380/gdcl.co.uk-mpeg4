@@ -47,6 +47,13 @@ typedef interface IDemuxOutputPin IDemuxOutputPin;
 #endif 	/* __IDemuxOutputPin_FWD_DEFINED__ */
 
 
+#ifndef __IDemuxFilter_FWD_DEFINED__
+#define __IDemuxFilter_FWD_DEFINED__
+typedef interface IDemuxFilter IDemuxFilter;
+
+#endif 	/* __IDemuxFilter_FWD_DEFINED__ */
+
+
 #ifndef __DemuxFilter_FWD_DEFINED__
 #define __DemuxFilter_FWD_DEFINED__
 
@@ -164,6 +171,86 @@ DEFINE_GUID(IID_IDemuxOutputPin,0x1B2E20A1,0x8C41,0x4313,0xBA,0x18,0x0A,0x3D,0xA
 
 
 #endif 	/* __IDemuxOutputPin_INTERFACE_DEFINED__ */
+
+
+#ifndef __IDemuxFilter_INTERFACE_DEFINED__
+#define __IDemuxFilter_INTERFACE_DEFINED__
+
+/* interface IDemuxFilter */
+/* [unique][nonextensible][uuid][object] */ 
+
+
+DEFINE_GUID(IID_IDemuxFilter,0xF05F893D,0x02D7,0x4256,0x8E,0xFA,0x2A,0xCC,0x26,0x35,0x25,0x66);
+
+#if defined(__cplusplus) && !defined(CINTERFACE)
+    
+    MIDL_INTERFACE("F05F893D-02D7-4256-8EFA-2ACC26352566")
+    IDemuxFilter : public IUnknown
+    {
+    public:
+        virtual HRESULT STDMETHODCALLTYPE GetInvalidTrackCount( 
+            /* [out] */ ULONG *pnInvalidTrackCount) = 0;
+        
+    };
+    
+    
+#else 	/* C style interface */
+
+    typedef struct IDemuxFilterVtbl
+    {
+        BEGIN_INTERFACE
+        
+        HRESULT ( STDMETHODCALLTYPE *QueryInterface )( 
+            IDemuxFilter * This,
+            /* [in] */ REFIID riid,
+            /* [annotation][iid_is][out] */ 
+            _COM_Outptr_  void **ppvObject);
+        
+        ULONG ( STDMETHODCALLTYPE *AddRef )( 
+            IDemuxFilter * This);
+        
+        ULONG ( STDMETHODCALLTYPE *Release )( 
+            IDemuxFilter * This);
+        
+        HRESULT ( STDMETHODCALLTYPE *GetInvalidTrackCount )( 
+            IDemuxFilter * This,
+            /* [out] */ ULONG *pnInvalidTrackCount);
+        
+        END_INTERFACE
+    } IDemuxFilterVtbl;
+
+    interface IDemuxFilter
+    {
+        CONST_VTBL struct IDemuxFilterVtbl *lpVtbl;
+    };
+
+    
+
+#ifdef COBJMACROS
+
+
+#define IDemuxFilter_QueryInterface(This,riid,ppvObject)	\
+    ( (This)->lpVtbl -> QueryInterface(This,riid,ppvObject) ) 
+
+#define IDemuxFilter_AddRef(This)	\
+    ( (This)->lpVtbl -> AddRef(This) ) 
+
+#define IDemuxFilter_Release(This)	\
+    ( (This)->lpVtbl -> Release(This) ) 
+
+
+#define IDemuxFilter_GetInvalidTrackCount(This,pnInvalidTrackCount)	\
+    ( (This)->lpVtbl -> GetInvalidTrackCount(This,pnInvalidTrackCount) ) 
+
+#endif /* COBJMACROS */
+
+
+#endif 	/* C style interface */
+
+
+
+
+#endif 	/* __IDemuxFilter_INTERFACE_DEFINED__ */
 
 
 DEFINE_GUID(CLSID_DemuxFilter,0x025BE2E4,0x1787,0x4da4,0xA5,0x85,0xC5,0xB2,0xB9,0xEE,0xB5,0x7C);
