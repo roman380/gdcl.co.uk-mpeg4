@@ -51,8 +51,8 @@ Atom::ScanChildrenAt(LONGLONG llOffset)
         BYTE hdr[8];
         long cHeader = 8;
         Read(llOffset, 8, hdr);
-        LONGLONG llLength = (DWORD)SwapLong(hdr);
-        DWORD type = (DWORD)SwapLong(hdr + 4);
+        LONGLONG llLength = SwapLong(hdr);
+        DWORD type = SwapLong(hdr + 4);
         if (llLength == 1)
         {
             Read(llOffset + 8, 8, hdr);
@@ -297,19 +297,20 @@ MovieTrack::ParseEDTS(Atom* patm)
     if (patmELST != NULL)
     {
 		AtomCache pELST = patmELST;
-		long cEdits = SwapLong(pELST + 4);
-		for (long i = 0; i < cEdits; i++)
+		const UINT32 cEdits = SwapLong(pELST + 4);
+		for (UINT32 i = 0; i < cEdits; i++)
         {
 			EditEntry e;
             if (pELST[0] == 0)
             {
 				e.duration = SwapLong(pELST + 8 + (i * 12));
-				e.offset = SwapLong(pELST + 8 + 4 + (i * 12));
+				// WARN: elst atom has an explicitly defined offset -1 for an empty edit, should we still treat the value as signed otherwise?
+				e.offset = (INT32) SwapLong(pELST + 8 + 4 + (i * 12));
 			}
 			else 
             {
 				e.duration = SwapI64(pELST + 8 + (i * 20));
-				e.offset = SwapI64(pELST + 8 + 8 + (i * 20));
+				e.offset = (INT64) SwapI64(pELST + 8 + 8 + (i * 20));
 			}
 			m_Edits.push_back(e);
 		}

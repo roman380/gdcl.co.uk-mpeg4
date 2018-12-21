@@ -152,7 +152,7 @@ SampleSizes::Offset(long nSample)
     {
         ChunkStart = SwapI64(m_pSTCO + 8 + (nChunkThis * 8));
     } else {
-        ChunkStart = (DWORD)SwapLong(m_pSTCO + 8 + (nChunkThis * 4));
+        ChunkStart = SwapLong(m_pSTCO + 8 + (nChunkThis * 4));
     }
     return ChunkStart + nByteOffset;
 }
