@@ -223,6 +223,7 @@ public:
 
 private:
     Mpeg4Mux* m_pMux;
+	IStream* m_pIStream;
     CCritSec m_csWrite;
     bool m_bUseIStream;
     LONGLONG m_llBytes;
