@@ -23,6 +23,7 @@ _COM_SMARTPTR_TYPEDEF(IMediaSample, IID_IMediaSample);
 _COM_SMARTPTR_TYPEDEF(IMediaSeeking, IID_IMediaSeeking);
 _COM_SMARTPTR_TYPEDEF(IMemAllocator, IID_IMemAllocator);
 
+#include <assert.h>
 #include <list>
 #include <vector>
 using namespace std;
