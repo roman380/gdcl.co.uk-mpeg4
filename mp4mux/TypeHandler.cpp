@@ -587,7 +587,11 @@ TypeHandler::CanSupport(const CMediaType* pmt)
 			{
 				return true;
 			}
-			if (*pmt->Subtype() == MEDIASUBTYPE_ADTS && pwfx->wFormatTag == static_cast<UINT16>(MEDIASUBTYPE_ADTS.Data1))
+			if (*pmt->Subtype() == MEDIASUBTYPE_ADTS && pwfx->wFormatTag == static_cast<UINT16>(MEDIASUBTYPE_ADTS.Data1)) // #25
+			{
+				return true;
+			}
+			if ((*pmt->Subtype() == MEDIASUBTYPE_DOLBY_AC3 || *pmt->Subtype() == MEDIASUBTYPE_DVM) && pwfx->wFormatTag == WAVE_FORMAT_DVM) // #25
 			{
 				return true;
 			}
@@ -738,10 +742,14 @@ TypeHandler::Make(const CMediaType* pmt)
 			{
 				return new DolbyDigitalPlusHandler(pmt);
 			}
-			if (*pmt->Subtype() == MEDIASUBTYPE_ADTS && pwfx->wFormatTag == static_cast<UINT16>(MEDIASUBTYPE_ADTS.Data1))
+			if (*pmt->Subtype() == MEDIASUBTYPE_ADTS && pwfx->wFormatTag == static_cast<UINT16>(MEDIASUBTYPE_ADTS.Data1)) // #25
 			{
 				// NOTE: AACHandler also handles ADTS by skipping the header
 				return new AACHandler(pmt);
+			}
+			if ((*pmt->Subtype() == MEDIASUBTYPE_DOLBY_AC3 || *pmt->Subtype() == MEDIASUBTYPE_DVM) && pwfx->wFormatTag == WAVE_FORMAT_DVM) // #25
+			{
+				return new DolbyDigitalHandler(pmt);
 			}
 			// Intel Media SDK uses the 0xFF- aac subtype guid, but
 			// the wFormatTag does not match
