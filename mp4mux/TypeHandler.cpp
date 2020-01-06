@@ -442,8 +442,10 @@ private:
 // CLSID_H264
 class DECLSPEC_UUID("8D2D71CB-243F-45E3-B2D8-5FD7967EC09B") CLSID_H264_BSF; // AKA MEDIASUBTYPE_H264_bis (GraphStudioNext)
 
-const int WAVE_FORMAT_AAC = 0x00ff;
 const int WAVE_FORMAT_AACEncoder = 0x1234;
+
+FOURCCMap MEDIASUBTYPE_ADTS(MAKEFOURCC('A', 'D', 'T', 'S'));
+//FOURCCMap MEDIASUBTYPE_RAW_AAC1(WAVE_FORMAT_RAW_AAC1);
 
 //static 
 bool
@@ -563,12 +565,12 @@ TypeHandler::CanSupport(const CMediaType* pmt)
         if (*pmt->FormatType() == FORMAT_WaveFormatEx)
         {
             // CoreAAC decoder
-            WAVEFORMATEX* pwfx = (WAVEFORMATEX*)pmt->Format();
-            if ((pwfx->wFormatTag == WAVE_FORMAT_AAC) || 
-                (pwfx->wFormatTag == WAVE_FORMAT_AACEncoder))
-            {
-                return true;
-            }
+			const WAVEFORMATEX* pwfx = (WAVEFORMATEX*)pmt->Format();
+			if ((pwfx->wFormatTag == WAVE_FORMAT_RAW_AAC1) || 
+				(pwfx->wFormatTag == WAVE_FORMAT_AACEncoder))
+			{
+				return true;
+			}
             if ((pwfx->wFormatTag == WAVE_FORMAT_PCM) ||
                 (pwfx->wFormatTag == WAVE_FORMAT_ALAW) ||
                 (pwfx->wFormatTag == WAVE_FORMAT_MULAW))
@@ -585,10 +587,13 @@ TypeHandler::CanSupport(const CMediaType* pmt)
 			{
 				return true;
 			}
+			if (*pmt->Subtype() == MEDIASUBTYPE_ADTS && pwfx->wFormatTag == static_cast<UINT16>(MEDIASUBTYPE_ADTS.Data1))
+			{
+				return true;
+			}
 			// Intel Media SDK uses the 0xFF- aac subtype guid, but
 			// the wFormatTag does not match
-			FOURCCMap aac(WAVE_FORMAT_AAC);
-			if (*pmt->Subtype() == aac)
+			if (*pmt->Subtype() == MEDIASUBTYPE_RAW_AAC1)
 			{
 				return true;
 			}
@@ -708,12 +713,12 @@ TypeHandler::Make(const CMediaType* pmt)
         if (*pmt->FormatType() == FORMAT_WaveFormatEx)
         {
             // CoreAAC decoder
-            WAVEFORMATEX* pwfx = (WAVEFORMATEX*)pmt->Format();
-            if ((pwfx->wFormatTag == WAVE_FORMAT_AAC) || 
-                (pwfx->wFormatTag == WAVE_FORMAT_AACEncoder))
-            {
-                return new AACHandler(pmt);
-            }
+			const WAVEFORMATEX* pwfx = (WAVEFORMATEX*)pmt->Format();
+			if ((pwfx->wFormatTag == WAVE_FORMAT_RAW_AAC1) || 
+				(pwfx->wFormatTag == WAVE_FORMAT_AACEncoder))
+			{
+				return new AACHandler(pmt);
+			}
             if ((pwfx->wFormatTag == WAVE_FORMAT_PCM) ||
                 (pwfx->wFormatTag == WAVE_FORMAT_ALAW) ||
                 (pwfx->wFormatTag == WAVE_FORMAT_MULAW))
@@ -733,10 +738,14 @@ TypeHandler::Make(const CMediaType* pmt)
 			{
 				return new DolbyDigitalPlusHandler(pmt);
 			}
+			if (*pmt->Subtype() == MEDIASUBTYPE_ADTS && pwfx->wFormatTag == static_cast<UINT16>(MEDIASUBTYPE_ADTS.Data1))
+			{
+				// NOTE: AACHandler also handles ADTS by skipping the header
+				return new AACHandler(pmt);
+			}
 			// Intel Media SDK uses the 0xFF- aac subtype guid, but
 			// the wFormatTag does not match
-			FOURCCMap aac(WAVE_FORMAT_AAC);
-			if (*pmt->Subtype() == aac)
+			if (*pmt->Subtype() == MEDIASUBTYPE_RAW_AAC1)
 			{
 				return new AACHandler(pmt);
 			}
@@ -910,12 +919,12 @@ AACHandler::AACHandler(const CMediaType* pmt)
 : m_mt(*pmt)
 {
 	// the Intel encoder uses a tag that doesn't match the subtype
-	FOURCCMap aac(WAVE_FORMAT_AAC);
-	if ((*m_mt.Subtype() == aac) &&
+	if ((*m_mt.Subtype() == MEDIASUBTYPE_RAW_AAC1) &&
 		(*m_mt.FormatType() == FORMAT_WaveFormatEx))
 	{
+		assert(m_mt.pbFormat && m_mt.cbFormat >= sizeof (WAVEFORMATEX));
 		WAVEFORMATEX* pwfx = (WAVEFORMATEX*)m_mt.Format();
-		pwfx->wFormatTag = WAVE_FORMAT_AAC;
+		pwfx->wFormatTag = WAVE_FORMAT_RAW_AAC1;
 	}
 }
 
@@ -1051,7 +1060,7 @@ AACHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
     pesd->Close();
     psd->Close();
 }
-	
+
 LONGLONG 
 H264Handler::FrameDuration()
 {
