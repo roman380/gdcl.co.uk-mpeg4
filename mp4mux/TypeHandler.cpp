@@ -21,6 +21,10 @@
 #pragma comment(lib, "wmcodecdspuuid.lib")
 #pragma comment(lib, "strmiids.lib")
 
+FOURCCMap MEDIASUBTYPE_MPEGLAYER3(WAVE_FORMAT_MPEGLAYER3);
+FOURCCMap MEDIASUBTYPE_ADTS(MAKEFOURCC('A', 'D', 'T', 'S'));
+//FOURCCMap MEDIASUBTYPE_RAW_AAC1(WAVE_FORMAT_RAW_AAC1);
+
 void WriteVariable(ULONG val, BYTE* pDest, int cBytes)
 {
 	for (int i = 0; i < cBytes; i++)
@@ -183,6 +187,105 @@ private:
     CMediaType m_mt;
 };
 
+class MP3Handler : public TypeHandler
+{
+public:
+    MP3Handler(const CMediaType* pmt) :
+		m_mt(*pmt)
+	{
+		assert(m_mt.majortype == MEDIATYPE_Audio && m_mt.subtype == MEDIASUBTYPE_MPEGLAYER3);
+		assert(m_mt.formattype == FORMAT_WaveFormatEx && m_mt.cbFormat >= sizeof (WAVEFORMATEX));
+	}
+
+    DWORD Handler() 
+    {
+        return 'soun';
+    }
+    void WriteTREF(Atom* patm)
+	{ 
+		UNREFERENCED_PARAMETER(patm); 
+	}
+    bool IsVideo() 
+    {
+        return false;
+    }
+    bool IsAudio()
+    { 
+        return true;
+    }
+    long SampleRate()
+    {
+        return 50;
+    }
+    long Scale()
+	{
+		const WAVEFORMATEX* pwfx = (const WAVEFORMATEX*) m_mt.Format();
+		return pwfx->nSamplesPerSec;
+	}
+	long Width()
+	{
+		return 0; 
+	}
+	long Height()	
+	{ 
+		return 0; 
+	}
+    void WriteDescriptor(Atom* patm, int id, int dataref, long scale)
+	{
+		// WARN: This is merely a blind copy of AACHandler's method with a different ES Descriptor value
+
+		smart_ptr<Atom> psd = patm->CreateAtom('mp4a');
+
+		BYTE b[28];
+		ZeroMemory(b, 28);
+		WriteShort(dataref, b + 6);
+		WriteShort(2, b + 16);
+		WriteShort(16, b + 18);
+		WriteShort(unsigned short(scale), b + 24);    // this is what forces us to use short audio scales
+		psd->Append(b, 28);
+
+		smart_ptr<Atom> pesd = psd->CreateAtom('esds');
+		WriteLong(0, b);        // ver/flags
+		pesd->Append(b, 4);
+		// es descr
+		//      decoder config
+		//          <objtype/stream type/bitrates>
+		//          decoder specific info desc
+		//      sl descriptor
+		Descriptor es(Descriptor::ES_Desc);
+		WriteShort(id, b);
+		b[2] = 0;
+		es.Append(b, 3);
+		Descriptor dcfg(Descriptor::Decoder_Config);
+		b[0] = 0x6B;    // MPEG-1 Audio (MPEG-1 Layers 1, 2, and 3) https://stackoverflow.com/a/4644066/868014
+		b[1] = (5 << 2) | 1;    // audio stream
+
+		// buffer size 15000
+		b[2] = 0;
+		b[3] = 0x3a;
+		b[4] = 0x98;
+		WriteLong(1500000, b + 5);    // max bitrate
+		WriteLong(0, b + 9);          // avg bitrate 0 = variable
+		dcfg.Append(b, 13);
+		Descriptor dsi(Descriptor::Decoder_Specific_Info);
+		BYTE* pExtra = m_mt.Format() + sizeof(WAVEFORMATEX);
+		long cExtra = m_mt.FormatLength() - sizeof(WAVEFORMATEX);
+		dcfg.Append(&dsi);
+		es.Append(&dcfg);
+		Descriptor sl(Descriptor::SL_Config); // ISO 14496-1 8.3.6, 10.2.3
+		b[0] = 2; // Reserved for ISO use???
+		b[1] = 0x7F; // OCRStreamFlag 0, Reserved 1111111
+		sl.Append(b, 2);
+		es.Append(&sl);
+		es.Write(pesd);
+		pesd->Close();
+		psd->Close();
+	}
+
+private:
+    CMediaType m_mt;
+};
+
 class AACHandler : public TypeHandler
 {
 public:
@@ -214,7 +317,6 @@ public:
 private:
     CMediaType m_mt;
 };
-
 
 // handles some standard WAVEFORMATEX wave formats
 class WaveHandler : public TypeHandler
@@ -444,9 +546,6 @@ class DECLSPEC_UUID("8D2D71CB-243F-45E3-B2D8-5FD7967EC09B") CLSID_H264_BSF; // A
 
 const int WAVE_FORMAT_AACEncoder = 0x1234;
 
-FOURCCMap MEDIASUBTYPE_ADTS(MAKEFOURCC('A', 'D', 'T', 'S'));
-//FOURCCMap MEDIASUBTYPE_RAW_AAC1(WAVE_FORMAT_RAW_AAC1);
-
 //static 
 bool
 TypeHandler::CanSupport(const CMediaType* pmt)
@@ -592,6 +691,10 @@ TypeHandler::CanSupport(const CMediaType* pmt)
 				return true;
 			}
 			if ((*pmt->Subtype() == MEDIASUBTYPE_DOLBY_AC3 || *pmt->Subtype() == MEDIASUBTYPE_DVM) && pwfx->wFormatTag == WAVE_FORMAT_DVM) // #25
+			{
+				return true;
+			}
+			if (*pmt->Subtype() == MEDIASUBTYPE_MPEGLAYER3 && pwfx->wFormatTag == WAVE_FORMAT_MPEGLAYER3) // #25
 			{
 				return true;
 			}
@@ -750,6 +853,10 @@ TypeHandler::Make(const CMediaType* pmt)
 			if ((*pmt->Subtype() == MEDIASUBTYPE_DOLBY_AC3 || *pmt->Subtype() == MEDIASUBTYPE_DVM) && pwfx->wFormatTag == WAVE_FORMAT_DVM) // #25
 			{
 				return new DolbyDigitalHandler(pmt);
+			}
+			if ((*pmt->Subtype() == MEDIASUBTYPE_MPEGLAYER3) && pwfx->wFormatTag == WAVE_FORMAT_MPEGLAYER3) // #25
+			{
+				return new MP3Handler(pmt);
 			}
 			// Intel Media SDK uses the 0xFF- aac subtype guid, but
 			// the wFormatTag does not match
