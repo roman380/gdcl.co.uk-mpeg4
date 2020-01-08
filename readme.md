@@ -2,11 +2,25 @@
 
 These are based on [filters by Geraint Davies](http://www.gdcl.co.uk/mpeg4/) (info at gdcl dot co dot uk) enhanced by Roman Ryltsov (roman at alax dot info).
 
+The repository contains pre-built DLLs [here](_Bin), as well as DLLs packaged into [installer](_Bin/GDCL-MPEG4CodecSetup.exe).
+
 ## Build Notes
 
 In order to successfully build the solution/projects, baseclasses directory from Windows SDK needs to be copied as a subdirectory in solution file directory.
 
+Current version of the project is supposed to be built by Visual Studio 2019. It should be fairly easy to build with earlier versions of toolset as well.
+
 ## Update History
+
+### Jun 2015 - Jan 2020 
+
+Sporadic updates (see commit and issue history for details), including:
+
+- added support for MP3 audio track within MP4 file (in multiplexer)
+- stability improvements
+- installer
+
+If you are interested, you might also check out branches that might hold long going changes in progress.
 
 ### 05 Jun 2015
 
