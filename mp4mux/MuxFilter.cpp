@@ -877,11 +877,11 @@ MuxOutput::DecideBufferSize(IMemAllocator * pAlloc, ALLOCATOR_PROPERTIES * pprop
 HRESULT 
 MuxOutput::CompleteConnect(IPin *pReceivePin)
 {
-    // make sure that this is the file writer, supporting
+    // make sure that pReceivePin is the file writer, supporting
     // IStream, or we will not be able to write out the metadata
     // at stop time
-    IStreamPtr pIStream = pReceivePin;
-    if (pIStream == NULL)
+	pReceivePin->QueryInterface(__uuidof(IStream), (VOID**)&m_pIStream);
+    if (m_pIStream == NULL)
     {
         return E_NOINTERFACE;
     }
@@ -891,6 +891,12 @@ MuxOutput::CompleteConnect(IPin *pReceivePin)
 HRESULT 
 MuxOutput::BreakConnect()
 {
+	if (m_pIStream)
+	{
+		m_pIStream->Release();
+		m_pIStream = NULL;
+	}
+
 	return __super::BreakConnect();
 }
 
@@ -900,6 +906,11 @@ MuxOutput::Reset()
     CAutoLock lock(&m_csWrite);
     m_llBytes = 0;
     m_bUseIStream = true;		// always use IStream, so we don't fail when downstream filter is stopped first
+	if (m_pIStream)
+	{
+		m_pIStream->Release();
+		m_pIStream = NULL;
+	}
 }
 
 void
@@ -944,19 +955,24 @@ MuxOutput::Replace(LONGLONG pos, const BYTE* pBuffer, long cBytes)
     HRESULT hr = S_OK;
     if (m_bUseIStream)
     {
-        IStreamPtr pStream = GetConnected();
-        if (pStream == NULL)
-        {
+
+		if (m_pIStream == NULL)
+		{
+		  GetConnected()->QueryInterface(__uuidof(IStream), (VOID**)&m_pIStream);
+		}
+
+		if (m_pIStream == NULL)
+		{
             hr = E_NOINTERFACE;
         } else {
             LARGE_INTEGER liTo;
             liTo.QuadPart = pos;
             ULARGE_INTEGER uliUnused;
-            hr = pStream->Seek(liTo, STREAM_SEEK_SET, &uliUnused);
+            hr = m_pIStream->Seek(liTo, STREAM_SEEK_SET, &uliUnused);
             if (SUCCEEDED(hr))
             {
                 ULONG cActual;
-                hr = pStream->Write(pBuffer, cBytes, &cActual);
+                hr = m_pIStream->Write(pBuffer, cBytes, &cActual);
                 if (SUCCEEDED(hr) && ((long)cActual != cBytes))
                 {
                     hr = E_FAIL;
@@ -998,13 +1014,16 @@ MuxOutput::Replace(LONGLONG pos, const BYTE* pBuffer, long cBytes)
 void 
 MuxOutput::FillSpace()
 {
-    IStreamPtr pStream = GetConnected();
-    if (pStream != NULL)
+	if (m_pIStream == NULL)
+	{
+		GetConnected()->QueryInterface(__uuidof(IStream), (VOID**)&m_pIStream);
+	}
+	if (m_pIStream != NULL)
     {
         LARGE_INTEGER li0;
         li0.QuadPart = 0;
         ULARGE_INTEGER uliEnd;
-        HRESULT hr = pStream->Seek(li0, STREAM_SEEK_END, &uliEnd);
+        HRESULT hr = m_pIStream->Seek(li0, STREAM_SEEK_END, &uliEnd);
         if (SUCCEEDED(hr))
         {
             if (uliEnd.QuadPart > (ULONGLONG) m_llBytes)
