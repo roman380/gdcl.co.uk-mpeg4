@@ -13,7 +13,7 @@
 
 #pragma once
 
-#include "Module_i.h"
+#include "mp4mux_h.h"
 #include "MovieWriter.h"
 #include "TemporaryIndexFile.h"
 #include "alloc.h"

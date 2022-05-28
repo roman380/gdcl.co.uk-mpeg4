@@ -268,8 +268,8 @@ public:
 		WriteLong(0, b + 9);          // avg bitrate 0 = variable
 		dcfg.Append(b, 13);
 		Descriptor dsi(Descriptor::Decoder_Specific_Info);
-		BYTE* pExtra = m_mt.Format() + sizeof(WAVEFORMATEX);
-		long cExtra = m_mt.FormatLength() - sizeof(WAVEFORMATEX);
+		//BYTE* pExtra = m_mt.Format() + sizeof(WAVEFORMATEX);
+		//long cExtra = m_mt.FormatLength() - sizeof(WAVEFORMATEX);
 		dcfg.Append(&dsi);
 		es.Append(&dcfg);
 		Descriptor sl(Descriptor::SL_Config); // ISO 14496-1 8.3.6, 10.2.3

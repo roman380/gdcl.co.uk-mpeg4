@@ -16,7 +16,7 @@
 #include "thread.h"
 #include "mpeg4.h"
 #include "ElemType.h"
-#include "Module_i.h"
+#include "mp4demux_h.h"
 
 //
 // Partially derived from GDCL sample MPEG-1 parser filter
