@@ -760,7 +760,7 @@ DemuxOutputPin::Active()
     HRESULT hr = CBaseOutputPin::Active();
     if (SUCCEEDED(hr) && IsConnected())
     {
-		#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+		#if defined(WITH_DIRECTSHOWSPY)
 			if(!m_pMediaSampleTrace)
 			{
 				ASSERT(m_pFilter && m_pFilter->GetFilterGraph());
@@ -776,7 +776,7 @@ DemuxOutputPin::Active()
 						pSpy->CreateMediaSampleTrace(&m_pMediaSampleTrace);
 				}
 			}
-		#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+		#endif // defined(WITH_DIRECTSHOWSPY)
 
         StartThread();
     }
@@ -817,10 +817,10 @@ DemuxOutputPin::ThreadProc()
 		volatile DOUBLE dRate;
 		m_pParser->GetSeekingParams(&tStart, &tStop, (DOUBLE*) &dRate);
 
-		#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+		#if defined(WITH_DIRECTSHOWSPY)
 			if(m_pMediaSampleTrace)
-				m_pMediaSampleTrace->RegisterNewSegment((IBaseFilter*) m_pFilter, (USHORT*) Name(), tStart, tStop, dRate, NULL, 0);
-		#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+				m_pMediaSampleTrace->RegisterNewSegment((IBaseFilter*) m_pFilter, Name(), tStart, tStop, dRate, nullptr, 0);
+		#endif // defined(WITH_DIRECTSHOWSPY)
 
 		DeliverNewSegment(tStart, tStop, dRate);
 
@@ -1027,19 +1027,19 @@ DemuxOutputPin::ThreadProc()
 						OutputDebugString(pszText);
 					#endif // defined(TRACE_SEEK)
 
-					#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+					#if defined(WITH_DIRECTSHOWSPY)
 						if(m_pMediaSampleTrace)
 						{
 							QzCComPtr<IMediaSample2> pMediaSample2;
 							pSample->QueryInterface(__uuidof(IMediaSample2), (VOID**) &pMediaSample2);
 							if(pMediaSample2)
 							{
-								AM_SAMPLE2_PROPERTIES Properties = { sizeof Properties };
+								AM_SAMPLE2_PROPERTIES Properties { sizeof Properties };
 								pMediaSample2->GetProperties(sizeof Properties, (BYTE*) &Properties);
-								m_pMediaSampleTrace->RegisterMediaSample((IBaseFilter*) m_pFilter, (USHORT*) Name(), (BYTE*) &Properties, NULL, 0);
+								m_pMediaSampleTrace->RegisterMediaSample((IBaseFilter*) m_pFilter, Name(), (BYTE*) &Properties, nullptr, 0);
 							}
 						}
-					#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+					#endif // defined(WITH_DIRECTSHOWSPY)
 
 					Deliver(pSample);
 				}

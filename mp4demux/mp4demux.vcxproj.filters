@@ -19,98 +19,98 @@
     <ClCompile Include="StdAfx.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\amextra.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\amextra.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\amfilter.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\amfilter.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\amvideo.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\amvideo.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\arithutil.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\arithutil.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\combase.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\combase.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\cprop.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\cprop.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\ctlutil.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\ctlutil.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\ddmm.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\ddmm.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\dllentry.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\dllentry.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\dllsetup.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\dllsetup.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\mtype.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\mtype.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\outputq.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\outputq.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\perflog.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\perflog.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\pstream.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\pstream.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\pullpin.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\pullpin.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\refclock.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\refclock.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\renbase.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\renbase.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\schedule.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\schedule.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\seekpt.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\seekpt.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\source.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\source.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\strmctl.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\strmctl.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\sysclock.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\sysclock.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\transfrm.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\transfrm.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\transip.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\transip.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\videoctl.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\videoctl.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\vtrans.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\vtrans.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\winctrl.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\winctrl.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\winutil.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\winutil.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\wxdebug.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\wxdebug.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\wxlist.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\wxlist.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\Windows-classic-samples\Samples\Win7Samples\multimedia\directshow\baseclasses\wxutil.cpp">
-      <Filter>Source Files\BaseClasses</Filter>
+    <ClCompile Include="$(DirectShowDir)\baseclasses\wxutil.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

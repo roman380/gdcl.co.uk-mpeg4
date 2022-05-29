@@ -157,28 +157,28 @@ public:
 
 	HRESULT DeliverEndOfStream()
 	{
-		#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+		#if defined(WITH_DIRECTSHOWSPY)
 			if(m_pMediaSampleTrace)
-				m_pMediaSampleTrace->RegisterEndOfStream((IBaseFilter*) m_pFilter, (USHORT*) Name(), NULL, 0);
-		#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+				m_pMediaSampleTrace->RegisterEndOfStream((IBaseFilter*) m_pFilter, Name(), nullptr, 0);
+		#endif // defined(WITH_DIRECTSHOWSPY)
 
 		return __super::DeliverEndOfStream();
 	}
     HRESULT DeliverBeginFlush()
 	{
-		#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+		#if defined(WITH_DIRECTSHOWSPY)
 			if(m_pMediaSampleTrace)
-				m_pMediaSampleTrace->RegisterComment((IBaseFilter*) m_pFilter, (USHORT*) Name(), (USHORT*) L"Begin Flush", 0);
-		#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+				m_pMediaSampleTrace->RegisterComment((IBaseFilter*) m_pFilter, Name(), L"Begin Flush", 0);
+		#endif // defined(WITH_DIRECTSHOWSPY)
 
 		return __super::DeliverBeginFlush();
 	}
     HRESULT DeliverEndFlush()
 	{
-		#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+		#if defined(WITH_DIRECTSHOWSPY)
 			if(m_pMediaSampleTrace)
-				m_pMediaSampleTrace->RegisterComment((IBaseFilter*) m_pFilter, (USHORT*) Name(), (USHORT*) L"End Flush", 0);
-		#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+				m_pMediaSampleTrace->RegisterComment((IBaseFilter*) m_pFilter, Name(), L"End Flush", 0);
+		#endif // defined(WITH_DIRECTSHOWSPY)
 
 		return __super::DeliverEndFlush();
 	}
@@ -220,9 +220,9 @@ private:
 	CCritSec m_csLate;
 	REFERENCE_TIME m_tLate;
 
-	#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+	#if defined(WITH_DIRECTSHOWSPY)
 		QzCComPtr<AlaxInfoDirectShowSpy::IMediaSampleTrace> m_pMediaSampleTrace;
-	#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+	#endif // defined(WITH_DIRECTSHOWSPY)
 };
 typedef IPinPtr DemuxOutputPinPtr;
 

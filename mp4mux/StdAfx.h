@@ -32,12 +32,17 @@ using namespace std;
 
 #include "smartptr.h"
 
-#if defined(_DEBUG) && FALSE
+#if defined(WITH_DIRECTSHOWSPY)
 	// NOTE: This enables DirectShow Spy integration to review filter graphs being created;
 	//       DirectShowSpy has to be installed to compile (and run) this, see http://alax.info/blog/777;
 	//       This section can be safely commented out otherwise
-	#import "libid:B9EC374B-834B-4DA9-BFB5-C1872CE736FF" raw_interfaces_only // AlaxInfoDirectShowSpy
-	#define ALAXINFODIRECTSHOWSPY_AVAILABLE
+	#pragma message("Using Alax.info DirectShowSpy integration")
+	//#import "libid:B9EC374B-834B-4DA9-BFB5-C1872CE736FF" raw_interfaces_only // AlaxInfoDirectShowSpy
+	namespace AlaxInfoDirectShowSpy
+	{
+		#include "DirectShowSpy\DirectShowSpy_i.h"
+		#include "DirectShowSpy\DirectShowSpy_i.c"
+	}
 #endif
 
 //{{AFX_INSERT_LOCATION}}
