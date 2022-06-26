@@ -10,6 +10,8 @@ In order to successfully build the solution/projects, baseclasses directory from
 
 Current version of the project is supposed to be built by Visual Studio 2019. It should be fairly easy to build with earlier versions of toolset as well.
 
+You will need to clone https://github.com/roman380/Windows-classic-samples.git at directshow branch into directory `Windows-classic-samples` at the same level as this repository directory.
+
 ## Update History
 
 ### Jun 2015 - Jan 2020 
