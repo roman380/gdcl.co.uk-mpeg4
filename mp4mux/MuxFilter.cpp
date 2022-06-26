@@ -395,19 +395,19 @@ MuxInput::Receive(IMediaSample* pSample)
 		}
 	#endif // defined(_DEBUG)
 
-	#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+	#if defined(WITH_DIRECTSHOWSPY)
 		if(m_pMediaSampleTrace)
 		{
 			QzCComPtr<IMediaSample2> pMediaSample2;
 			pSample->QueryInterface(__uuidof(IMediaSample2), (VOID**) &pMediaSample2);
 			if(pMediaSample2)
 			{
-				AM_SAMPLE2_PROPERTIES Properties = { sizeof Properties };
+				AM_SAMPLE2_PROPERTIES Properties { sizeof Properties };
 				pMediaSample2->GetProperties(sizeof Properties, (BYTE*) &Properties);
-				m_pMediaSampleTrace->RegisterMediaSample((IBaseFilter*) m_pFilter, (USHORT*) Name(), (BYTE*) &Properties, NULL, 0);
+				m_pMediaSampleTrace->RegisterMediaSample((IBaseFilter*) m_pFilter, Name(), (BYTE*) &Properties, nullptr, 0);
 			}
 		}
-	#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+	#endif // defined(WITH_DIRECTSHOWSPY)
 
 	if(pSample->IsPreroll() != S_FALSE)
 		return S_OK;
@@ -493,10 +493,10 @@ MuxInput::EndOfStream()
 		OutputDebugStringA(pszText);
 	#endif // defined(_DEBUG)
 
-	#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+	#if defined(WITH_DIRECTSHOWSPY)
 		if(m_pMediaSampleTrace)
-			m_pMediaSampleTrace->RegisterEndOfStream((IBaseFilter*) m_pFilter, (USHORT*) Name(), NULL, 0);
-	#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+			m_pMediaSampleTrace->RegisterEndOfStream((IBaseFilter*) m_pFilter, Name(), nullptr, 0);
+	#endif // defined(WITH_DIRECTSHOWSPY)
 
     if ((m_pTrack != NULL) && (m_pTrack->OnEOS()))
     {
@@ -509,10 +509,10 @@ MuxInput::EndOfStream()
 STDMETHODIMP 
 MuxInput::BeginFlush()
 {
-	#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+	#if defined(WITH_DIRECTSHOWSPY)
 		if(m_pMediaSampleTrace)
-			m_pMediaSampleTrace->RegisterComment((IBaseFilter*) m_pFilter, (USHORT*) Name(), (USHORT*) L"Begin Flush", 0);
-	#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+			m_pMediaSampleTrace->RegisterComment((IBaseFilter*) m_pFilter, Name(), L"Begin Flush", 0);
+	#endif // defined(WITH_DIRECTSHOWSPY)
 
     // ensure no more data accepted, and queued
     // data is discarded, so no threads are blocking
@@ -526,10 +526,10 @@ MuxInput::BeginFlush()
 STDMETHODIMP 
 MuxInput::EndFlush()
 {
-	#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+	#if defined(WITH_DIRECTSHOWSPY)
 		if(m_pMediaSampleTrace)
-			m_pMediaSampleTrace->RegisterComment((IBaseFilter*) m_pFilter, (USHORT*) Name(), (USHORT*) L"End Flush", 0);
-	#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+			m_pMediaSampleTrace->RegisterComment((IBaseFilter*) m_pFilter, Name(), L"End Flush", 0);
+	#endif // defined(WITH_DIRECTSHOWSPY)
 
     // we don't re-enable writing -- we support only
     // one contiguous sequence in a file.
@@ -542,7 +542,7 @@ MuxInput::Active()
     HRESULT hr = CBaseInputPin::Active();
     if (SUCCEEDED(hr))
     {
-		#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+		#if defined(WITH_DIRECTSHOWSPY)
 			if(!m_pMediaSampleTrace)
 			{
 				ASSERT(m_pFilter && m_pFilter->GetFilterGraph());
@@ -559,7 +559,7 @@ MuxInput::Active()
 						pSpy->CreateMediaSampleTrace(&m_pMediaSampleTrace);
 				}
 			}
-		#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+		#endif // defined(WITH_DIRECTSHOWSPY)
 
 		if (m_pCopyAlloc)
 		{

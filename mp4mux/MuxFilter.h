@@ -13,7 +13,7 @@
 
 #pragma once
 
-#include "Module_i.h"
+#include "mp4mux_h.h"
 #include "MovieWriter.h"
 #include "TemporaryIndexFile.h"
 #include "alloc.h"
@@ -124,10 +124,10 @@ public:
     // input
 	STDMETHODIMP NewSegment(REFERENCE_TIME nStartTime, REFERENCE_TIME nStopTime, DOUBLE fRate)
 	{
-		#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+		#if defined(WITH_DIRECTSHOWSPY)
 			if(m_pMediaSampleTrace)
-				m_pMediaSampleTrace->RegisterNewSegment((IBaseFilter*) m_pFilter, (USHORT*) Name(), nStartTime, nStopTime, fRate, NULL, 0);
-		#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+				m_pMediaSampleTrace->RegisterNewSegment((IBaseFilter*) m_pFilter, Name(), nStartTime, nStopTime, fRate, nullptr, 0);
+		#endif // defined(WITH_DIRECTSHOWSPY)
 		return __super::NewSegment(nStartTime, nStopTime, fRate);
 	}
     STDMETHODIMP Receive(IMediaSample* pSample);
@@ -186,9 +186,9 @@ private:
 	ContigBuffer m_CopyBuffer;
 	Suballocator* m_pCopyAlloc;
 
-	#if defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+	#if defined(WITH_DIRECTSHOWSPY)
 		QzCComPtr<AlaxInfoDirectShowSpy::IMediaSampleTrace> m_pMediaSampleTrace;
-	#endif // defined(ALAXINFODIRECTSHOWSPY_AVAILABLE)
+	#endif // defined(WITH_DIRECTSHOWSPY)
 };
 
 

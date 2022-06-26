@@ -6,18 +6,9 @@
 // http://www.gdcl.co.uk
 
 #include "stdafx.h"
-#include "Module_i.h"
-#include "Module_i.c"
+#include "mp4demux_h.h"
+#include "mp4demux_i.c"
 #include "demuxfilter.h"
-
-#pragma region Libraries
-#pragma comment(lib, "winmm.lib")
-#if defined(_DEBUG)
-#pragma comment(lib, "strmbasd.lib")
-#else
-#pragma comment(lib, "strmbase.lib")
-#endif // defined(_DEBUG)
-#pragma endregion
 
 // --- COM factory table and registration code --------------
 
