@@ -90,7 +90,7 @@
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="test.cpp" />
+    <ClCompile Include="FilePropertyStore.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
