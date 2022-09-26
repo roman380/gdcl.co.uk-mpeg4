@@ -40,8 +40,8 @@ using namespace std;
 	//#import "libid:B9EC374B-834B-4DA9-BFB5-C1872CE736FF" raw_interfaces_only // AlaxInfoDirectShowSpy
 	namespace AlaxInfoDirectShowSpy
 	{
-		#include "DirectShowSpy\DirectShowSpy_i.h"
-		#include "DirectShowSpy\DirectShowSpy_i.c"
+		#include "Spy\Spy_h.h"
+		#include "Spy\Spy_i.c"
 	}
 #endif
 
