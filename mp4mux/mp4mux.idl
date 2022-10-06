@@ -58,6 +58,7 @@ library GdclMp4Mux
 		HRESULT SetAlignTrackStartTimeDisabled([in] BOOL bAlignTrackStartTimeDisabled);
 		HRESULT GetMinimalMovieDuration([out] LONGLONG* pnMinimalMovieDuration);
 		HRESULT SetMinimalMovieDuration([in] LONGLONG nMinimalMovieDuration);
+		HRESULT SetComment([in] BSTR Comment);
 	};
 	[
 		uuid(5FD85181-E542-4e52-8D9D-5D613C30131B)

@@ -426,6 +426,29 @@ public:
 		//}
 		return S_OK;
 	}
+	STDMETHOD(SetComment)(BSTR Comment) override
+	{
+		//_Z4(atlTraceCOM, 4, _T("this 0x%p, Comment 0x%p \"%ls\"\n"), this, Comment, Comment ? Comment : L"");
+		//_ATLTRY
+		//{
+			CAutoLock lock(&m_csFilter);
+			//__D(IsActive(), VFW_E_WRONG_STATE);
+			if(Comment)
+			{
+				auto const CommentLength = wcslen(Comment);
+				m_Comment.resize(WideCharToMultiByte(CP_UTF8, 0, Comment, static_cast<int>(CommentLength), nullptr, 0, nullptr, nullptr) + 1);
+				m_Comment.resize(WideCharToMultiByte(CP_UTF8, 0, Comment, static_cast<int>(CommentLength), const_cast<char*>(m_Comment.data()), static_cast<int>(m_Comment.size()), nullptr, nullptr));
+			} else
+				m_Comment.clear();
+			if(m_pMovie)
+				m_pMovie->SetComment(m_Comment);
+		//}
+		//_ATLCATCH(Exception)
+		//{
+		//	_C(Exception);
+		//}
+		return S_OK;
+	}
 	
 private:
     // construct only via class factory
@@ -434,6 +457,7 @@ private:
 
 private:
     CCritSec m_csFilter;
+	std::string m_Comment;
     CCritSec m_csTracks;
     MuxOutput* m_pOutput;
     vector<MuxInput*> m_pInputs;

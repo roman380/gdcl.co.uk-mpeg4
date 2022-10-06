@@ -27,6 +27,11 @@ struct FilePropertyStore
 		FAIL_FAST_LAST_ERROR_IF(!m_SHGetPropertyStoreFromParsingName);
 		THROW_IF_FAILED(m_SHGetPropertyStoreFromParsingName(Path, nullptr, Flags, __uuidof(IPropertyStore), m_PropertyStore.put_void()));
 	}
+	void Get(PROPERTYKEY const& Key, PROPVARIANT& Value) const
+	{
+		WI_ASSERT(m_PropertyStore);
+		THROW_IF_FAILED(m_PropertyStore->GetValue(Key, &Value));
+	}
 	void Set(PROPERTYKEY const& Key, PROPVARIANT& Value)
 	{
 		WI_ASSERT(m_PropertyStore);
@@ -88,45 +93,56 @@ namespace Test
 			auto const Path = OutputPath(L"Mp4File.CheckComment.mp4");
 			if(!DeleteFileW(Path.c_str()))
 				THROW_LAST_ERROR_IF(GetLastError() != ERROR_FILE_NOT_FOUND);
-			Library Library(L"mp4mux.dll");
-			auto const FilterGraph2 = wil::CoCreateInstance<IFilterGraph2>(CLSID_FilterGraph, CLSCTX_INPROC_SERVER);
-			wil::com_ptr<IPin> CurrectOutputPin;
-			#pragma region Source
+			static char constexpr const g_Comment[] = "Test Comment";
 			{
-				auto const Filter = wil::CoCreateInstance<IVideoSourceFilter>(__uuidof(VideoSourceFilter), CLSCTX_INPROC_SERVER);
-				wil::unique_variant MediaType;
-				MediaType.vt = VT_BSTR;
-				MediaType.bstrVal = wil::make_bstr(FormatIdentifier(MEDIASUBTYPE_RGB32).c_str()).release();
-				THROW_IF_FAILED(Filter->SetMediaType(720, 480, MediaType));
-				THROW_IF_FAILED(Filter->SetMediaTypeRate(25, 1));
-				auto const SourceBaseFilter = Filter.query<IBaseFilter>();
-				AddFilter(FilterGraph2, SourceBaseFilter, L"Source");
-				CurrectOutputPin = Pin(SourceBaseFilter);
-				THROW_IF_FAILED(CurrectOutputPin.query<IAMStreamControl>()->StopAt(&g_StopTime, FALSE, 1));
+				Library Library(L"mp4mux.dll");
+				auto const FilterGraph2 = wil::CoCreateInstance<IFilterGraph2>(CLSID_FilterGraph, CLSCTX_INPROC_SERVER);
+				wil::com_ptr<IPin> CurrectOutputPin;
+				#pragma region Source
+				{
+					auto const Filter = wil::CoCreateInstance<IVideoSourceFilter>(__uuidof(VideoSourceFilter), CLSCTX_INPROC_SERVER);
+					wil::unique_variant MediaType;
+					MediaType.vt = VT_BSTR;
+					MediaType.bstrVal = wil::make_bstr(FormatIdentifier(MEDIASUBTYPE_RGB32).c_str()).release();
+					THROW_IF_FAILED(Filter->SetMediaType(720, 480, MediaType));
+					THROW_IF_FAILED(Filter->SetMediaTypeRate(25, 1));
+					auto const SourceBaseFilter = Filter.query<IBaseFilter>();
+					AddFilter(FilterGraph2, SourceBaseFilter, L"Source");
+					CurrectOutputPin = Pin(SourceBaseFilter);
+					THROW_IF_FAILED(CurrectOutputPin.query<IAMStreamControl>()->StopAt(&g_StopTime, FALSE, 1));
+				}
+				#pragma endregion
+				#pragma region Multiplexer
+				{
+					auto const Filter = Library.CreateInstance<MuxFilter, IMuxFilter>();
+					THROW_IF_FAILED(Filter->SetComment(const_cast<BSTR>(FromMultiByte(g_Comment).c_str())));
+					auto const BaseFilter = Filter.query<IBaseFilter>();
+					AddFilter(FilterGraph2, BaseFilter, L"Multiplexer");
+					THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
+					CurrectOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
+				}
+				#pragma endregion
+				#pragma region File Writer
+				{
+					auto const BaseFilter = wil::CoCreateInstance<IBaseFilter>(CLSID_FileWriter, CLSCTX_INPROC_SERVER);
+					auto const FileSinkFilter2 = BaseFilter.query<IFileSinkFilter2>();
+					THROW_IF_FAILED(FileSinkFilter2->SetFileName(Path.c_str(), nullptr));
+					THROW_IF_FAILED(FileSinkFilter2->SetMode(AM_FILE_OVERWRITE));
+					AddFilter(FilterGraph2, BaseFilter, L"Renderer");
+					THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter).get()));
+					CurrectOutputPin.reset();
+				}
+				#pragma endregion
+				THROW_IF_FAILED(FilterGraph2.query<IMediaFilter>()->SetSyncSource(nullptr)); // ASAP
+				RunFilterGraph(FilterGraph2, 20s);
+				// SUGG: Also try to set comment before closing on already running filter graph
 			}
-			#pragma endregion
-			#pragma region Multiplexer
-			{
-				auto const Filter = Library.CreateInstance<MuxFilter, IMuxFilter>();
-				auto const BaseFilter = Filter.query<IBaseFilter>();
-				AddFilter(FilterGraph2, BaseFilter, L"Multiplexer");
-				THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
-				CurrectOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
-			}
-			#pragma endregion
-			#pragma region File Writer
-			{
-				auto const BaseFilter = wil::CoCreateInstance<IBaseFilter>(CLSID_FileWriter, CLSCTX_INPROC_SERVER);
-				auto const FileSinkFilter2 = BaseFilter.query<IFileSinkFilter2>();
-				THROW_IF_FAILED(FileSinkFilter2->SetFileName(Path.c_str(), nullptr));
-				THROW_IF_FAILED(FileSinkFilter2->SetMode(AM_FILE_OVERWRITE));
-				AddFilter(FilterGraph2, BaseFilter, L"Renderer");
-				THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter).get()));
-				CurrectOutputPin.reset();
-			}
-			#pragma endregion
-			THROW_IF_FAILED(FilterGraph2.query<IMediaFilter>()->SetSyncSource(nullptr)); // ASAP
-			RunFilterGraph(FilterGraph2, 20s);
+			FilePropertyStore PropertyStore { Path.c_str() };
+			wil::unique_prop_variant Comment;
+			PropertyStore.Get(PKEY_Comment, Comment);
+			Assert::AreEqual<VARTYPE>(VT_LPWSTR, Comment.vt);
+			Assert::IsNotNull(Comment.pwszVal);
+			Assert::IsTrue(strcmp(g_Comment, ToMultiByte(Comment.pwszVal).c_str()) == 0);
 		}
 
 		#endif

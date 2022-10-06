@@ -171,6 +171,45 @@ MovieWriter::Close(REFERENCE_TIME* pDuration)
             break;
         }
     }
+
+    if(!m_Comment.empty())
+    {
+        smart_ptr<Atom> const udta = pmoov->CreateAtom('udta'); // ISO/IEC 14496-12:2012 8.10.1 User Data Box
+        smart_ptr<Atom> const meta = udta->CreateAtom('meta'); // https://developer.apple.com/library/archive/documentation/QuickTime/QTFF/Metadata/Metadata.html
+        {
+            uint8_t MetaData[44];
+            uint8_t* MetaDataPointer = MetaData;
+            WriteLong(0, MetaDataPointer); MetaDataPointer += 4;
+            WriteLong(32, MetaDataPointer); MetaDataPointer += 4;
+            WriteLong('hdlr', MetaDataPointer); MetaDataPointer += 4;
+            WriteLong(0, MetaDataPointer); MetaDataPointer += 4; // Version, Flags
+            WriteLong(0, MetaDataPointer); MetaDataPointer += 4; // Predefined
+            WriteLong('mdir', MetaDataPointer); MetaDataPointer += 4;
+            WriteLong(0, MetaDataPointer); MetaDataPointer += 4;
+            WriteLong(0, MetaDataPointer); MetaDataPointer += 4;
+            WriteLong(0, MetaDataPointer); MetaDataPointer += 4;
+            ASSERT(static_cast<size_t>(MetaDataPointer - MetaData) <= std::size(MetaData));
+            meta->Append(MetaData, static_cast<long>(MetaDataPointer - MetaData));
+            smart_ptr<Atom> const ilst = meta->CreateAtom('ilst');
+            smart_ptr<Atom> const cmt = ilst->CreateAtom(0xA9000000 | 'cmt');
+            {
+                smart_ptr<Atom> const data = cmt->CreateAtom('data');
+                uint8_t Data[8];
+                uint8_t* DataPointer = Data;
+                WriteLong(0x00000001, DataPointer); DataPointer += 4; // Version, Flags
+                WriteLong(0, DataPointer); DataPointer += 4;
+                ASSERT(static_cast<size_t>(DataPointer - Data) <= std::size(Data));
+                data->Append(Data, static_cast<long>(DataPointer - Data));
+                data->Append(reinterpret_cast<uint8_t const*>(m_Comment.data()), static_cast<long>(m_Comment.size()));
+                data->Close();
+            }
+            cmt->Close();
+            ilst->Close();
+        }
+        meta->Close();
+        // SUGG: Use Xtra atom with Windows Media specific properties
+        udta->Close();
+    }
 	
 	pmoov->Close();
 
