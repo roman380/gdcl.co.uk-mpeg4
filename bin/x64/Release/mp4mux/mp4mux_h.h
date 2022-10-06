@@ -4,7 +4,7 @@
 
 
  /* File created by MIDL compiler version 8.01.0628 */
-/* at Tue Jan 19 05:14:07 2038
+/* at Tue Jan 19 04:14:07 2038
  */
 /* Compiler settings for mp4mux.idl:
     Oicf, W1, Zp8, env=Win64 (32b run), target_arch=AMD64 8.01.0628 
@@ -323,6 +323,9 @@ EXTERN_C const IID IID_IMuxFilter;
         virtual HRESULT STDMETHODCALLTYPE SetMinimalMovieDuration( 
             /* [in] */ LONGLONG nMinimalMovieDuration) = 0;
         
+        virtual HRESULT STDMETHODCALLTYPE SetComment( 
+            /* [in] */ BSTR Comment) = 0;
+        
     };
     
     
@@ -375,6 +378,11 @@ EXTERN_C const IID IID_IMuxFilter;
             IMuxFilter * This,
             /* [in] */ LONGLONG nMinimalMovieDuration);
         
+        DECLSPEC_XFGVIRT(IMuxFilter, SetComment)
+        HRESULT ( STDMETHODCALLTYPE *SetComment )( 
+            IMuxFilter * This,
+            /* [in] */ BSTR Comment);
+        
         END_INTERFACE
     } IMuxFilterVtbl;
 
@@ -415,6 +423,9 @@ EXTERN_C const IID IID_IMuxFilter;
 
 #define IMuxFilter_SetMinimalMovieDuration(This,nMinimalMovieDuration)	\
     ( (This)->lpVtbl -> SetMinimalMovieDuration(This,nMinimalMovieDuration) ) 
+
+#define IMuxFilter_SetComment(This,Comment)	\
+    ( (This)->lpVtbl -> SetComment(This,Comment) ) 
 
 #endif /* COBJMACROS */
 

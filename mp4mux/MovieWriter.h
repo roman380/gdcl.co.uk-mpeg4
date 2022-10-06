@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include <string>
+
 // tracks are normally interleaved by the second. Define this
 // to set the maximum size of a single interleave piece.
 // Android sets a max 500KB limit on the offset between video
@@ -529,11 +531,15 @@ class MovieWriter
 public:
     MovieWriter(AtomWriter* pContainer);
 
-	VOID Initialize(BOOL bAlignTrackStartTimeDisabled, REFERENCE_TIME nMinimalMovieDuration)
+	void Initialize(BOOL bAlignTrackStartTimeDisabled, REFERENCE_TIME nMinimalMovieDuration)
 	{
 		m_bAlignTrackStartTimeDisabled = bAlignTrackStartTimeDisabled;
 		m_nMinimalMovieDuration = nMinimalMovieDuration;
 	}
+    void SetComment(std::string const& Comment)
+    {
+        m_Comment = Comment;
+    }
 
     TrackWriter* MakeTrack(const CMediaType* pmt, BOOL bNotifyMediaSampleWrite = FALSE);
     HRESULT Close(REFERENCE_TIME* pDuration);
@@ -596,5 +602,7 @@ private:
 	CCritSec m_csBitrate;
 	vector<int> m_Bitrates;
 	REFERENCE_TIME m_tInterleave;
+
+    std::string m_Comment;
 };
 

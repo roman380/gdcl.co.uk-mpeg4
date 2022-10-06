@@ -252,6 +252,7 @@ Mpeg4Mux::Pause()
         m_pOutput->Reset();
         m_pMovie = new MovieWriter(m_pOutput);
 		m_pMovie->Initialize(m_bAlignTrackStartTimeDisabled, m_nMinimalMovieDuration);
+        m_pMovie->SetComment(m_Comment);
 		#pragma region Temporary Index File
 		// ASSU: Output uses IStream
 		if(m_bTemporaryIndexFileEnabled)

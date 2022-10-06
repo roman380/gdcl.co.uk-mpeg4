@@ -25,7 +25,7 @@
     <ClCompile>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)submodule\wil\include</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(IntDir)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;_USRDLL</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)' == 'Debug'">%(PreprocessorDefinitions);_DEBUG</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)' != 'Debug'">%(PreprocessorDefinitions);NDEBUG</PreprocessorDefinitions>
       <LanguageStandard>stdcpp17</LanguageStandard>
