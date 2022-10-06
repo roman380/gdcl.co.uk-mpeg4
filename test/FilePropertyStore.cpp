@@ -1,13 +1,18 @@
 #include "pch.h"
-#include "CppUnitTest.h"
-
-using namespace Microsoft::VisualStudio::CppUnitTestFramework; // https://learn.microsoft.com/en-us/visualstudio/test/how-to-use-microsoft-test-framework-for-cpp?view=vs-2022
+#include "Common.h"
 
 #include <propkey.h>
 #include <propvarutil.h>
 #include <propsys.h>
 
 #pragma comment(lib, "propsys.lib")
+
+#include "..\mp4mux\mp4mux_h.h"
+#include "..\mp4mux\mp4mux_i.c"
+
+#if defined(WITH_DIRECTSHOWREFERENCESOURCE)
+	using namespace AlaxInfoDirectShowReferenceSource;
+#endif
 
 struct FilePropertyStore
 {
@@ -49,6 +54,14 @@ namespace Test
 	TEST_CLASS(Mp4File)
 	{
 	public:
+		TEST_CLASS_INITIALIZE(Initialize)
+		{
+			winrt::init_apartment(winrt::apartment_type::single_threaded); // Follows Unit Test Framework initialization
+		}
+		TEST_CLASS_CLEANUP(Cleanup)
+		{
+			winrt::uninit_apartment();
+		}
 		
 		BEGIN_TEST_METHOD_ATTRIBUTE(SetComment)
 			TEST_IGNORE()
@@ -64,5 +77,58 @@ namespace Test
 			PropertyStore.Set(PKEY_Comment, L"Test Comment 2");
 			PropertyStore.Commit();
 		}
+
+		#if defined(WITH_DIRECTSHOWREFERENCESOURCE)
+
+		BEGIN_TEST_METHOD_ATTRIBUTE(CheckComment)
+		END_TEST_METHOD_ATTRIBUTE()
+		TEST_METHOD(CheckComment)
+		{
+			static REFERENCE_TIME constexpr const g_StopTime = duration_cast<nanoseconds>(2s).count() / 100;
+			auto const Path = OutputPath(L"Mp4File.CheckComment.mp4");
+			if(!DeleteFileW(Path.c_str()))
+				THROW_LAST_ERROR_IF(GetLastError() != ERROR_FILE_NOT_FOUND);
+			Library Library(L"mp4mux.dll");
+			auto const FilterGraph2 = wil::CoCreateInstance<IFilterGraph2>(CLSID_FilterGraph, CLSCTX_INPROC_SERVER);
+			wil::com_ptr<IPin> CurrectOutputPin;
+			#pragma region Source
+			{
+				auto const Filter = wil::CoCreateInstance<IVideoSourceFilter>(__uuidof(VideoSourceFilter), CLSCTX_INPROC_SERVER);
+				wil::unique_variant MediaType;
+				MediaType.vt = VT_BSTR;
+				MediaType.bstrVal = wil::make_bstr(FormatIdentifier(MEDIASUBTYPE_RGB32).c_str()).release();
+				THROW_IF_FAILED(Filter->SetMediaType(720, 480, MediaType));
+				THROW_IF_FAILED(Filter->SetMediaTypeRate(25, 1));
+				auto const SourceBaseFilter = Filter.query<IBaseFilter>();
+				AddFilter(FilterGraph2, SourceBaseFilter, L"Source");
+				CurrectOutputPin = Pin(SourceBaseFilter);
+				THROW_IF_FAILED(CurrectOutputPin.query<IAMStreamControl>()->StopAt(&g_StopTime, FALSE, 1));
+			}
+			#pragma endregion
+			#pragma region Multiplexer
+			{
+				auto const Filter = Library.CreateInstance<MuxFilter, IMuxFilter>();
+				auto const BaseFilter = Filter.query<IBaseFilter>();
+				AddFilter(FilterGraph2, BaseFilter, L"Multiplexer");
+				THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
+				CurrectOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
+			}
+			#pragma endregion
+			#pragma region File Writer
+			{
+				auto const BaseFilter = wil::CoCreateInstance<IBaseFilter>(CLSID_FileWriter, CLSCTX_INPROC_SERVER);
+				auto const FileSinkFilter2 = BaseFilter.query<IFileSinkFilter2>();
+				THROW_IF_FAILED(FileSinkFilter2->SetFileName(Path.c_str(), nullptr));
+				THROW_IF_FAILED(FileSinkFilter2->SetMode(AM_FILE_OVERWRITE));
+				AddFilter(FilterGraph2, BaseFilter, L"Renderer");
+				THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter).get()));
+				CurrectOutputPin.reset();
+			}
+			#pragma endregion
+			THROW_IF_FAILED(FilterGraph2.query<IMediaFilter>()->SetSyncSource(nullptr)); // ASAP
+			RunFilterGraph(FilterGraph2, 20s);
+		}
+
+		#endif
 	};
 }

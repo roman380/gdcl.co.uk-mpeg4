@@ -74,7 +74,9 @@
     <ClCompile Include="FilePropertyStore.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Common.h" />
     <ClInclude Include="pch.h" />
+    <ClInclude Include="SampleGrabberEx.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="test.props" />
