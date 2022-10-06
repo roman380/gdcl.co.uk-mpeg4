@@ -7,7 +7,7 @@
 *.user
 *.bak
 *.aps
-_Bin
+bin
 .vs
 
-_Input
+input

@@ -7,6 +7,11 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mp4demux", "mp4demux\mp4dem
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mp4mux", "mp4mux\mp4mux.vcxproj", "{04A495A9-852E-466B-AA86-EFD067504FFD}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "test", "test\test.vcxproj", "{712526B1-06BF-4F6E-BFD8-9ED8A6F67BA0}"
+	ProjectSection(ProjectDependencies) = postProject
+		{04A495A9-852E-466B-AA86-EFD067504FFD} = {04A495A9-852E-466B-AA86-EFD067504FFD}
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Win32 = Debug|Win32
@@ -31,6 +36,14 @@ Global
 		{04A495A9-852E-466B-AA86-EFD067504FFD}.Release|Win32.Build.0 = Release|Win32
 		{04A495A9-852E-466B-AA86-EFD067504FFD}.Release|x64.ActiveCfg = Release|x64
 		{04A495A9-852E-466B-AA86-EFD067504FFD}.Release|x64.Build.0 = Release|x64
+		{712526B1-06BF-4F6E-BFD8-9ED8A6F67BA0}.Debug|Win32.ActiveCfg = Debug|Win32
+		{712526B1-06BF-4F6E-BFD8-9ED8A6F67BA0}.Debug|Win32.Build.0 = Debug|Win32
+		{712526B1-06BF-4F6E-BFD8-9ED8A6F67BA0}.Debug|x64.ActiveCfg = Debug|x64
+		{712526B1-06BF-4F6E-BFD8-9ED8A6F67BA0}.Debug|x64.Build.0 = Debug|x64
+		{712526B1-06BF-4F6E-BFD8-9ED8A6F67BA0}.Release|Win32.ActiveCfg = Release|Win32
+		{712526B1-06BF-4F6E-BFD8-9ED8A6F67BA0}.Release|Win32.Build.0 = Release|Win32
+		{712526B1-06BF-4F6E-BFD8-9ED8A6F67BA0}.Release|x64.ActiveCfg = Release|x64
+		{712526B1-06BF-4F6E-BFD8-9ED8A6F67BA0}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
