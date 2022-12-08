@@ -72,9 +72,9 @@ public:
     virtual HRESULT Replace(LONGLONG pos, const BYTE* pBuffer, long cBytes) = 0;
     virtual HRESULT Append(const BYTE* pBuffer, long cBytes) = 0;
 
-	virtual VOID NotifyMediaSampleWrite(INT nTrackIndex, IMediaSample* pMediaSample, SIZE_T nDataSize)
+	virtual void NotifyMediaSampleWrite(int TrackIndex, IMediaSample* MediaSample, size_t DataSize)
 	{ 
-		nTrackIndex; pMediaSample; nDataSize;
+        TrackIndex; MediaSample; DataSize;
 	}
 };
 

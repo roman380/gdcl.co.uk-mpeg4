@@ -1,10 +1,13 @@
 #pragma once
 
-#include <string.h>
-#include <tchar.h>
+#include <string>
 #include <shlwapi.h>
 
 #pragma comment(lib, "shlwapi.lib")
+
+#include <wil\resource.h>
+#include <wil\com.h>
+#include <wil\winrt.h>
 
 class CTemporaryIndexFileSite :
 	public IUnknown
@@ -13,100 +16,96 @@ class CTemporaryIndexFileSite :
 
 class CTemporaryIndexFile
 {
-private:
-	TCHAR m_pszPath[MAX_PATH];
-	HANDLE m_hFile;
-	SIZE_T m_nMediaSampleIndex;
-
 public:
-// CTemporaryIndexFile
-	CTemporaryIndexFile() :
-		m_hFile(INVALID_HANDLE_VALUE)
+	static std::wstring DefaultDirectory()
 	{
+		wchar_t Directory[MAX_PATH] { };
+		WI_VERIFY(GetTempPathW(_countof(Directory), Directory));
+		wchar_t ModulePath[MAX_PATH] { };
+		WI_VERIFY(GetModuleFileNameW(g_hInst, ModulePath, _countof(ModulePath)));
+		WI_VERIFY(PathCombineW(Directory, Directory, PathFindFileNameW(ModulePath)));
+		CreateDirectory(Directory, nullptr);
+		return Directory;
 	}
-	~CTemporaryIndexFile()
+	static std::wstring TemporaryFileName(wchar_t const* FileName)
 	{
-		// NOTE: We are not deleting file here, only on explicit termination
-		if(IsActive())
-			CloseHandle(m_hFile);
+		wchar_t Result[MAX_PATH] { };
+		swprintf_s(Result, L"%s-Index.tmp", FileName);
+		return Result;
 	}
-	BOOL Initialize(LPCTSTR pszFileName)
+	bool Initialize(wchar_t const* FileName)
 	{
-		if(!pszFileName)
-			return FALSE; // No File Name
-		TCHAR pszDirectory[MAX_PATH] = { 0 };
-		GetTempPath(_countof(pszDirectory), pszDirectory);
-		TCHAR pszModulePath[MAX_PATH] = { 0 };
-		GetModuleFileName(g_hInst, pszModulePath, _countof(pszModulePath));
-		PathCombine(pszDirectory, pszDirectory, PathFindFileName(pszModulePath));
-		CreateDirectory(pszDirectory, NULL);
-		TCHAR pszTemporaryFileName[MAX_PATH] = { 0 };
-		_stprintf_s(pszTemporaryFileName, _T("%s-Index.tmp"), pszFileName);
-		PathCombine(m_pszPath, pszDirectory, pszTemporaryFileName);
-		m_hFile = CreateFile(m_pszPath, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-		if(m_hFile == INVALID_HANDLE_VALUE)
-			return FALSE; // Failed
-		return TRUE;
+		if(!FileName)
+			return false; // No File Name
+		wchar_t Path[MAX_PATH] { };
+		WI_VERIFY(PathCombineW(Path, DefaultDirectory().c_str(), TemporaryFileName(FileName).c_str()));
+		m_Path = Path;
+		m_File.reset(CreateFileW(m_Path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr));
+		return m_File.is_valid();
 	}
-	VOID Terminate()
+	void Terminate()
 	{
 		if(!IsActive())
 			return;
-		CloseHandle(m_hFile);
-		m_hFile = INVALID_HANDLE_VALUE;
-		DeleteFile(m_pszPath);
+		m_File.reset();
+		WI_VERIFY(DeleteFileW(m_Path.c_str()));
 	}
-	BOOL IsActive() const
+	bool IsActive() const
 	{
-		return m_hFile != INVALID_HANDLE_VALUE;
+		return m_File.is_valid();
 	}
-	VOID WriteHeader()
+	void WriteHeader()
 	{
-		DWORD nWriteDataSize;
-		static const UINT32 g_nSignature = MAKEFOURCC('M', 'P', '4', 'I');
-		static const UINT32 g_nVersion = 1;
-		WriteFile(m_hFile, &g_nSignature, sizeof g_nSignature, &nWriteDataSize, NULL);
-		WriteFile(m_hFile, &g_nVersion, sizeof g_nVersion, &nWriteDataSize, NULL);
-		m_nMediaSampleIndex = 0;
+		DWORD WriteDataSize;
+		static uint32_t constexpr const g_Signature = MAKEFOURCC('M', 'P', '4', 'I');
+		static uint32_t constexpr const g_Version = 1;
+		LOG_IF_WIN32_BOOL_FALSE(WriteFile(m_File.get(), &g_Signature, sizeof g_Signature, &WriteDataSize, nullptr));
+		LOG_IF_WIN32_BOOL_FALSE(WriteFile(m_File.get(), &g_Version, sizeof g_Version, &WriteDataSize, nullptr));
+		m_MediaSampleIndex = 0;
 	}
-	VOID WriteInputPin(UINT16 nIndex, const CMediaType& MediaType)
+	void WriteInputPin(uint16_t Index, CMediaType const& MediaType)
 	{
-		DWORD nWriteDataSize;
-		static const UINT32 g_nSignature = MAKEFOURCC('I', 'P', 'I', 'N');
-		WriteFile(m_hFile, &g_nSignature, sizeof g_nSignature, &nWriteDataSize, NULL);
-		WriteFile(m_hFile, &nIndex, sizeof nIndex, &nWriteDataSize, NULL);
-		WriteFile(m_hFile, (const AM_MEDIA_TYPE*) &MediaType, sizeof (AM_MEDIA_TYPE), &nWriteDataSize, NULL);
+		DWORD WriteDataSize;
+		static uint32_t constexpr const g_Signature = MAKEFOURCC('I', 'P', 'I', 'N');
+		LOG_IF_WIN32_BOOL_FALSE(WriteFile(m_File.get(), &g_Signature, sizeof g_Signature, &WriteDataSize, nullptr));
+		LOG_IF_WIN32_BOOL_FALSE(WriteFile(m_File.get(), &Index, sizeof Index, &WriteDataSize, nullptr));
+		LOG_IF_WIN32_BOOL_FALSE(WriteFile(m_File.get(), static_cast<AM_MEDIA_TYPE const*>(&MediaType), sizeof (AM_MEDIA_TYPE), &WriteDataSize, nullptr));
 		if(MediaType.FormatLength())
-			WriteFile(m_hFile, MediaType.Format(), (DWORD) MediaType.FormatLength(), &nWriteDataSize, NULL);
+			LOG_IF_WIN32_BOOL_FALSE(WriteFile(m_File.get(), MediaType.Format(), static_cast<DWORD>(MediaType.FormatLength()), &WriteDataSize, nullptr));
 	}
-	VOID WriteMediaSample(UINT16 nIndex, UINT64 nDataPosition, UINT32 nDataSize, const AM_SAMPLE2_PROPERTIES& Properties)
+	void WriteMediaSample(uint16_t Index, uint64_t DataPosition, uint32_t DataSize, AM_SAMPLE2_PROPERTIES const& Properties)
 	{
-		DWORD nWriteDataSize;
-		static const UINT32 g_nSignature = MAKEFOURCC('S', 'A', 'M', 'P');
+		DWORD WriteDataSize;
+		static uint32_t constexpr const g_Signature = MAKEFOURCC('S', 'A', 'M', 'P');
 		#pragma region Structure
 		#pragma pack(push, 1)
-		typedef struct _MEDIASAMPLE
+		struct MEDIASAMPLE
 		{
-			UINT32 nSignature;
-			UINT16 nIndex;
-			UINT64 nPosition;
-			UINT32 nSampleFlags;
-			UINT32 nSize;
-			UINT64 nStartTime;
-			UINT32 nLengthTime;
-		} MEDIASAMPLE;
+			uint32_t Signature;
+			uint16_t Index;
+			uint64_t Position;
+			uint32_t SampleFlags;
+			uint32_t Size;
+			uint64_t StartTime;
+			uint32_t LengthTime;
+		};
 		#pragma pack(pop)
 		#pragma endregion
 		MEDIASAMPLE MediaSample;
-		MediaSample.nSignature = g_nSignature;
-		MediaSample.nIndex = nIndex;
-		MediaSample.nPosition = nDataPosition;
-		MediaSample.nSampleFlags = (UINT32) Properties.dwSampleFlags;
-		MediaSample.nSize = nDataSize; //(UINT32) Properties.lActual;
-		MediaSample.nStartTime = (UINT64) Properties.tStart;
-		MediaSample.nLengthTime = (UINT32) (Properties.tStop - Properties.tStart);
-		WriteFile(m_hFile, &MediaSample, sizeof MediaSample, &nWriteDataSize, NULL);
-		if(!(++m_nMediaSampleIndex % 1024))
-			FlushFileBuffers(m_hFile);
+		MediaSample.Signature = g_Signature;
+		MediaSample.Index = Index;
+		MediaSample.Position = DataPosition;
+		MediaSample.SampleFlags = static_cast<uint32_t>(Properties.dwSampleFlags);
+		MediaSample.Size = DataSize; //static_cast<uint32_t>(Properties.lActual);
+		MediaSample.StartTime = static_cast<uint64_t>(Properties.tStart);
+		MediaSample.LengthTime = static_cast<uint32_t>(Properties.tStop - Properties.tStart);
+		LOG_IF_WIN32_BOOL_FALSE(WriteFile(m_File.get(), &MediaSample, sizeof MediaSample, &WriteDataSize, nullptr));
+		if(!(++m_MediaSampleIndex % 1024))
+			LOG_IF_WIN32_BOOL_FALSE(FlushFileBuffers(m_File.get()));
 	}
+
+private:
+	std::wstring m_Path;
+	wil::unique_hfile m_File;
+	size_t m_MediaSampleIndex;
 };

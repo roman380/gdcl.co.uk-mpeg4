@@ -219,7 +219,7 @@ public:
     LONGLONG Position();
     HRESULT Replace(LONGLONG pos, const BYTE* pBuffer, long cBytes);
     HRESULT Append(const BYTE* pBuffer, long cBytes);
-	VOID NotifyMediaSampleWrite(INT nTrackIndex, IMediaSample* pMediaSample, SIZE_T nDataSize) override;
+    void NotifyMediaSampleWrite(int TrackIndex, IMediaSample* MediaSample, size_t DataSize) override;
 
 private:
     Mpeg4Mux* m_pMux;
@@ -302,7 +302,7 @@ public:
     void OnEOS();
 	REFERENCE_TIME Start() { return m_tStart;}
 
-	VOID NotifyMediaSampleWrite(INT nTrackIndex, LONGLONG nDataPosition, SIZE_T nDataSize, IMediaSample* pMediaSample);
+    void NotifyMediaSampleWrite(int TrackIndex, uint64_t DataPosition, size_t DataSize, IMediaSample* MediaSample);
 
     // we implement IMediaSeeking to allow encoding
     // of specific portions of an input clip, and
@@ -331,37 +331,37 @@ public:
 
 // IMuxFilter
     STDMETHOD(IsTemporaryIndexFileEnabled)() override
-	{
-		//_Z4(atlTraceCOM, 4, _T("this 0x%p\n"), this);
-		//_ATLTRY
-		//{
-		    CAutoLock lock(&m_csFilter);
-			if(!m_bTemporaryIndexFileEnabled)
-				return S_FALSE;
-		//}
-		//_ATLCATCH(Exception)
-		//{
-		//	_C(Exception);
-		//}
-		return S_OK;
-	}
-    STDMETHOD(SetTemporaryIndexFileEnabled)(BOOL bTemporaryIndexFileEnabled) override
-	{
-		//_Z4(atlTraceCOM, 4, _T("this 0x%p, bEnabled %d\n"), this, bEnabled);
-		//_ATLTRY
-		//{
-		    CAutoLock lock(&m_csFilter);
-			if(m_bTemporaryIndexFileEnabled == bTemporaryIndexFileEnabled)
-				return S_FALSE;
-			//__D(IsActive(), VFW_E_WRONG_STATE);
-			m_bTemporaryIndexFileEnabled = bTemporaryIndexFileEnabled;
-		//}
-		//_ATLCATCH(Exception)
-		//{
-		//	_C(Exception);
-		//}
-		return S_OK;
-	}
+    {
+        //_Z4(atlTraceCOM, 4, _T("this 0x%p\n"), this);
+        //_ATLTRY
+        //{
+            CAutoLock lock(&m_csFilter);
+            if(!m_TemporaryIndexFileEnabled)
+                return S_FALSE;
+        //}
+        //_ATLCATCH(Exception)
+        //{
+        //	_C(Exception);
+        //}
+        return S_OK;
+    }
+    STDMETHOD(SetTemporaryIndexFileEnabled)(BOOL TemporaryIndexFileEnabled) override
+    {
+        //_Z4(atlTraceCOM, 4, _T("this 0x%p, bEnabled %d\n"), this, bEnabled);
+        //_ATLTRY
+        //{
+            CAutoLock lock(&m_csFilter);
+            if(m_TemporaryIndexFileEnabled == static_cast<bool>(TemporaryIndexFileEnabled))
+                return S_FALSE;
+            //__D(IsActive(), VFW_E_WRONG_STATE);
+            m_TemporaryIndexFileEnabled = static_cast<bool>(TemporaryIndexFileEnabled);
+        //}
+        //_ATLCATCH(Exception)
+        //{
+        //	_C(Exception);
+        //}
+        return S_OK;
+    }
 	STDMETHOD(GetAlignTrackStartTimeDisabled)() override
 	{
 		//_Z4(atlTraceCOM, 4, _T("this 0x%p\n"), this);
@@ -469,8 +469,8 @@ private:
 	BOOL m_bAlignTrackStartTimeDisabled;
 	REFERENCE_TIME m_nMinimalMovieDuration;
 
-	BOOL m_bTemporaryIndexFileEnabled;
+    bool m_TemporaryIndexFileEnabled = false;
     CCritSec m_TemporaryIndexFileCriticalSection;
-	CTemporaryIndexFile m_TemporaryIndexFile;
+    CTemporaryIndexFile m_TemporaryIndexFile;
 };
 
