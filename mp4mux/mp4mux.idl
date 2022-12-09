@@ -58,6 +58,9 @@ library GdclMp4Mux
 		HRESULT SetMinimalMovieDuration([in] LONGLONG nMinimalMovieDuration);
 		HRESULT SetComment([in] BSTR Comment);
 		HRESULT SetTemporaryIndexFileDirectory([in] BSTR TemporaryIndexFileDirectory);
+		#if !defined(NDEBUG)
+			HRESULT SetSkipClose([in] BOOL SkipClose);
+		#endif
 	};
 	[
 		uuid(5FD85181-E542-4e52-8D9D-5D613C30131B)

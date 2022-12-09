@@ -455,7 +455,20 @@ public:
 		CATCH_RETURN();
         return S_OK;
     }
-
+	#if !defined(NDEBUG)
+		STDMETHOD(SetSkipClose)(BOOL SkipClose) override
+		{
+			//TRACE(L"this 0x%p, SkipClose %d\n", this, SkipClose);
+			try
+			{
+				CAutoLock lock(&m_csFilter);
+				//__D(IsActive(), VFW_E_WRONG_STATE);
+				m_SkipClose = static_cast<bool>(SkipClose);
+			}
+			CATCH_RETURN();
+			return S_OK;
+		}
+	#endif
 	
 private:
     // construct only via class factory
@@ -480,5 +493,9 @@ private:
 	std::wstring m_TemporaryIndexFileDirectory;
     CCritSec m_TemporaryIndexFileCriticalSection;
     CTemporaryIndexFile m_TemporaryIndexFile;
+
+    #if !defined(NDEBUG)
+        bool m_SkipClose = false;
+    #endif
 };
 

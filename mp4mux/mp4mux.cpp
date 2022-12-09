@@ -44,6 +44,7 @@ STDAPI DllRegisterServer()
 	nResult = RegisterTypeLib(pTypeLib, pszPath, NULL);
 	if(FAILED(nResult))
 	    return nResult;
+	// TODO: Register WinRT classes
     return S_OK;
 }
 
@@ -65,7 +66,24 @@ STDAPI DllUnregisterServer()
     nResult = AMovieDllRegisterServer2(false);
 	if(FAILED(nResult))
 	    return nResult;
+	// TODO: Unregister WinRT classes
     return S_OK;
+}
+
+STDAPI WinrtDllGetClassObject(REFCLSID ClassIdentifier, REFIID InterfaceIdentifier, void** Object);
+
+STDAPI DllGetClassObjectEx(REFCLSID ClassIdentifier, REFIID InterfaceIdentifier, void** Object)
+{
+	// TODO: Nicer wrapper around WinRT classes
+	if(ClassIdentifier == __uuidof(MuxFilterRecovery))
+		return WinrtDllGetClassObject(ClassIdentifier, InterfaceIdentifier, Object);
+	return DllGetClassObject(ClassIdentifier, InterfaceIdentifier, Object);
+}
+
+STDAPI DllCanUnloadNowEx()
+{
+	// TODO: WinRT check
+	return DllCanUnloadNow();
 }
 
 // if we declare the correct C runtime entrypoint and then forward it to the DShow base

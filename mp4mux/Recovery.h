@@ -3,10 +3,11 @@
 #include "mp4mux_h.h"
 
 class __declspec(uuid("{73D9D53D-30A3-451E-976A-2B4186FE27EC}")) MuxFilterRecovery : 
-    public winrt::implements<MuxFilterRecovery, IMuxFilterRecovery>
+	public winrt::implements<MuxFilterRecovery, IMuxFilterRecovery>
 {
 public:
-	// IMuxFilterRecovery
+	
+// IMuxFilterRecovery
 	IFACEMETHOD(Initialize)(IMuxFilterRecoverySite* Site, BSTR Path) override
 	{
 		//TRACE(L"this 0x%p\n", this);
