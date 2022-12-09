@@ -332,39 +332,33 @@ public:
 // IMuxFilter
     STDMETHOD(IsTemporaryIndexFileEnabled)() override
     {
-        //_Z4(atlTraceCOM, 4, _T("this 0x%p\n"), this);
-        //_ATLTRY
-        //{
+        //TRACE(L"this 0x%p\n", this);
+        try
+        {
             CAutoLock lock(&m_csFilter);
             if(!m_TemporaryIndexFileEnabled)
                 return S_FALSE;
-        //}
-        //_ATLCATCH(Exception)
-        //{
-        //	_C(Exception);
-        //}
+		}
+		CATCH_RETURN();
         return S_OK;
     }
     STDMETHOD(SetTemporaryIndexFileEnabled)(BOOL TemporaryIndexFileEnabled) override
     {
-        //_Z4(atlTraceCOM, 4, _T("this 0x%p, bEnabled %d\n"), this, bEnabled);
-        //_ATLTRY
-        //{
+        //TRACE(L"this 0x%p, TemporaryIndexFileEnabled %d\n", this, TemporaryIndexFileEnabled);
+        try
+        {
             CAutoLock lock(&m_csFilter);
             if(m_TemporaryIndexFileEnabled == static_cast<bool>(TemporaryIndexFileEnabled))
                 return S_FALSE;
             //__D(IsActive(), VFW_E_WRONG_STATE);
             m_TemporaryIndexFileEnabled = static_cast<bool>(TemporaryIndexFileEnabled);
-        //}
-        //_ATLCATCH(Exception)
-        //{
-        //	_C(Exception);
-        //}
+		}
+		CATCH_RETURN();
         return S_OK;
     }
 	STDMETHOD(GetAlignTrackStartTimeDisabled)() override
 	{
-		//_Z4(atlTraceCOM, 4, _T("this 0x%p\n"), this);
+		//TRACE(atlTraceCOM, 4, _T("this 0x%p\n"), this);
 		//_ATLTRY
 		//{
 		    CAutoLock lock(&m_csFilter);
@@ -379,7 +373,7 @@ public:
 	}
 	STDMETHOD(SetAlignTrackStartTimeDisabled)(BOOL bAlignTrackStartTimeDisabled) override
 	{
-		//_Z4(atlTraceCOM, 4, _T("this 0x%p, bAlignTrackStartTimeDisabled %d\n"), this, bAlignTrackStartTimeDisabled);
+		//TRACE(atlTraceCOM, 4, _T("this 0x%p, bAlignTrackStartTimeDisabled %d\n"), this, bAlignTrackStartTimeDisabled);
 		//_ATLTRY
 		//{
 		    CAutoLock lock(&m_csFilter);
@@ -396,7 +390,7 @@ public:
 	}
 	STDMETHOD(GetMinimalMovieDuration)(LONGLONG* pnMinimalMovieDuration) override
 	{
-		//_Z4(atlTraceCOM, 4, _T("this 0x%p\n"), this);
+		//TRACE(atlTraceCOM, 4, _T("this 0x%p\n"), this);
 		//_ATLTRY
 		//{
 		//	__D(pnMinimalMovieDuration, E_POINTER);
@@ -411,7 +405,7 @@ public:
 	}
 	STDMETHOD(SetMinimalMovieDuration)(LONGLONG nMinimalMovieDuration) override
 	{
-		//_Z4(atlTraceCOM, 4, _T("this 0x%p, nMinimalMovieDuration %I64d\n"), this, nMinimalMovieDuration);
+		//TRACE(atlTraceCOM, 4, _T("this 0x%p, nMinimalMovieDuration %I64d\n"), this, nMinimalMovieDuration);
 		//_ATLTRY
 		//{
 			CAutoLock lock(&m_csFilter);
@@ -428,7 +422,7 @@ public:
 	}
 	STDMETHOD(SetComment)(BSTR Comment) override
 	{
-		//_Z4(atlTraceCOM, 4, _T("this 0x%p, Comment 0x%p \"%ls\"\n"), this, Comment, Comment ? Comment : L"");
+		//TRACE(atlTraceCOM, 4, _T("this 0x%p, Comment 0x%p \"%ls\"\n"), this, Comment, Comment ? Comment : L"");
 		//_ATLTRY
 		//{
 			CAutoLock lock(&m_csFilter);
@@ -449,6 +443,19 @@ public:
 		//}
 		return S_OK;
 	}
+    STDMETHOD(SetTemporaryIndexFileDirectory)(BSTR TemporaryIndexFileDirectory) override
+    {
+        //TRACE(L"this 0x%p, TemporaryIndexFileDirectory %ls\n", this, TemporaryIndexFileDirectory ? TemporaryIndexFileDirectory : L"(null)");
+        try
+        {
+            CAutoLock lock(&m_csFilter);
+            //__D(IsActive(), VFW_E_WRONG_STATE);
+            m_TemporaryIndexFileDirectory = TemporaryIndexFileDirectory;
+		}
+		CATCH_RETURN();
+        return S_OK;
+    }
+
 	
 private:
     // construct only via class factory
@@ -470,6 +477,7 @@ private:
 	REFERENCE_TIME m_nMinimalMovieDuration;
 
     bool m_TemporaryIndexFileEnabled = false;
+	std::wstring m_TemporaryIndexFileDirectory;
     CCritSec m_TemporaryIndexFileCriticalSection;
     CTemporaryIndexFile m_TemporaryIndexFile;
 };

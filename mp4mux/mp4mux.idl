@@ -53,12 +53,13 @@ library GdclMp4Mux
 	interface IMuxFilter : IUnknown
 	{
 		HRESULT IsTemporaryIndexFileEnabled();
-		HRESULT SetTemporaryIndexFileEnabled([in] BOOL bTemporaryIndexFileEnabled);
+		HRESULT SetTemporaryIndexFileEnabled([in] BOOL TemporaryIndexFileEnabled);
 		HRESULT GetAlignTrackStartTimeDisabled();
 		HRESULT SetAlignTrackStartTimeDisabled([in] BOOL bAlignTrackStartTimeDisabled);
 		HRESULT GetMinimalMovieDuration([out] LONGLONG* pnMinimalMovieDuration);
 		HRESULT SetMinimalMovieDuration([in] LONGLONG nMinimalMovieDuration);
 		HRESULT SetComment([in] BSTR Comment);
+		HRESULT SetTemporaryIndexFileDirectory([in] BSTR TemporaryIndexFileDirectory);
 	};
 	[
 		uuid(5FD85181-E542-4e52-8D9D-5D613C30131B)

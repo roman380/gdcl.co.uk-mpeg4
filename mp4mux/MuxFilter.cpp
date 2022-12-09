@@ -197,7 +197,7 @@ Mpeg4Mux::MakeTrack(int index, const CMediaType* pmt)
 {
     CAutoLock lock(&m_csTracks);
     UNREFERENCED_PARAMETER(index);
-    return m_pMovie->MakeTrack(pmt, m_TemporaryIndexFile.IsActive());
+    return m_pMovie->MakeTrack(pmt, m_TemporaryIndexFile.Active());
 }
 
 void 
@@ -272,7 +272,8 @@ Mpeg4Mux::Pause()
                         {
                             auto const FileName = PathFindFileNameW(Path.get());
                             CAutoLock TemporaryIndexFileLock(&m_TemporaryIndexFileCriticalSection);
-                            if(m_TemporaryIndexFile.Initialize(FileName))
+                            auto const TemporaryIndexFileDirectory = m_TemporaryIndexFileDirectory.empty() ? m_TemporaryIndexFile.DefaultDirectory() : m_TemporaryIndexFileDirectory;
+                            if(m_TemporaryIndexFile.Initialize(FileName, TemporaryIndexFileDirectory))
                             {
                                 m_TemporaryIndexFile.WriteHeader();
                                 for(size_t Index = 0; Index < m_pInputs.size(); Index++)
@@ -302,7 +303,7 @@ void Mpeg4Mux::NotifyMediaSampleWrite(int TrackIndex, uint64_t DataPosition, siz
     if(MediaSample)
         return; // No Media Sample
     CAutoLock TemporaryIndexFileLock(&m_TemporaryIndexFileCriticalSection);
-    if(!m_TemporaryIndexFile.IsActive())
+    if(!m_TemporaryIndexFile.Active())
         return; // No Index File
     auto const MediaSample2 = wil::com_query<IMediaSample2>(MediaSample);
     WI_ASSERT(MediaSample2);

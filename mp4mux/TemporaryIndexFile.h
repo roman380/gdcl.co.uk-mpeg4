@@ -33,26 +33,30 @@ public:
 		swprintf_s(Result, L"%s-Index.tmp", FileName);
 		return Result;
 	}
-	bool Initialize(wchar_t const* FileName)
+	bool Initialize(wchar_t const* FileName, std::wstring Directory = DefaultDirectory())
 	{
 		if(!FileName)
 			return false; // No File Name
 		wchar_t Path[MAX_PATH] { };
-		WI_VERIFY(PathCombineW(Path, DefaultDirectory().c_str(), TemporaryFileName(FileName).c_str()));
+		WI_VERIFY(PathCombineW(Path, Directory.c_str(), TemporaryFileName(FileName).c_str()));
 		m_Path = Path;
 		m_File.reset(CreateFileW(m_Path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr));
 		return m_File.is_valid();
 	}
 	void Terminate()
 	{
-		if(!IsActive())
+		if(!Active())
 			return;
 		m_File.reset();
 		WI_VERIFY(DeleteFileW(m_Path.c_str()));
 	}
-	bool IsActive() const
+	bool Active() const
 	{
 		return m_File.is_valid();
+	}
+	std::wstring const& Path() const
+	{
+		return m_Path;
 	}
 	void WriteHeader()
 	{
