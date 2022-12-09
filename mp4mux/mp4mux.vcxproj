@@ -76,6 +76,7 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
       <RuntimeLibrary Condition="'$(Configuration)'=='Release'">MultiThreaded</RuntimeLibrary>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <ModuleDefinitionFile>$(ProjectName).def</ModuleDefinitionFile>
@@ -95,6 +96,7 @@
     <ClCompile Include="MuxFilter.cpp" />
     <ClCompile Include="NALUnit.cpp" />
     <ClCompile Include="ParseBuffer.cpp" />
+    <ClCompile Include="Recovery.cpp" />
     <ClCompile Include="StdAfx.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
@@ -114,6 +116,7 @@
     <ClInclude Include="MuxFilter.h" />
     <ClInclude Include="NALUnit.h" />
     <ClInclude Include="ParseBuffer.h" />
+    <ClInclude Include="Recovery.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="smartptr.h" />
     <ClInclude Include="StdAfx.h" />

@@ -45,8 +45,6 @@ library GdclMp4Mux
 	[
 		object,
 		uuid(6CE45967-F228-4F7B-8B93-83DC599618CA),
-		//dual,
-		//oleautomation,
 		nonextensible,
 		pointer_default(unique)
 	]
@@ -67,5 +65,38 @@ library GdclMp4Mux
 	coclass MuxFilter
 	{
 		[default] interface IMuxFilter;
+	};
+	[
+		object,
+		uuid(3DB13CCE-05D7-4C98-B0E6-C9AC45F20307),
+		nonextensible,
+		pointer_default(unique)
+	]
+	interface IMuxFilterRecoverySite : IUnknown
+	{
+		HRESULT AfterStart();
+		HRESULT BeforeStop();
+		HRESULT Progress([in] DOUBLE Progress);
+	};
+	[
+		object,
+		uuid(29872F46-01FE-49C4-9E56-6C582D4531F9),
+		nonextensible,
+		pointer_default(unique)
+	]
+	interface IMuxFilterRecovery : IUnknown
+	{
+		HRESULT Initialize([in] IMuxFilterRecoverySite* Site, [in] BSTR Path);
+		HRESULT Needed([out] BOOL* Needed);
+		HRESULT Active([out] BOOL* Active);
+		HRESULT Start();
+		HRESULT Stop();
+	};
+	[
+		uuid(73D9D53D-30A3-451E-976A-2B4186FE27EC)
+	]
+	coclass MuxFilterRecovery
+	{
+		[default] interface IMuxFilterRecovery;
 	};
 };
