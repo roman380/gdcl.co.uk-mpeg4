@@ -105,7 +105,11 @@ public:
 		MediaSample.LengthTime = static_cast<uint32_t>(Properties.tStop - Properties.tStart);
 		LOG_IF_WIN32_BOOL_FALSE(WriteFile(m_File.get(), &MediaSample, sizeof MediaSample, &WriteDataSize, nullptr));
 		if(!(++m_MediaSampleIndex % 1024))
-			LOG_IF_WIN32_BOOL_FALSE(FlushFileBuffers(m_File.get()));
+			Flush();
+	}
+	void Flush()
+	{
+		LOG_IF_WIN32_BOOL_FALSE(FlushFileBuffers(m_File.get()));
 	}
 
 private:

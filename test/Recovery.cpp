@@ -68,7 +68,7 @@ namespace Test
 					MediaType.vt = VT_BSTR;
 					MediaType.bstrVal = wil::make_bstr(FormatIdentifier(MEDIASUBTYPE_RGB32).c_str()).release();
 					THROW_IF_FAILED(Filter->SetMediaType(360, 240, MediaType));
-					THROW_IF_FAILED(Filter->SetMediaTypeRate(25, 1));
+					THROW_IF_FAILED(Filter->SetMediaTypeRate(50, 1));
 					THROW_IF_FAILED(Filter->put_Live(VARIANT_TRUE));
 					auto const SourceBaseFilter = Filter.query<IBaseFilter>();
 					AddFilter(FilterGraph2, SourceBaseFilter, L"Source");
@@ -99,7 +99,7 @@ namespace Test
 					CurrectOutputPin.reset();
 				}
 				#pragma endregion
-				RunFilterGraph(FilterGraph2, 2s);
+				RunFilterGraph(FilterGraph2, 3s);
 			}
 			Assert::IsTrue(PathFileExistsW(Path.c_str()));
 			// NOTE: File is unusable at this point as SetSkipClose above instructed to skip finalization

@@ -230,6 +230,7 @@ Mpeg4Mux::Stop()
             {
                 // WARN: Leak m_pMovie but intentionally
                 m_pMovie = nullptr;
+                m_TemporaryIndexFile.Flush();
                 return hr;
             }
         #endif
@@ -309,7 +310,7 @@ Mpeg4Mux::Pause()
 void Mpeg4Mux::NotifyMediaSampleWrite(int TrackIndex, uint64_t DataPosition, size_t DataSize, IMediaSample* MediaSample)
 { 
     WI_ASSERT(MediaSample);
-    if(MediaSample)
+    if(!MediaSample)
         return; // No Media Sample
     CAutoLock TemporaryIndexFileLock(&m_TemporaryIndexFileCriticalSection);
     if(!m_TemporaryIndexFile.Active())
