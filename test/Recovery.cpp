@@ -45,7 +45,9 @@ namespace Test
 			}
 		};
 
-		#if defined(WITH_DIRECTSHOWREFERENCESOURCE)
+		#if defined(WITH_DIRECTSHOWREFERENCESOURCE) && !defined(NDEBUG)
+
+		// WARN: Release builds don't offer SetSkipClose and friends
 
 		BEGIN_TEST_METHOD_ATTRIBUTE(Temporary)
 		END_TEST_METHOD_ATTRIBUTE()
@@ -106,7 +108,7 @@ namespace Test
 			{
 				auto const Recovery = Library.CreateInstance<MuxFilterRecovery, IMuxFilterRecovery>();
 				auto const Site = winrt::make_self<RecoverySite>();
-				THROW_IF_FAILED(Recovery->Initialize(Site.get(), const_cast<BSTR>(Path.c_str())));
+				THROW_IF_FAILED(Recovery->Initialize(Site.get(), const_cast<BSTR>(Path.c_str()), const_cast<BSTR>(TemporaryIndexFileDirectory.c_str())));
 				BOOL Needed;
 				THROW_IF_FAILED(Recovery->Needed(&Needed));
 				Assert::IsTrue(Needed);
@@ -115,7 +117,7 @@ namespace Test
 			}
 			// TODO: Ensure playability by opening and sample counting, just a quick test for now with IMuxFilterRecovery::Needed
 			auto const Recovery = Library.CreateInstance<MuxFilterRecovery, IMuxFilterRecovery>();
-			THROW_IF_FAILED(Recovery->Initialize(nullptr, const_cast<BSTR>(Path.c_str())));
+			THROW_IF_FAILED(Recovery->Initialize(nullptr, const_cast<BSTR>(Path.c_str()), const_cast<BSTR>(TemporaryIndexFileDirectory.c_str())));
 			BOOL Needed;
 			THROW_IF_FAILED(Recovery->Needed(&Needed));
 			Assert::IsFalse(Needed);

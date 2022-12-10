@@ -8,7 +8,7 @@ class __declspec(uuid("{73D9D53D-30A3-451E-976A-2B4186FE27EC}")) MuxFilterRecove
 public:
 	
 // IMuxFilterRecovery
-	IFACEMETHOD(Initialize)(IMuxFilterRecoverySite* Site, BSTR Path) override
+	IFACEMETHOD(Initialize)(IMuxFilterRecoverySite* Site, BSTR Path, BSTR TemporaryIndexFileDirectory) override
 	{
 		//TRACE(L"this 0x%p\n", this);
 		try
@@ -17,6 +17,7 @@ public:
 			[[maybe_unused]] auto&& DataLock = m_DataMutex.lock_exclusive();
 			m_Site = Site;
 			m_Path = Path;
+			m_TemporaryIndexFileDirectory = TemporaryIndexFileDirectory;
 		}
 		CATCH_RETURN();
 		return S_OK;
@@ -64,4 +65,5 @@ private:
 	mutable wil::srwlock m_DataMutex;
 	wil::com_ptr<IMuxFilterRecoverySite> m_Site;
 	std::wstring m_Path;
+	std::wstring m_TemporaryIndexFileDirectory;
 };
