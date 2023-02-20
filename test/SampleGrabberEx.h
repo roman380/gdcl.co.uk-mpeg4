@@ -59,7 +59,7 @@ inline wil::com_ptr<IPin> Pin(wil::com_ptr<IBaseFilter> const& BaseFilter, unsig
 		if(PinIndex-- == 0)
 			return Pin;
 	}
-	WI_ASSERT(false);
+	//WI_ASSERT(false);
 }
 inline wil::com_ptr<IPin> Pin(wil::com_ptr<IBaseFilter> const& BaseFilter, PIN_DIRECTION Direction, unsigned int PinIndex = 0)
 {
@@ -78,7 +78,7 @@ inline wil::com_ptr<IPin> Pin(wil::com_ptr<IBaseFilter> const& BaseFilter, PIN_D
 		if(PinIndex-- == 0)
 			return Pin;
 	}
-	WI_ASSERT(false);
+	//WI_ASSERT(false);
 }
 
 inline std::wstring PinName(wil::com_ptr<IPin> const& Pin)

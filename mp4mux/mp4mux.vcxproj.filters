@@ -184,6 +184,9 @@
     <ClInclude Include="Recovery.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="DebugTrace.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Midl Include="$(ProjectName).idl">

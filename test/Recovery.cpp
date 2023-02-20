@@ -3,6 +3,9 @@
 
 #include "..\mp4mux\mp4mux_h.h"
 #include "..\mp4mux\mp4mux_i.c"
+#include "..\mp4demux\mp4demux_h.h"
+#include "..\mp4demux\mp4demux_i.c"
+#include "..\mp4mux\DebugTrace.h"
 
 #if defined(WITH_DIRECTSHOWREFERENCESOURCE)
 	using namespace AlaxInfoDirectShowReferenceSource;
@@ -22,27 +25,50 @@ namespace Test
 			winrt::uninit_apartment();
 		}
 
-		class RecoverySite : 
-			public winrt::implements<RecoverySite, IMuxFilterRecoverySite>
+		class RecoverySite : public winrt::implements<RecoverySite, IMuxFilterRecoverySite>
 		{
 		public:
 
 		// IMuxFilterRecoverySite
 			IFACEMETHOD(AfterStart)() override
 			{
-				//TRACE(L"this 0x%p\n", this);
+				TRACE(L"this 0x%p\n", this);
 				return S_OK;
 			}
 			IFACEMETHOD(BeforeStop)() override
 			{
-				//TRACE(L"this 0x%p\n", this);
+				TRACE(L"this 0x%p\n", this);
+				StoppingCondition.notify_all();
 				return S_OK;
 			}
 			IFACEMETHOD(Progress)([[maybe_unused]] DOUBLE Progress) override
 			{
-				//TRACE(L"this 0x%p, Progress %.03f\n", this, Progress);
+				TRACE(L"this 0x%p, Progress %.03f\n", this, Progress);
 				return S_OK;
 			}
+
+			wil::srwlock Activity;
+			bool Stopping = false;
+			wil::condition_variable StoppingCondition;
+		};
+
+		class SampleGrabberSite : public winrt::implements<SampleGrabberSite, ISampleGrabberCB>
+		{
+		public:
+			SampleGrabberSite() = default;
+
+		// ISampleGrabberCB
+			IFACEMETHOD(SampleCB)(double SampleTime, IMediaSample* Sample) override
+			{
+				m_SampleCount++;
+				return S_OK;
+			}
+			IFACEMETHOD(BufferCB)(double SampleTime, unsigned char* Data, long DataSize) override
+			{
+				return S_OK;
+			}
+
+			unsigned long m_SampleCount = 0;
 		};
 
 		#if defined(WITH_DIRECTSHOWREFERENCESOURCE) && !defined(NDEBUG)
@@ -113,6 +139,10 @@ namespace Test
 				THROW_IF_FAILED(Recovery->Needed(&Needed));
 				Assert::IsTrue(Needed);
 				THROW_IF_FAILED(Recovery->Start());
+				{
+					auto ActivityLock = Site->Activity.lock_exclusive();
+					Site->StoppingCondition.wait(ActivityLock);
+				}
 				THROW_IF_FAILED(Recovery->Stop());
 			}
 			// TODO: Ensure playability by opening and sample counting, just a quick test for now with IMuxFilterRecovery::Needed
@@ -121,6 +151,53 @@ namespace Test
 			BOOL Needed;
 			THROW_IF_FAILED(Recovery->Needed(&Needed));
 			Assert::IsFalse(Needed);
+			auto const Site = winrt::make_self<SampleGrabberSite>();
+			{
+				auto const FilterGraph2 = wil::CoCreateInstance<IFilterGraph2>(CLSID_FilterGraph, CLSCTX_INPROC_SERVER);
+				wil::com_ptr<IPin> CurrectOutputPin;
+				#pragma region Source
+				{
+					auto const BaseFilter = wil::CoCreateInstance<IBaseFilter>(CLSID_FileSource, CLSCTX_INPROC_SERVER);
+					auto const FileSourceFilter = BaseFilter.query<IFileSourceFilter>();
+					THROW_IF_FAILED(FileSourceFilter->Load(Path.c_str(), nullptr));
+					CurrectOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
+				}
+				#pragma endregion
+				#pragma region Demultiplexer
+				{
+					auto const Filter = Library.CreateInstance<DemuxFilter, IDemuxFilter>();
+					auto const BaseFilter = Filter.query<IBaseFilter>();
+					AddFilter(FilterGraph2, BaseFilter, L"Demultiplexer");
+					THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
+					CurrectOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
+				}
+				#pragma endregion
+				#pragma region SampleGrabber
+				{
+					auto const BaseFilter = wil::CoCreateInstance<IBaseFilter>(__uuidof(SampleGrabber), CLSCTX_INPROC_SERVER);
+					auto const SampleGrabber = BaseFilter.query<ISampleGrabber>();
+					THROW_IF_FAILED(SampleGrabber->SetCallback(Site.get(), 0));
+					AddFilter(FilterGraph2, BaseFilter, L"SampleGrabber");
+					THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
+					CurrectOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
+				}
+				#pragma endregion
+				#pragma region NullRenderer
+				{
+					auto const BaseFilter = wil::CoCreateInstance<IBaseFilter>(__uuidof(NullRenderer), CLSCTX_INPROC_SERVER);
+					AddFilter(FilterGraph2, BaseFilter, L"NullRenderer");
+					THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
+					CurrectOutputPin.reset();
+				}
+				#pragma endregion
+				THROW_IF_FAILED(FilterGraph2.query<IMediaFilter>()->SetSyncSource(nullptr));
+				THROW_IF_FAILED(FilterGraph2.query<IMediaControl>()->Run());
+				LONG EventCode;
+				THROW_IF_FAILED(FilterGraph2.query<IMediaEventEx>()->WaitForCompletion(INFINITE, &EventCode));
+				Assert::IsTrue(EventCode == EC_COMPLETE);
+			}
+			Logger::WriteMessage(Format(L"Site->m_SampleCount %u", Site->m_SampleCount).c_str());
+			Assert::IsTrue(Site->m_SampleCount > 0);
 		}
 
 		#endif

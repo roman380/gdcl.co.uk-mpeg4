@@ -11,6 +11,13 @@
 #include <wil\com.h>
 #include <wil\winrt.h>
 
+inline std::wstring FormatIdentifier(GUID const& Value)
+{
+	wchar_t Text[40] { };
+	WINRT_VERIFY(StringFromGUID2(Value, Text, static_cast<int>(std::size(Text))));
+	return Text;
+}
+
 #include "Recovery.h"
 
 template <typename Class>
@@ -22,7 +29,7 @@ public:
 // IClassFactory
 	IFACEMETHOD(CreateInstance)(IUnknown* OuterUnknown, REFIID InterfaceIdentifier, VOID** Object) override
 	{
-		//TRACE(L"this 0x%p, OuterUnknown 0x%p, InterfaceIdentifier %ls\n", this, OuterUnknown, MF::FormatInterfaceIdentifier(InterfaceIdentifier).c_str());
+		TRACE(L"this 0x%p, OuterUnknown 0x%p, InterfaceIdentifier %ls\n", this, OuterUnknown, FormatIdentifier(InterfaceIdentifier).c_str());
 		try
 		{
 			THROW_HR_IF(CLASS_E_NOAGGREGATION, OuterUnknown != nullptr);

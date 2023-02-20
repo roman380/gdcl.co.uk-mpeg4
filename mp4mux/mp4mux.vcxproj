@@ -111,6 +111,7 @@
   <ItemGroup>
     <ClInclude Include="alloc.h" />
     <ClInclude Include="Bitstream.h" />
+    <ClInclude Include="DebugTrace.h" />
     <ClInclude Include="logger.h" />
     <ClInclude Include="MovieWriter.h" />
     <ClInclude Include="MuxFilter.h" />
