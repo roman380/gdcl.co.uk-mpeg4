@@ -48,7 +48,7 @@ inline long ReadLong(const BYTE* pByte)
 }
 inline LONGLONG ReadI64(BYTE* pBuffer)
 {
-	return (LONGLONG(ReadLong(pBuffer)) << 32) + ReadLong(pBuffer + 4);
+    return (LONGLONG(ReadLong(pBuffer)) << 32) + ReadLong(pBuffer + 4);
 }
 
 // forward references
@@ -72,10 +72,10 @@ public:
     virtual HRESULT Replace(LONGLONG pos, const BYTE* pBuffer, long cBytes) = 0;
     virtual HRESULT Append(const BYTE* pBuffer, long cBytes) = 0;
 
-	virtual void NotifyMediaSampleWrite(int TrackIndex, IMediaSample* MediaSample, size_t DataSize)
-	{ 
+    virtual void NotifyMediaSampleWrite(int TrackIndex, IMediaSample* MediaSample, size_t DataSize)
+    { 
         TrackIndex; MediaSample; DataSize;
-	}
+    }
 };
 
 // basic container structure for MPEG-4 file format.
@@ -146,14 +146,14 @@ public:
         return (long)m_Samples.size();
     }
     bool IsFull(REFERENCE_TIME tMaxDur);
-	REFERENCE_TIME GetDuration();
-	void SetOldIndexFormat()	{ m_bOldIndexFormat = true; }
+    REFERENCE_TIME GetDuration();
+    void SetOldIndexFormat()	{ m_bOldIndexFormat = true; }
 
 private:
     TrackWriter* m_pTrack;
     REFERENCE_TIME m_tStart;
     REFERENCE_TIME m_tEnd;
-	bool m_bOldIndexFormat;
+    bool m_bOldIndexFormat;
     long m_cBytes;
     list<IMediaSample*> m_Samples;
 };
@@ -214,19 +214,19 @@ private:
 class ListOfPairs
 {
 public:
-	ListOfPairs();
-	void Append(long l);
+    ListOfPairs();
+    void Append(long l);
     HRESULT Write(Atom* patm);
-	long Entries() { return m_cEntries; }
+    long Entries() { return m_cEntries; }
 private:
-	ListOfLongs m_Table;
+    ListOfLongs m_Table;
 
-	// total entries
-	long m_cEntries;
+    // total entries
+    long m_cEntries;
 
-	// current pair not in table
-	long m_lValue;
-	long m_lCount;
+    // current pair not in table
+    long m_lValue;
+    long m_lCount;
 };
 
 // sample size index -- table of <count, size> pairs
@@ -237,8 +237,8 @@ public:
     SizeIndex();
 
     void Add(long cBytes);
-	void AddMultiple(long cBytes, long count);
-	HRESULT Write(Atom* patm);
+    void AddMultiple(long cBytes, long count);
+    HRESULT Write(Atom* patm);
 private:
     ListOfLongs m_Table;
 
@@ -266,8 +266,8 @@ public:
     DurationIndex(long scale);
 
     void Add(REFERENCE_TIME tStart, REFERENCE_TIME tEnd);
-	void AddOldFormat(int count);
-	void SetOldIndexStart(REFERENCE_TIME tStart);
+    void AddOldFormat(int count);
+    void SetOldIndexStart(REFERENCE_TIME tStart);
     HRESULT WriteEDTS(Atom* patm, long scale);
     HRESULT WriteTable(Atom* patm);
     REFERENCE_TIME Duration()
@@ -287,11 +287,11 @@ public:
         m_scale = scale;
         return S_OK;
     }
-	
-	void SetFrameDuration(LONGLONG tFrame)
-	{
-		m_tFrame = tFrame;
-	}
+    
+    void SetFrameDuration(LONGLONG tFrame)
+    {
+        m_tFrame = tFrame;
+    }
 
     // for track start adjustment
     REFERENCE_TIME Earliest()
@@ -303,11 +303,11 @@ public:
         m_tStartFirst += tAdjust;
         m_tStartLast += tAdjust;
         m_tStopLast += tAdjust;
-		m_TotalDuration += ToScale(tAdjust);
-		m_refDuration += tAdjust;
+        m_TotalDuration += ToScale(tAdjust);
+        m_refDuration += tAdjust;
     }
-	int SampleCount()						{ return m_nSamples; }
-	REFERENCE_TIME AverageDuration()		{ return m_refDuration / m_nSamples; }
+    int SampleCount()						{ return m_nSamples; }
+    REFERENCE_TIME AverageDuration()		{ return m_refDuration / m_nSamples; }
 
 private:
     void AddDuration(long cThis);
@@ -315,12 +315,12 @@ private:
     {
         return t * m_scale / UNITS;
     }
-	REFERENCE_TIME ToReftime(LONGLONG scale)
-	{
-		return scale * UNITS / m_scale;
-	}
-	void ModeDecide();
-	void AppendCTTSMode(REFERENCE_TIME tStart, REFERENCE_TIME tEnd);
+    REFERENCE_TIME ToReftime(LONGLONG scale)
+    {
+        return scale * UNITS / m_scale;
+    }
+    void ModeDecide();
+    void AppendCTTSMode(REFERENCE_TIME tStart, REFERENCE_TIME tEnd);
 
 
 private:
@@ -332,24 +332,24 @@ private:
 
     // check for rounding errors
     LONGLONG m_TotalDuration;
-	REFERENCE_TIME m_refDuration;
+    REFERENCE_TIME m_refDuration;
 
-	// total samples recorded
-	int m_nSamples;
+    // total samples recorded
+    int m_nSamples;
 
-	// for CTTS calculation
-	ListOfPairs m_CTTS;
-	bool m_bCTTS;
+    // for CTTS calculation
+    ListOfPairs m_CTTS;
+    bool m_bCTTS;
 
-	// look at the first few samples to decide whether to use
-	// start-time-only mode (duration is just this start - last start)
-	// or CTTS mode.
-	enum { mode_decide_count = 10, };
-	REFERENCE_TIME m_SampleStarts[mode_decide_count];
-	REFERENCE_TIME m_SampleStops[mode_decide_count];
-	REFERENCE_TIME m_SumDurations;
-	REFERENCE_TIME m_tFrame;
-	bool m_bUseFrameRate;
+    // look at the first few samples to decide whether to use
+    // start-time-only mode (duration is just this start - last start)
+    // or CTTS mode.
+    enum { mode_decide_count = 10, };
+    REFERENCE_TIME m_SampleStarts[mode_decide_count];
+    REFERENCE_TIME m_SampleStops[mode_decide_count];
+    REFERENCE_TIME m_SumDurations;
+    REFERENCE_TIME m_tFrame;
+    bool m_bUseFrameRate;
 };
 
 // index of samples per chunk.
@@ -427,29 +427,29 @@ public:
 
     void IndexChunk(LONGLONG posChunk, long nSamples);
     void IndexSample(bool bSync, REFERENCE_TIME tStart, REFERENCE_TIME tStop, long cBytes);
-	void OldIndex(LONGLONG posChunk, long cBytes);
-	void SetOldIndexStart(REFERENCE_TIME tStart)
-	{
-		m_Durations.SetOldIndexStart(tStart);
-	}
+    void OldIndex(LONGLONG posChunk, long cBytes);
+    void SetOldIndexStart(REFERENCE_TIME tStart)
+    {
+        m_Durations.SetOldIndexStart(tStart);
+    }
     HRESULT Close(Atom* patm);
 
     REFERENCE_TIME SampleDuration()
     {
-		if (m_Durations.SampleCount() > 3)
-		{
-			REFERENCE_TIME tDur = m_Durations.AverageDuration();
-			if (tDur > 0)
-			{
-				return m_Durations.AverageDuration();
-			}
-		}
+        if (m_Durations.SampleCount() > 3)
+        {
+            REFERENCE_TIME tDur = m_Durations.AverageDuration();
+            if (tDur > 0)
+            {
+                return m_Durations.AverageDuration();
+            }
+        }
         return UNITS / m_pType->SampleRate();
     }
     REFERENCE_TIME Duration()
     {
-		REFERENCE_TIME tDur = m_Durations.Duration();
-		
+        REFERENCE_TIME tDur = m_Durations.Duration();
+        
         return tDur;
     }
     bool IsVideo()
@@ -470,39 +470,39 @@ public:
     }
     REFERENCE_TIME Earliest()
     {
-		if (m_StartAt != 0)
-		{
-			return m_StartAt;
-		}
+        if (m_StartAt != 0)
+        {
+            return m_StartAt;
+        }
         return m_Durations.Earliest();
     }
     void AdjustStart(REFERENCE_TIME tAdj)
     {
-		m_Durations.OffsetTimes(tAdj);
+        m_Durations.OffsetTimes(tAdj);
     }
-	void SetStartAt(REFERENCE_TIME tStart)
-	{
-		if ((m_StartAt == 0) || (tStart < m_StartAt))
-		{
-			m_StartAt = tStart;
-		}
-	}
-	bool IsNonMP4()
-	{
-		if (m_pType)
-		{
-			return m_pType->IsNonMP4();
-		}
-		return false;
-	}
+    void SetStartAt(REFERENCE_TIME tStart)
+    {
+        if ((m_StartAt == 0) || (tStart < m_StartAt))
+        {
+            m_StartAt = tStart;
+        }
+    }
+    bool IsNonMP4()
+    {
+        if (m_pType)
+        {
+            return m_pType->IsNonMP4();
+        }
+        return false;
+    }
 
-	VOID NotifyMediaSampleWrite(IMediaSample* pMediaSample, SIZE_T nDataSize);
+    VOID NotifyMediaSampleWrite(IMediaSample* pMediaSample, SIZE_T nDataSize);
 
 private:
     MovieWriter* m_pMovie;
     int m_index;
     smart_ptr<TypeHandler> m_pType;
-	BOOL m_bNotifyMediaSampleWrite;
+    BOOL m_bNotifyMediaSampleWrite;
 
     CCritSec m_csQueue;
     bool m_bEOS;
@@ -517,11 +517,11 @@ private:
     ChunkOffsetIndex m_CO;
     SyncIndex m_Syncs;
 
-	// IAMStreamControl start offset
-	// -- set to first StartAt time, if explicit,
-	// which is used instead of Earliest to zero-base the
-	// timestamps
-	REFERENCE_TIME m_StartAt;
+    // IAMStreamControl start offset
+    // -- set to first StartAt time, if explicit,
+    // which is used instead of Earliest to zero-base the
+    // timestamps
+    REFERENCE_TIME m_StartAt;
 };
 typedef smart_ptr<TrackWriter> TrackWriterPtr;
 
@@ -531,11 +531,11 @@ class MovieWriter
 public:
     MovieWriter(AtomWriter* pContainer);
 
-	void Initialize(BOOL bAlignTrackStartTimeDisabled, REFERENCE_TIME nMinimalMovieDuration)
-	{
-		m_bAlignTrackStartTimeDisabled = bAlignTrackStartTimeDisabled;
-		m_nMinimalMovieDuration = nMinimalMovieDuration;
-	}
+    void Initialize(BOOL bAlignTrackStartTimeDisabled, REFERENCE_TIME nMinimalMovieDuration)
+    {
+        m_bAlignTrackStartTimeDisabled = bAlignTrackStartTimeDisabled;
+        m_nMinimalMovieDuration = nMinimalMovieDuration;
+    }
     void SetComment(std::string const& Comment)
     {
         m_Comment = Comment;
@@ -551,9 +551,9 @@ public:
     // mux output from pin queues -- returns true if all tracks at EOS
     bool CheckQueues();
 
-	// empty queues  - similar to CheckQueues, but called when 
-	// all pins are stopped, to flush queued data to the file
-	void WriteOnStop();
+    // empty queues  - similar to CheckQueues, but called when 
+    // all pins are stopped, to flush queued data to the file
+    void WriteOnStop();
 
     // use 90khz for movie and track
     // -- this avoids the problem with audio headers where
@@ -573,25 +573,25 @@ public:
     }
     REFERENCE_TIME CurrentPosition();
 
-	REFERENCE_TIME MaxInterleaveDuration()
-	{
-		CAutoLock lock(&m_csBitrate);
-		return m_tInterleave;
-	}
-	void RecordBitrate(size_t index, long bitrate);
+    REFERENCE_TIME MaxInterleaveDuration()
+    {
+        CAutoLock lock(&m_csBitrate);
+        return m_tInterleave;
+    }
+    void RecordBitrate(size_t index, long bitrate);
 
-	VOID NotifyMediaSampleWrite(INT nTrackIndex, IMediaSample* pMediaSample, SIZE_T nDataSize);
+    VOID NotifyMediaSampleWrite(INT nTrackIndex, IMediaSample* pMediaSample, SIZE_T nDataSize);
 
 private:
     void MakeIODS(Atom* pmoov);
     void InsertFTYP(AtomWriter* pFile);
-	void WriteTrack(int indexReady);
+    void WriteTrack(int indexReady);
 
 private:
     AtomWriter* m_pContainer;
 
-	BOOL m_bAlignTrackStartTimeDisabled;
-	REFERENCE_TIME m_nMinimalMovieDuration;
+    BOOL m_bAlignTrackStartTimeDisabled;
+    REFERENCE_TIME m_nMinimalMovieDuration;
 
     CCritSec m_csWrite;
     bool m_bStopped;
@@ -599,9 +599,9 @@ private:
     smart_ptr<Atom> m_patmMDAT;
     vector<TrackWriterPtr> m_Tracks;
 
-	CCritSec m_csBitrate;
-	vector<int> m_Bitrates;
-	REFERENCE_TIME m_tInterleave;
+    CCritSec m_csBitrate;
+    vector<int> m_Bitrates;
+    REFERENCE_TIME m_tInterleave;
 
     std::string m_Comment;
 };
