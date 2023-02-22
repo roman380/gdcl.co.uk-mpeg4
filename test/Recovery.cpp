@@ -52,40 +52,21 @@ namespace Test
 			wil::condition_variable StoppingCondition;
 		};
 
-		class SampleGrabberSite : public winrt::implements<SampleGrabberSite, ISampleGrabberCB>
-		{
-		public:
-			SampleGrabberSite() = default;
-
-		// ISampleGrabberCB
-			IFACEMETHOD(SampleCB)(double SampleTime, IMediaSample* Sample) override
-			{
-				m_SampleCount++;
-				return S_OK;
-			}
-			IFACEMETHOD(BufferCB)(double SampleTime, unsigned char* Data, long DataSize) override
-			{
-				return S_OK;
-			}
-
-			unsigned long m_SampleCount = 0;
-		};
-
 		#if defined(WITH_DIRECTSHOWREFERENCESOURCE) && !defined(NDEBUG)
 
 		// WARN: Release builds don't offer SetSkipClose and friends
 
-		BEGIN_TEST_METHOD_ATTRIBUTE(Temporary)
+		BEGIN_TEST_METHOD_ATTRIBUTE(SingleTrackRecovery)
 		END_TEST_METHOD_ATTRIBUTE()
-		TEST_METHOD(Temporary)
+		TEST_METHOD(SingleTrackRecovery)
 		{
 			static REFERENCE_TIME constexpr const g_StopTime = duration_cast<nanoseconds>(100s).count() / 100;
-			auto const Path = OutputPath(L"Recovery.Temporary.mp4");
+			auto const Path = OutputPath(L"Recovery.SingleTrackRecovery.mp4");
 			if(PathFileExistsW(Path.c_str()))
 				WI_VERIFY(DeleteFileW(Path.c_str()));
 			auto const TemporaryIndexFileDirectory = OutputPath(L"TemporaryIndex");
 			CreateDirectoryW(TemporaryIndexFileDirectory.c_str(), nullptr);
-			Library Library(L"mp4mux.dll");
+			Library Library(L"mp4mux.dll"), DemultiplexerLibrary(L"mp4demux.dll");
 			{
 				auto const FilterGraph2 = wil::CoCreateInstance<IFilterGraph2>(CLSID_FilterGraph, CLSCTX_INPROC_SERVER);
 				wil::com_ptr<IPin> CurrectOutputPin;
@@ -130,6 +111,8 @@ namespace Test
 				RunFilterGraph(FilterGraph2, 3s);
 			}
 			Assert::IsTrue(PathFileExistsW(Path.c_str()));
+			Assert::IsTrue(PathFileExistsW(OutputPath(L"TemporaryIndex\\Recovery.SingleTrackRecovery.mp4-Index.tmp").c_str()));
+			LOG_IF_WIN32_BOOL_FALSE(CopyFileW(Path.c_str(), OutputPath(L"Recovery.SingleTrackRecovery-Source.mp4").c_str(), FALSE));
 			// NOTE: File is unusable at this point as SetSkipClose above instructed to skip finalization
 			{
 				auto const Recovery = Library.CreateInstance<MuxFilterRecovery, IMuxFilterRecovery>();
@@ -144,6 +127,9 @@ namespace Test
 					Site->StoppingCondition.wait(ActivityLock);
 				}
 				THROW_IF_FAILED(Recovery->Stop());
+				Assert::IsFalse(PathFileExistsW(OutputPath(L"Recovery.SingleTrackRecovery-Temporary.mp4").c_str()));
+				Assert::IsTrue(PathFileExistsW(OutputPath(L"Recovery.SingleTrackRecovery.mp4").c_str()));
+				Assert::IsFalse(PathFileExistsW(OutputPath(L"TemporaryIndex\\Recovery.SingleTrackRecovery.mp4-Index.tmp").c_str()));
 			}
 			// TODO: Ensure playability by opening and sample counting, just a quick test for now with IMuxFilterRecovery::Needed
 			auto const Recovery = Library.CreateInstance<MuxFilterRecovery, IMuxFilterRecovery>();
@@ -151,21 +137,23 @@ namespace Test
 			BOOL Needed;
 			THROW_IF_FAILED(Recovery->Needed(&Needed));
 			Assert::IsFalse(Needed);
-			auto const Site = winrt::make_self<SampleGrabberSite>();
+			unsigned long SampleCount = 0;
+			auto const Site = winrt::make_self<SampleGrabberSite>([&] (IMediaSample*) { SampleCount++; });
 			{
 				auto const FilterGraph2 = wil::CoCreateInstance<IFilterGraph2>(CLSID_FilterGraph, CLSCTX_INPROC_SERVER);
 				wil::com_ptr<IPin> CurrectOutputPin;
 				#pragma region Source
 				{
-					auto const BaseFilter = wil::CoCreateInstance<IBaseFilter>(CLSID_FileSource, CLSCTX_INPROC_SERVER);
+					auto const BaseFilter = wil::CoCreateInstance<IBaseFilter>(CLSID_AsyncReader, CLSCTX_INPROC_SERVER);
 					auto const FileSourceFilter = BaseFilter.query<IFileSourceFilter>();
 					THROW_IF_FAILED(FileSourceFilter->Load(Path.c_str(), nullptr));
+					AddFilter(FilterGraph2, BaseFilter, L"Source");
 					CurrectOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
 				}
 				#pragma endregion
 				#pragma region Demultiplexer
 				{
-					auto const Filter = Library.CreateInstance<DemuxFilter, IDemuxFilter>();
+					auto const Filter = DemultiplexerLibrary.CreateInstance<DemuxFilter, IDemuxFilter>();
 					auto const BaseFilter = Filter.query<IBaseFilter>();
 					AddFilter(FilterGraph2, BaseFilter, L"Demultiplexer");
 					THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
@@ -174,9 +162,7 @@ namespace Test
 				#pragma endregion
 				#pragma region SampleGrabber
 				{
-					auto const BaseFilter = wil::CoCreateInstance<IBaseFilter>(__uuidof(SampleGrabber), CLSCTX_INPROC_SERVER);
-					auto const SampleGrabber = BaseFilter.query<ISampleGrabber>();
-					THROW_IF_FAILED(SampleGrabber->SetCallback(Site.get(), 0));
+					auto const BaseFilter = AddSampleGrabberFilter(Site.get());
 					AddFilter(FilterGraph2, BaseFilter, L"SampleGrabber");
 					THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
 					CurrectOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
@@ -196,8 +182,8 @@ namespace Test
 				THROW_IF_FAILED(FilterGraph2.query<IMediaEventEx>()->WaitForCompletion(INFINITE, &EventCode));
 				Assert::IsTrue(EventCode == EC_COMPLETE);
 			}
-			Logger::WriteMessage(Format(L"Site->m_SampleCount %u", Site->m_SampleCount).c_str());
-			Assert::IsTrue(Site->m_SampleCount > 0);
+			Logger::WriteMessage(Format(L"SampleCount %u", SampleCount).c_str());
+			Assert::IsTrue(SampleCount > 0);
 		}
 
 		#endif

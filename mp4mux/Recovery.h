@@ -3,6 +3,8 @@
 #include <filesystem>
 #include <fstream>
 
+#include <shlwapi.h>
+
 #include "mp4mux_h.h"
 #include "DebugTrace.h"
 #include "..\test\SampleGrabberEx.h"
@@ -36,6 +38,7 @@ public:
 		}
 		HRESULT FillBuffer(IMediaSample* MediaSample) override
 		{
+			MediaSample;
 			return E_NOTIMPL;
 		}
 		HRESULT DoBufferProcessingLoop() override
@@ -48,7 +51,7 @@ public:
 				{
 					wil::com_ptr<IMediaSample> MediaSample;
 					{
-						auto&& MediaSampleLock = m_MediaSampleMutex.lock_exclusive();
+						[[maybe_unused]] auto&& MediaSampleLock = m_MediaSampleMutex.lock_exclusive();
 						if(m_MediaSampleList.empty())
 						{
 							std::this_thread::yield();
@@ -92,12 +95,12 @@ public:
 		void AddMediaSample(wil::com_ptr<IMediaSample> const& MediaSample)
 		{
 			WI_ASSERT(MediaSample);
-			auto&& MediaSampleLock = m_MediaSampleMutex.lock_exclusive();
+			[[maybe_unused]] auto&& MediaSampleLock = m_MediaSampleMutex.lock_exclusive();
 			m_MediaSampleList.emplace_back(MediaSample);
 		}
 		void AddEndOfStream()
 		{
-			auto&& MediaSampleLock = m_MediaSampleMutex.lock_exclusive();
+			[[maybe_unused]] auto&& MediaSampleLock = m_MediaSampleMutex.lock_exclusive();
 			m_MediaSampleList.emplace_back(nullptr);
 		}
 
@@ -146,7 +149,6 @@ public:
 
 	Stream* m_Pin = nullptr;
 };
-
 
 class __declspec(uuid("{73D9D53D-30A3-451E-976A-2B4186FE27EC}")) MuxFilterRecovery : 
 	public winrt::implements<MuxFilterRecovery, IMuxFilterRecovery>
@@ -272,24 +274,27 @@ public:
 			*StopTime = m_Properties.tStop;
 			return S_OK;
 		}
-		IFACEMETHOD(SetTime)(REFERENCE_TIME* pTimeStart, REFERENCE_TIME* pTimeEnd) override
+		IFACEMETHOD(SetTime)(REFERENCE_TIME* StartTime, REFERENCE_TIME* StopTime) override
 		{
+			StartTime; StopTime;
 			return E_NOTIMPL;
 		}
 		IFACEMETHOD(IsSyncPoint)() override
 		{
 			return (m_Properties.dwSampleFlags & AM_SAMPLE_SPLICEPOINT) ? S_OK : S_FALSE;
 		}
-		IFACEMETHOD(SetSyncPoint)(BOOL bIsSyncPoint) override
+		IFACEMETHOD(SetSyncPoint)(BOOL SyncPoint) override
 		{
+			SyncPoint;
 			return E_NOTIMPL;
 		}
 		IFACEMETHOD(IsPreroll)() override
 		{
 			return (m_Properties.dwSampleFlags & AM_SAMPLE_PREROLL) ? S_OK : S_FALSE;
 		}
-		IFACEMETHOD(SetPreroll)(BOOL bIsPreroll) override
+		IFACEMETHOD(SetPreroll)(BOOL Preroll) override
 		{
+			Preroll;
 			return E_NOTIMPL;
 		}
 		IFACEMETHOD_(long, GetActualDataLength)() override
@@ -298,31 +303,36 @@ public:
 		}
 		IFACEMETHOD(SetActualDataLength)(long ActualDataLength) override
 		{
+			ActualDataLength;
 			return E_NOTIMPL;
 		}
 		IFACEMETHOD(GetMediaType)(AM_MEDIA_TYPE** MediaType) override
 		{
+			MediaType;
 			return E_NOTIMPL;
 		}
 		IFACEMETHOD(SetMediaType)(AM_MEDIA_TYPE* MediaType) override
 		{
+			MediaType;
 			return E_NOTIMPL;
 		}
 		IFACEMETHOD(IsDiscontinuity)() override
 		{
 			return (m_Properties.dwSampleFlags & AM_SAMPLE_DATADISCONTINUITY) ? S_OK : S_FALSE;
 		}
-		IFACEMETHOD(SetDiscontinuity)(BOOL bDiscontinuity) override
+		IFACEMETHOD(SetDiscontinuity)(BOOL Discontinuity) override
 		{
+			Discontinuity;
 			return E_NOTIMPL;
 		}
 		IFACEMETHOD(GetMediaTime)(LONGLONG* StartTime, LONGLONG* StopTime) override
 		{
-			WI_ASSERT(StartTime && StopTime);
+			WI_ASSERT(StartTime && StopTime); StartTime; StopTime;
 			return VFW_E_MEDIA_TIME_NOT_SET;
 		}
-		IFACEMETHOD(SetMediaTime)(LONGLONG *pTimeStart, LONGLONG *pTimeEnd) override
+		IFACEMETHOD(SetMediaTime)(LONGLONG* StartTime, LONGLONG* StopTime) override
 		{
+			StartTime; StopTime;
 			return E_NOTIMPL;
 		}
 
@@ -335,6 +345,7 @@ public:
 		}
 		IFACEMETHOD(SetProperties)(DWORD PropertiesSize, BYTE const* Properties) override
 		{
+			PropertiesSize; Properties;
 			return E_NOTIMPL;
 		}
 
@@ -347,8 +358,24 @@ public:
 		winrt::init_apartment(winrt::apartment_type::single_threaded);
 		if(m_Site)
 			WI_VERIFY_SUCCEEDED(m_Site->AfterStart());
+		wchar_t IndexPath[MAX_PATH] { };
+		wchar_t TemporaryPath[MAX_PATH] { };
+		bool ReplaceComplete = false;
 		try
 		{
+			WI_VERIFY(PathCombineW(IndexPath, m_TemporaryIndexFileDirectory.c_str(), PathFindFileNameW(m_Path.c_str())));
+			wcscat_s(IndexPath, L"-Index.tmp");
+			wchar_t Directory[MAX_PATH];
+			wcscpy_s(Directory, m_Path.c_str());
+			std::wstring const Extension = PathFindExtensionW(Directory);
+			PathRemoveExtensionW(Directory);
+			std::wstring const Name = PathFindFileNameW(Directory);
+			WI_VERIFY(PathRemoveFileSpecW(Directory));
+			WI_VERIFY(PathCombineW(TemporaryPath, Directory, Name.c_str()));
+			wcscat_s(TemporaryPath, L"-Temporary");
+			wcscat_s(TemporaryPath, Extension.c_str());
+
+			THROW_HR_IF_MSG(HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND), !PathFileExistsW(IndexPath), "Index file required for recovery was not found, %ls", IndexPath);
 			wil::com_ptr<IFilterGraph2> FilterGraph2;
 			HRESULT Result = S_OK;
 			SampleSource* Source = static_cast<SampleSource*>(SampleSource::CreateInstance(nullptr, &Result));
@@ -379,11 +406,10 @@ public:
 				}
 				#pragma endregion
 				#pragma region File Writer
-				std::wstring const Path = L"C:\\Project\\github.com\\gdcl.co.uk-mpeg4\\bin\\x64\\Debug\\Recovery.Temporary-Output.mp4";
 				{
 					auto const BaseFilter = wil::CoCreateInstance<IBaseFilter>(CLSID_FileWriter, CLSCTX_INPROC_SERVER);
 					auto const FileSinkFilter2 = BaseFilter.query<IFileSinkFilter2>();
-					THROW_IF_FAILED(FileSinkFilter2->SetFileName(Path.c_str(), nullptr));
+					THROW_IF_FAILED(FileSinkFilter2->SetFileName(TemporaryPath, nullptr));
 					THROW_IF_FAILED(FileSinkFilter2->SetMode(AM_FILE_OVERWRITE));
 					THROW_IF_FAILED(FilterGraph2->AddFilter(BaseFilter.get(), L"Renderer"));
 					THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter).get()));
@@ -392,13 +418,14 @@ public:
 				#pragma endregion
 				THROW_IF_FAILED(FilterGraph2.query<IMediaFilter>()->SetSyncSource(nullptr));
 			};
+			bool ThreadAbort = false;
 			std::thread Thread([&]
 			{
 				std::ifstream Stream;
 				Stream.open(m_Path, std::ios_base::in | std::ios_base::binary);
 				THROW_HR_IF(E_FAIL, Stream.fail());
 				std::ifstream IndexStream;
-				IndexStream.open(L"C:\\Project\\github.com\\gdcl.co.uk-mpeg4\\bin\\x64\\Debug\\TemporaryIndex\\Recovery.Temporary.mp4-Index.tmp", std::ios_base::in | std::ios_base::binary);
+				IndexStream.open(IndexPath, std::ios_base::in | std::ios_base::binary);
 				THROW_HR_IF(E_FAIL, IndexStream.fail());
 				try
 				{
@@ -406,12 +433,25 @@ public:
 					auto const IndexFileSize = IndexStream.tellg();
 					IndexStream.seekg(0, std::ios_base::beg);
 					THROW_HR_IF(E_FAIL, IndexStream.fail());
+					auto ReportTime = std::chrono::system_clock::now();
+					static auto constexpr const g_ReportPeriodTime = 1s;
 					bool Running = false;
-					for(; ; )
+					for(unsigned long RecordIndex = 0; ; RecordIndex++)
 					{
 						auto const Position = IndexStream.tellg();
 						if(Position == IndexFileSize)
 							break;
+						if(m_ThreadTermination)
+							break;
+						if(m_Site && RecordIndex % 64)
+						{
+							auto const Time = std::chrono::system_clock::now();
+							if(Time - ReportTime >= g_ReportPeriodTime)
+							{
+								WI_VERIFY_SUCCEEDED(m_Site->Progress(static_cast<double>(Position) / IndexFileSize));
+								ReportTime = Time;
+							}
+						}
 						auto const Signature = Read<uint32_t>(IndexStream);
 						TRACE(L"Position %llu, Signature %hs\n", static_cast<uint64_t>(Position), FormatFourCharacterCode(Signature).c_str());
 						switch(Signature)
@@ -495,6 +535,7 @@ public:
 				}
 				CATCH_LOG_MSG("Failure while reading from broken and/or index file");
 				Source->AddEndOfStream();
+				ThreadAbort = m_ThreadTermination;
 				RunEvent.SetEvent();
 			});
 			WI_VERIFY(RunEvent.wait(INFINITE));
@@ -503,12 +544,26 @@ public:
 			THROW_IF_FAILED(FilterGraph2.query<IMediaEventEx>()->WaitForCompletion(INFINITE, &EventCode));
 			WI_ASSERT(EventCode == EC_COMPLETE);
 			Thread.join();
-			m_Result = S_OK;
+			FilterGraph2.reset();
+			if(!ThreadAbort)
+			{
+				THROW_IF_WIN32_BOOL_FALSE(MoveFileExW(TemporaryPath, m_Path.c_str(), MOVEFILE_REPLACE_EXISTING));
+				ReplaceComplete = true;
+				LOG_IF_WIN32_BOOL_FALSE(DeleteFileW(IndexPath));
+				m_Result = S_OK;
+			} else
+			{
+				if(PathFileExistsW(TemporaryPath))
+					LOG_IF_WIN32_BOOL_FALSE(DeleteFileW(TemporaryPath));
+				m_Result = S_FALSE;
+			}
 		}
 		catch(...)
 		{
 			LOG_CAUGHT_EXCEPTION();
 			m_Result = wil::ResultFromCaughtException();
+			if(!ReplaceComplete && PathFileExistsW(TemporaryPath))
+				LOG_IF_WIN32_BOOL_FALSE(DeleteFileW(TemporaryPath));
 		}
 		if(m_Site)
 			WI_VERIFY_SUCCEEDED(m_Site->BeforeStop());
