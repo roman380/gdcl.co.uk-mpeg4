@@ -55,7 +55,7 @@ STDAPI WinrtDllGetClassObject(REFCLSID ClassIdentifier, REFIID InterfaceIdentifi
     try
     {
         THROW_HR_IF_NULL(E_POINTER, Object);
-        WINRT_ASSERT(ClassIdentifier == __uuidof(MuxFilterRecovery));
+        WINRT_ASSERT(ClassIdentifier == __uuidof(MuxFilterRecovery)); ClassIdentifier;
         auto const Instance = winrt::make_self<ClassFactory<MuxFilterRecovery>>();
         wil::com_query_to(Instance.get(), InterfaceIdentifier, Object);
     }
