@@ -298,3 +298,7 @@ inline std::wstring OutputPath(wchar_t const* Name)
 	WI_VERIFY(PathCombineW(Path, Directory, Name));
 	return Path;
 }
+inline std::wstring OutputPath(std::wstring const& Name)
+{
+	return OutputPath(Name.c_str());
+}

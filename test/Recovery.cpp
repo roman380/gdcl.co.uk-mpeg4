@@ -48,7 +48,6 @@ namespace Test
 			}
 
 			wil::srwlock Activity;
-			bool Stopping = false;
 			wil::condition_variable StoppingCondition;
 		};
 
@@ -56,12 +55,9 @@ namespace Test
 
 		// WARN: Release builds don't offer SetSkipClose and friends
 
-		BEGIN_TEST_METHOD_ATTRIBUTE(SingleTrackRecovery)
-		END_TEST_METHOD_ATTRIBUTE()
-		TEST_METHOD(SingleTrackRecovery)
+		void InternalRecovery(std::wstring const BaseName, std::function<void(wil::com_ptr<IFilterGraph2> const&, wil::com_ptr<IBaseFilter> const&)> AddSourceFilters)
 		{
-			static REFERENCE_TIME constexpr const g_StopTime = duration_cast<nanoseconds>(100s).count() / 100;
-			auto const Path = OutputPath(L"Recovery.SingleTrackRecovery.mp4");
+			auto const Path = OutputPath(Format(L"Recovery.%ls.mp4", BaseName.c_str()));
 			if(PathFileExistsW(Path.c_str()))
 				WI_VERIFY(DeleteFileW(Path.c_str()));
 			auto const TemporaryIndexFileDirectory = OutputPath(L"TemporaryIndex");
@@ -70,21 +66,6 @@ namespace Test
 			{
 				auto const FilterGraph2 = wil::CoCreateInstance<IFilterGraph2>(CLSID_FilterGraph, CLSCTX_INPROC_SERVER);
 				wil::com_ptr<IPin> CurrectOutputPin;
-				#pragma region Source
-				{
-					auto const Filter = wil::CoCreateInstance<IVideoSourceFilter>(__uuidof(VideoSourceFilter), CLSCTX_INPROC_SERVER);
-					wil::unique_variant MediaType;
-					MediaType.vt = VT_BSTR;
-					MediaType.bstrVal = wil::make_bstr(FormatIdentifier(MEDIASUBTYPE_RGB32).c_str()).release();
-					THROW_IF_FAILED(Filter->SetMediaType(360, 240, MediaType));
-					THROW_IF_FAILED(Filter->SetMediaTypeRate(50, 1));
-					THROW_IF_FAILED(Filter->put_Live(VARIANT_TRUE));
-					auto const SourceBaseFilter = Filter.query<IBaseFilter>();
-					AddFilter(FilterGraph2, SourceBaseFilter, L"Source");
-					CurrectOutputPin = Pin(SourceBaseFilter);
-					THROW_IF_FAILED(CurrectOutputPin.query<IAMStreamControl>()->StopAt(&g_StopTime, FALSE, 1));
-				}
-				#pragma endregion
 				#pragma region Multiplexer
 				{
 					auto const Filter = Library.CreateInstance<MuxFilter, IMuxFilter>();
@@ -93,7 +74,7 @@ namespace Test
 					THROW_IF_FAILED(Filter->SetSkipClose(TRUE)); // Stop will skip write of moof atom and leave the produced MP4 unplayable
 					auto const BaseFilter = Filter.query<IBaseFilter>();
 					AddFilter(FilterGraph2, BaseFilter, L"Multiplexer");
-					THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
+					AddSourceFilters(FilterGraph2, BaseFilter);
 					CurrectOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
 				}
 				#pragma endregion
@@ -111,8 +92,8 @@ namespace Test
 				RunFilterGraph(FilterGraph2, 3s);
 			}
 			Assert::IsTrue(PathFileExistsW(Path.c_str()));
-			Assert::IsTrue(PathFileExistsW(OutputPath(L"TemporaryIndex\\Recovery.SingleTrackRecovery.mp4-Index.tmp").c_str()));
-			LOG_IF_WIN32_BOOL_FALSE(CopyFileW(Path.c_str(), OutputPath(L"Recovery.SingleTrackRecovery-Source.mp4").c_str(), FALSE));
+			Assert::IsTrue(PathFileExistsW(OutputPath(Format(L"TemporaryIndex\\Recovery.%ls.mp4-Index.tmp", BaseName.c_str())).c_str()));
+			LOG_IF_WIN32_BOOL_FALSE(CopyFileW(Path.c_str(), OutputPath(Format(L"Recovery.%ls-Source.mp4", BaseName.c_str())).c_str(), FALSE));
 			// NOTE: File is unusable at this point as SetSkipClose above instructed to skip finalization
 			{
 				auto const Recovery = Library.CreateInstance<MuxFilterRecovery, IMuxFilterRecovery>();
@@ -127,9 +108,9 @@ namespace Test
 					Site->StoppingCondition.wait(ActivityLock);
 				}
 				THROW_IF_FAILED(Recovery->Stop());
-				Assert::IsFalse(PathFileExistsW(OutputPath(L"Recovery.SingleTrackRecovery-Temporary.mp4").c_str()));
-				Assert::IsTrue(PathFileExistsW(OutputPath(L"Recovery.SingleTrackRecovery.mp4").c_str()));
-				Assert::IsFalse(PathFileExistsW(OutputPath(L"TemporaryIndex\\Recovery.SingleTrackRecovery.mp4-Index.tmp").c_str()));
+				Assert::IsFalse(PathFileExistsW(OutputPath(Format(L"Recovery.%ls-Temporary.mp4", BaseName.c_str())).c_str()));
+				Assert::IsTrue(PathFileExistsW(OutputPath(Format(L"Recovery.%ls.mp4", BaseName.c_str())).c_str()));
+				Assert::IsFalse(PathFileExistsW(OutputPath(Format(L"TemporaryIndex\\Recovery.%ls.mp4-Index.tmp", BaseName.c_str())).c_str()));
 			}
 			// TODO: Ensure playability by opening and sample counting, just a quick test for now with IMuxFilterRecovery::Needed
 			auto const Recovery = Library.CreateInstance<MuxFilterRecovery, IMuxFilterRecovery>();
@@ -184,6 +165,104 @@ namespace Test
 			}
 			Logger::WriteMessage(Format(L"SampleCount %u", SampleCount).c_str());
 			Assert::IsTrue(SampleCount > 0);
+		}
+
+		BEGIN_TEST_METHOD_ATTRIBUTE(SingleTrackRecovery)
+		END_TEST_METHOD_ATTRIBUTE()
+		TEST_METHOD(SingleTrackRecovery)
+		{
+			InternalRecovery(L"SingleTrackRecovery", [] (wil::com_ptr<IFilterGraph2> const& FilterGraph2, wil::com_ptr<IBaseFilter> const& MultiplexerBaseFilter)
+			{
+				static REFERENCE_TIME constexpr const g_StopTime = duration_cast<nanoseconds>(100s).count() / 100;
+				auto const Filter = wil::CoCreateInstance<IVideoSourceFilter>(__uuidof(VideoSourceFilter), CLSCTX_INPROC_SERVER);
+				wil::unique_variant MediaType;
+				MediaType.vt = VT_BSTR;
+				MediaType.bstrVal = wil::make_bstr(FormatIdentifier(MEDIASUBTYPE_RGB32).c_str()).release();
+				THROW_IF_FAILED(Filter->SetMediaType(360, 240, MediaType));
+				THROW_IF_FAILED(Filter->SetMediaTypeRate(50, 1));
+				THROW_IF_FAILED(Filter->put_Live(VARIANT_TRUE));
+				auto const SourceBaseFilter = Filter.query<IBaseFilter>();
+				AddFilter(FilterGraph2, SourceBaseFilter, L"Source");
+				auto const CurrectOutputPin = Pin(SourceBaseFilter);
+				THROW_IF_FAILED(CurrectOutputPin.query<IAMStreamControl>()->StopAt(&g_StopTime, FALSE, 1));
+				THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(MultiplexerBaseFilter, PINDIR_INPUT).get()));
+			});
+		}
+
+		BEGIN_TEST_METHOD_ATTRIBUTE(SingleAudioTrackRecovery)
+			TEST_IGNORE()
+		END_TEST_METHOD_ATTRIBUTE()
+		TEST_METHOD(SingleAudioTrackRecovery)
+		{
+			InternalRecovery(L"SingleAudioTrackRecovery", [] (wil::com_ptr<IFilterGraph2> const& FilterGraph2, wil::com_ptr<IBaseFilter> const& MultiplexerBaseFilter)
+			{
+				static REFERENCE_TIME constexpr const g_StopTime = duration_cast<nanoseconds>(100s).count() / 100;
+				auto const Filter = wil::CoCreateInstance<IAudioSourceFilter>(__uuidof(AudioSourceFilter), CLSCTX_INPROC_SERVER);
+				THROW_IF_FAILED(Filter->SetMediaType(wil::make_bstr(FormatIdentifier(MEDIASUBTYPE_PCM).c_str()).get(), 48000, 2, 16));
+				THROW_IF_FAILED(Filter->SetMediaSampleDuration(960));
+				THROW_IF_FAILED(Filter->put_Live(!VARIANT_TRUE)); // TODO: Fix live audio?
+				auto const SourceBaseFilter = Filter.query<IBaseFilter>();
+				AddFilter(FilterGraph2, SourceBaseFilter, L"Source");
+				auto CurrectOutputPin = Pin(SourceBaseFilter);
+				THROW_IF_FAILED(CurrectOutputPin.query<IAMStreamControl>()->StopAt(&g_StopTime, FALSE, 1));
+				#if 1
+					{
+						struct __declspec(uuid("{8946E78B-FC60-4A6C-9CCF-A7A3C9CF5E31}")) Mpeg4AacAudioEncoderFilter;
+						auto const BaseFilter = wil::CoCreateInstance<IBaseFilter>(__uuidof(Mpeg4AacAudioEncoderFilter), CLSCTX_INPROC_SERVER);
+						AddFilter(FilterGraph2, BaseFilter, L"Encoder");
+						THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
+						CurrectOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
+					}
+				#endif
+				THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(MultiplexerBaseFilter, PINDIR_INPUT).get()));
+			});
+		}
+
+		BEGIN_TEST_METHOD_ATTRIBUTE(DualTrackRecovery)
+			#if defined(_WIN64)
+				TEST_IGNORE()
+			#endif
+		END_TEST_METHOD_ATTRIBUTE()
+		TEST_METHOD(DualTrackRecovery)
+		{
+			InternalRecovery(L"DualTrackRecovery", [] (wil::com_ptr<IFilterGraph2> const& FilterGraph2, wil::com_ptr<IBaseFilter> const& MultiplexerBaseFilter)
+			{
+				static REFERENCE_TIME constexpr const g_StopTime = duration_cast<nanoseconds>(100s).count() / 100;
+				{
+					auto const Filter = wil::CoCreateInstance<IVideoSourceFilter>(__uuidof(VideoSourceFilter), CLSCTX_INPROC_SERVER);
+					wil::unique_variant MediaType;
+					MediaType.vt = VT_BSTR;
+					MediaType.bstrVal = wil::make_bstr(FormatIdentifier(MEDIASUBTYPE_RGB32).c_str()).release();
+					THROW_IF_FAILED(Filter->SetMediaType(360, 240, MediaType));
+					THROW_IF_FAILED(Filter->SetMediaTypeRate(50, 1));
+					THROW_IF_FAILED(Filter->put_Live(VARIANT_TRUE));
+					auto const SourceBaseFilter = Filter.query<IBaseFilter>();
+					AddFilter(FilterGraph2, SourceBaseFilter, L"Video Source");
+					auto const CurrectOutputPin = Pin(SourceBaseFilter);
+					THROW_IF_FAILED(CurrectOutputPin.query<IAMStreamControl>()->StopAt(&g_StopTime, FALSE, 1));
+					THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(MultiplexerBaseFilter, PINDIR_INPUT, 0).get()));
+				}
+				{
+					auto const Filter = wil::CoCreateInstance<IAudioSourceFilter>(__uuidof(AudioSourceFilter), CLSCTX_INPROC_SERVER);
+					THROW_IF_FAILED(Filter->SetMediaType(wil::make_bstr(FormatIdentifier(MEDIASUBTYPE_PCM).c_str()).get(), 48000, 2, 16));
+					THROW_IF_FAILED(Filter->SetMediaSampleDuration(960));
+					THROW_IF_FAILED(Filter->put_Live(!VARIANT_TRUE)); // TODO: Fix live audio?
+					auto const SourceBaseFilter = Filter.query<IBaseFilter>();
+					AddFilter(FilterGraph2, SourceBaseFilter, L"Audio Source");
+					auto CurrectOutputPin = Pin(SourceBaseFilter);
+					THROW_IF_FAILED(CurrectOutputPin.query<IAMStreamControl>()->StopAt(&g_StopTime, FALSE, 1));
+					#if 1 // WARN: PCM audio is handled differently in MuxFilter and... is basically incompatible
+						{
+							struct __declspec(uuid("{8946E78B-FC60-4A6C-9CCF-A7A3C9CF5E31}")) Mpeg4AacAudioEncoderFilter;
+							auto const BaseFilter = wil::CoCreateInstance<IBaseFilter>(__uuidof(Mpeg4AacAudioEncoderFilter), CLSCTX_INPROC_SERVER);
+							AddFilter(FilterGraph2, BaseFilter, L"Encoder");
+							THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
+							CurrectOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
+						}
+					#endif
+					THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(MultiplexerBaseFilter, PINDIR_INPUT, 1).get()));
+				}
+			});
 		}
 
 		#endif

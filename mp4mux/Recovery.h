@@ -31,7 +31,7 @@ public:
 		{
 			WI_ASSERT(MemAllocator && Properties);
 			Properties->cbBuffer = 1;
-			Properties->cBuffers = 1;
+			Properties->cBuffers = 64; // Needs to be over 20, see MuxInput::NotifyAllocator
 			ALLOCATOR_PROPERTIES ActualProperties;
 			WI_VERIFY_SUCCEEDED(MemAllocator->SetProperties(Properties, &ActualProperties));
 			return S_OK;
@@ -110,15 +110,14 @@ public:
 		std::list<wil::com_ptr<IMediaSample>> m_MediaSampleList;
 	};
 
-	SampleSource(IUnknown* Unknown, HRESULT* Result) :
+	SampleSource(IUnknown* Unknown, HRESULT*) :
 		CSource("Source", Unknown, __uuidof(SampleSource))
 	{
-		m_Pin = new Stream(Result, this);
-		WI_ASSERT(m_Pin);
 	}
 	~SampleSource()
 	{
-		delete m_Pin;
+		for(auto&& Pin: m_PinVector)
+			delete Pin;
 	}
 
 	DECLARE_IUNKNOWN;
@@ -134,20 +133,28 @@ public:
 
 	void CreatePin(uint16_t Index, CMediaType&& MediaType)
 	{
-		WI_ASSERT(Index == 0);
-		m_Pin->SetMediaType(std::move(MediaType));
+		m_PinVector.resize(std::max<size_t>(m_PinVector.size(), Index + 1));
+		auto*& Pin = m_PinVector[Index];
+		WI_ASSERT(!Pin);
+		HRESULT Result = S_OK;
+		Pin = new Stream(&Result, this);
+		THROW_IF_FAILED(Result);
+		Pin->SetMediaType(std::move(MediaType));
 	}
 	void AddMediaSample(uint16_t Index, wil::com_ptr<IMediaSample> const& MediaSample)
 	{
-		WI_ASSERT(Index == 0 && MediaSample);
-		m_Pin->AddMediaSample(MediaSample);
+		WI_ASSERT(MediaSample);
+		WI_ASSERT(Index < m_PinVector.size());
+		WI_ASSERT(m_PinVector[Index]);
+		m_PinVector[Index]->AddMediaSample(MediaSample);
 	}
 	void AddEndOfStream()
 	{
-		m_Pin->AddEndOfStream();
+		for(auto&& Pin: m_PinVector)
+			Pin->AddEndOfStream();
 	}
 
-	Stream* m_Pin = nullptr;
+	std::vector<Stream*> m_PinVector;
 };
 
 class __declspec(uuid("{73D9D53D-30A3-451E-976A-2B4186FE27EC}")) MuxFilterRecovery : 
@@ -384,15 +391,12 @@ public:
 			auto const CreateFilters = [&]
 			{
 				FilterGraph2 = wil::CoCreateInstance<IFilterGraph2>(CLSID_FilterGraph, CLSCTX_INPROC_SERVER);
-				wil::com_ptr<IPin> CurrectOutputPin;
 				#pragma region Source
-				{
-					wil::com_ptr<IBaseFilter> const BaseFilter = Source;
-					THROW_IF_FAILED(FilterGraph2->AddFilter(BaseFilter.get(), L"Source"));
-					CurrectOutputPin = Pin(BaseFilter);
-				}
+				wil::com_ptr<IBaseFilter> const SourceBaseFilter = Source;
+				THROW_IF_FAILED(FilterGraph2->AddFilter(SourceBaseFilter.get(), L"Source"));
 				#pragma endregion
 				#pragma region Multiplexer
+				wil::com_ptr<IPin> CurrectOutputPin;
 				{
 					wil::com_ptr<IBaseFilter> BaseFilter;
 					{
@@ -401,7 +405,13 @@ public:
 						ClassFactory->CreateInstance(nullptr, IID_PPV_ARGS(BaseFilter.put()));
 					}
 					THROW_IF_FAILED(FilterGraph2->AddFilter(BaseFilter.get(), L"Multiplexer"));
-					THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
+					unsigned int Index = 0;
+					EnumeratePins(SourceBaseFilter, [&] (auto const& OutputPin) 
+					{ 
+						THROW_IF_FAILED(FilterGraph2->Connect(OutputPin.get(), Pin(BaseFilter, PINDIR_INPUT, Index++).get())); 
+						return false; 
+					});
+					WI_ASSERT(Index > 0);
 					CurrectOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
 				}
 				#pragma endregion
@@ -453,13 +463,14 @@ public:
 							}
 						}
 						auto const Signature = Read<uint32_t>(IndexStream);
-						TRACE(L"Position %llu, Signature %hs\n", static_cast<uint64_t>(Position), FormatFourCharacterCode(Signature).c_str());
+						//TRACE(L"Position %llu, Signature %hs\n", static_cast<uint64_t>(Position), FormatFourCharacterCode(Signature).c_str());
 						switch(Signature)
 						{
 						case MAKEFOURCC('M', 'P', '4', 'I'):
 							{
 								auto const Version = Read<uint32_t>(IndexStream);
 								THROW_HR_IF(E_FAIL, Version != 1);
+								TRACE(L"Position %llu, Signature %hs, Version %u\n", static_cast<uint64_t>(Position), FormatFourCharacterCode(Signature).c_str(), Version);
 							}
 							break;
 						case MAKEFOURCC('I', 'P', 'I', 'N'):
@@ -479,7 +490,7 @@ public:
 									IndexStream.read(reinterpret_cast<char*>(MediaTypeEx.AllocFormatBuffer(MediaType.cbFormat)), MediaType.cbFormat);
 									THROW_HR_IF(E_FAIL, IndexStream.fail());
 								}
-								WI_ASSERT(Index == 0);
+								TRACE(L"Position %llu, Signature %hs, Index %u\n", static_cast<uint64_t>(Position), FormatFourCharacterCode(Signature).c_str(), Index);
 								Source->CreatePin(Index, std::move(MediaTypeEx));
 							}
 							break;
@@ -502,7 +513,6 @@ public:
 								MEDIASAMPLE MediaSample;
 								IndexStream.read(reinterpret_cast<char*>(&MediaSample), sizeof MediaSample);
 								THROW_HR_IF(E_FAIL, IndexStream.fail());
-								WI_ASSERT(MediaSample.Index == 0);
 								Stream.seekg(MediaSample.Position, std::ios_base::beg);
 								auto FilterSample = winrt::make_self<MuxFilterRecovery::MediaSample>();
 								auto& Properties = FilterSample->m_Properties;
@@ -519,6 +529,7 @@ public:
 								Properties.pMediaType = nullptr;
 								Properties.pbBuffer = FilterSample->m_Data.data();
 								Properties.cbBuffer = static_cast<LONG>(FilterSample->m_Data.size());
+								TRACE(L"Position %llu, Signature %hs, MediaSample.Index %u\n", static_cast<uint64_t>(Position), FormatFourCharacterCode(Signature).c_str(), MediaSample.Index);
 								Source->AddMediaSample(MediaSample.Index, FilterSample.as<IMediaSample>().get());
 								if(!std::exchange(Running, true))
 								{
