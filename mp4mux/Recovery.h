@@ -79,7 +79,7 @@ public:
                 } else
                 if(com != CMD_STOP) 
                 {
-                    Reply((DWORD) E_UNEXPECTED);
+                    Reply(static_cast<DWORD>(E_UNEXPECTED));
                     DbgLog((LOG_ERROR, 1, TEXT("Unexpected command!!!")));
                 }
                 if(com == CMD_STOP)
@@ -433,10 +433,10 @@ public:
             {
                 std::ifstream Stream;
                 Stream.open(m_Path, std::ios_base::in | std::ios_base::binary);
-                THROW_HR_IF(E_FAIL, Stream.fail());
+                THROW_HR_IF_MSG(E_FAIL, Stream.fail(), "Failed to open input file, %ls", m_Path.c_str());
                 std::ifstream IndexStream;
                 IndexStream.open(IndexPath, std::ios_base::in | std::ios_base::binary);
-                THROW_HR_IF(E_FAIL, IndexStream.fail());
+                THROW_HR_IF_MSG(E_FAIL, IndexStream.fail(), "Failed to open input index file, %ls", IndexPath);
                 try
                 {
                     IndexStream.seekg(0, std::ios_base::end);
@@ -469,7 +469,7 @@ public:
                         case MAKEFOURCC('M', 'P', '4', 'I'):
                             {
                                 auto const Version = Read<uint32_t>(IndexStream);
-                                THROW_HR_IF(E_FAIL, Version != 1);
+                                THROW_HR_IF_MSG(E_FAIL, Version != 1, "Unexpected file version, %u", Version);
                                 TRACE(L"Position %llu, Signature %hs, Version %u\n", static_cast<uint64_t>(Position), FormatFourCharacterCode(Signature).c_str(), Version);
                             }
                             break;
@@ -534,7 +534,7 @@ public:
                                 if(!std::exchange(Running, true))
                                 {
                                     CreateFilters();
-                                    THROW_IF_FAILED(FilterGraph2.query<IMediaControl>()->Run());
+                                    THROW_IF_FAILED_MSG(FilterGraph2.query<IMediaControl>()->Run(), "Failed to run recovery pipeline");
                                     RunEvent.SetEvent();
                                 }
                             }
@@ -558,14 +558,14 @@ public:
             FilterGraph2.reset();
             if(!ThreadAbort)
             {
-                THROW_IF_WIN32_BOOL_FALSE(MoveFileExW(TemporaryPath, m_Path.c_str(), MOVEFILE_REPLACE_EXISTING));
+                THROW_IF_WIN32_BOOL_FALSE_MSG(MoveFileExW(TemporaryPath, m_Path.c_str(), MOVEFILE_REPLACE_EXISTING), "Failed to move the recovered file in place of original file");
                 ReplaceComplete = true;
-                LOG_IF_WIN32_BOOL_FALSE(DeleteFileW(IndexPath));
+                LOG_IF_WIN32_BOOL_FALSE_MSG(DeleteFileW(IndexPath), "Failed to delete index file, %ls", IndexPath);
                 m_Result = S_OK;
             } else
             {
                 if(PathFileExistsW(TemporaryPath))
-                    LOG_IF_WIN32_BOOL_FALSE(DeleteFileW(TemporaryPath));
+                    LOG_IF_WIN32_BOOL_FALSE_MSG(DeleteFileW(TemporaryPath), "Failed to delete incomplete recovery file, %ls", TemporaryPath);
                 m_Result = S_FALSE;
             }
         }
@@ -574,7 +574,7 @@ public:
             LOG_CAUGHT_EXCEPTION();
             m_Result = wil::ResultFromCaughtException();
             if(!ReplaceComplete && PathFileExistsW(TemporaryPath))
-                LOG_IF_WIN32_BOOL_FALSE(DeleteFileW(TemporaryPath));
+                LOG_IF_WIN32_BOOL_FALSE_MSG(DeleteFileW(TemporaryPath), "Failed to delete incomplete recovery file, %ls", TemporaryPath);
         }
         if(m_Site)
             WI_VERIFY_SUCCEEDED(m_Site->BeforeStop());
