@@ -201,7 +201,7 @@ public:
             Stream.read(reinterpret_cast<char*>(&Value), sizeof Value);
             return FromNetwork(Value);
         }
-        bool Needed()
+        unsigned int Needed()
         {
             // NOTE: ISO/IEC 14496-12:2005; 4.2 Object Structure
             Stream.open(Path, std::ios_base::in | std::ios_base::binary); // https://learn.microsoft.com/en-us/cpp/standard-library/basic-istream-class
@@ -209,36 +209,38 @@ public:
             auto const FileSize = Stream.tellg();
             Stream.seekg(0, std::ios_base::beg);
             if(Stream.fail())
-                return false;
+                return 2;
             std::vector<std::pair<uint64_t, uint32_t>> BoxVector;
             for(; ; )
             {
                 auto const BoxPosition = Stream.tellg();
-                if(BoxPosition == FileSize)
+                if(BoxPosition + static_cast<std::streampos>(sizeof (uint32_t) * 2) >= FileSize)
                     break;
                 uint32_t const size = ReadNetwork<uint32_t>();
                 if(Stream.fail())
-                    return false;
+                    return 2;
                 uint32_t const type = ReadNetwork<uint32_t>();
                 if(Stream.fail())
-                    return false;
+                    return 2;
                 if(size == 1)
-                    return false; // Unsupported/unexpected 64-bit sizes
+                    return 2; // Unsupported/unexpected 64-bit sizes
                 if(size < 8)
-                    return false; // Unexpected open boxes and boxes smaller than minimally possible
+                    return 2; // Unexpected open boxes and boxes smaller than minimally possible
+                if(size == 8 && type == 'mdat')
+                    return 1; // mdat is intentionally open because it is incomplete
                 uint8_t usertype[16];
                 Stream.read(reinterpret_cast<char*>(&usertype), sizeof usertype);
                 if(Stream.fail())
-                    return false;
+                    return 2;
                 TRACE(L"BoxPosition %llu, type %hs\n", static_cast<uint64_t>(BoxPosition), FormatFourCharacterCode(type).c_str());
                 BoxVector.emplace_back(std::make_pair(BoxPosition, type));
                 if(static_cast<uint64_t>(BoxPosition) + size > static_cast<uint64_t>(FileSize))
-                    return false; // Incomplete box
+                    return 2; // Incomplete box
                 Stream.seekg(static_cast<uint64_t>(BoxPosition) + size, std::ios_base::beg);
                 if(Stream.fail())
-                    return false;
+                    return 2;
             }
-            return std::find_if(BoxVector.cbegin(), BoxVector.cend(), [] (auto&& Pair) { return Pair.second == 'moov'; }) == BoxVector.cend();
+            return std::find_if(BoxVector.cbegin(), BoxVector.cend(), [] (auto&& Pair) { return Pair.second == 'moov'; }) == BoxVector.cend() ? 1 : 0;
         }
 
         std::wstring const Path;
@@ -576,6 +578,7 @@ public:
             if(!ReplaceComplete && PathFileExistsW(TemporaryPath))
                 LOG_IF_WIN32_BOOL_FALSE_MSG(DeleteFileW(TemporaryPath), "Failed to delete incomplete recovery file, %ls", TemporaryPath);
         }
+        m_Active = false;
         if(m_Site)
             WI_VERIFY_SUCCEEDED(m_Site->BeforeStop());
         winrt::uninit_apartment();
@@ -606,7 +609,7 @@ public:
             if(!m_Needed.has_value())
             {
                 Probe Probe(m_Path);
-                m_Needed = Probe.Needed();
+                m_Needed = Probe.Needed() != 0;
             }
             *Needed = m_Needed.value() ? 1 : 0;
         }
@@ -647,8 +650,6 @@ public:
         try
         {
             [[maybe_unused]] auto&& DataLock = m_DataMutex.lock_exclusive();
-            if(!m_Active)
-                return S_FALSE;
             m_ThreadTermination.store(true);
             if(m_Thread.joinable())
                 m_Thread.join();
@@ -664,7 +665,7 @@ private:
     std::wstring m_Path;
     std::wstring m_TemporaryIndexFileDirectory;
     std::optional<bool> m_Needed;
-    bool m_Active = false;
+    std::atomic_bool m_Active = false;
     std::atomic_bool m_ThreadTermination;
     std::thread m_Thread;
     std::optional<HRESULT> m_Result;

@@ -90,8 +90,8 @@ library GdclMp4Mux
 	interface IMuxFilterRecovery : IUnknown
 	{
 		HRESULT Initialize([in] IMuxFilterRecoverySite* Site, [in] BSTR Path, [in] BSTR TemporaryIndexFileDirectory);
-		HRESULT Needed([out] BOOL* Needed);
-		HRESULT Active([out] BOOL* Active);
+		HRESULT Needed([out, retval] BOOL* Needed);
+		HRESULT Active([out, retval] BOOL* Active);
 		HRESULT Start();
 		HRESULT Stop();
 	};
