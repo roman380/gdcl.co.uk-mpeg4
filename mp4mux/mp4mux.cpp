@@ -27,24 +27,31 @@ CFactoryTemplate g_Templates[] = {
 
 int g_cTemplates = sizeof(g_Templates) / sizeof(g_Templates[0]);
 
+STDAPI WinrtDllGetClassObject(REFCLSID ClassIdentifier, REFIID InterfaceIdentifier, void** Object);
+STDAPI WinrtDllRegisterServer();
+STDAPI WinrtDllUnregisterServer();
+STDAPI WinrtDllCanUnloadNow();
+
 // self-registration entrypoint
 STDAPI DllRegisterServer()
 {
     // base classes will handle registration using the factory template table
     HRESULT nResult;
-	nResult = AMovieDllRegisterServer2(true);
-	if(FAILED(nResult))
-	    return nResult;
-	WCHAR pszPath[MAX_PATH] = { 0 };
-	GetModuleFileNameW(g_hInst, pszPath, _countof(pszPath));
-	QzCComPtr<ITypeLib> pTypeLib;
-	nResult = LoadTypeLib(pszPath, &pTypeLib);
-	if(FAILED(nResult))
-	    return nResult;
-	nResult = RegisterTypeLib(pTypeLib, pszPath, NULL);
-	if(FAILED(nResult))
-	    return nResult;
-	// TODO: Register WinRT classes
+    nResult = AMovieDllRegisterServer2(true);
+    if(FAILED(nResult))
+        return nResult;
+    WCHAR pszPath[MAX_PATH] = { 0 };
+    GetModuleFileNameW(g_hInst, pszPath, _countof(pszPath));
+    QzCComPtr<ITypeLib> pTypeLib;
+    nResult = LoadTypeLib(pszPath, &pTypeLib);
+    if(FAILED(nResult))
+        return nResult;
+    nResult = RegisterTypeLib(pTypeLib, pszPath, NULL);
+    if(FAILED(nResult))
+        return nResult;
+    nResult = WinrtDllRegisterServer();
+    if(FAILED(nResult))
+        return nResult;
     return S_OK;
 }
 
@@ -52,38 +59,40 @@ STDAPI DllUnregisterServer()
 {
     // base classes will handle de-registration using the factory template table
     HRESULT nResult;
-	// NOTE: We could obtain exact values using ITypeLib::GetLibAttr
-	#if defined(_WIN64)
-		static const SYSKIND g_SysKind = SYS_WIN64;
-	#else
-		static const SYSKIND g_SysKind = SYS_WIN32;
-	#endif
-	nResult = UnRegisterTypeLib(LIBID_GdclMp4Mux, 1, 0, 0, g_SysKind);
-	if(nResult == TYPE_E_REGISTRYACCESS)
-		nResult = S_OK;
-	if(FAILED(nResult))
-	    return nResult;
+    // NOTE: We could obtain exact values using ITypeLib::GetLibAttr
+    #if defined(_WIN64)
+        static const SYSKIND g_SysKind = SYS_WIN64;
+    #else
+        static const SYSKIND g_SysKind = SYS_WIN32;
+    #endif
+    nResult = UnRegisterTypeLib(LIBID_GdclMp4Mux, 1, 0, 0, g_SysKind);
+    if(nResult == TYPE_E_REGISTRYACCESS)
+        nResult = S_OK;
+    if(FAILED(nResult))
+        return nResult;
     nResult = AMovieDllRegisterServer2(false);
-	if(FAILED(nResult))
-	    return nResult;
-	// TODO: Unregister WinRT classes
+    if(FAILED(nResult))
+        return nResult;
+    nResult = WinrtDllUnregisterServer();
+    if(FAILED(nResult))
+        return nResult;
     return S_OK;
 }
 
-STDAPI WinrtDllGetClassObject(REFCLSID ClassIdentifier, REFIID InterfaceIdentifier, void** Object);
-
 STDAPI DllGetClassObjectEx(REFCLSID ClassIdentifier, REFIID InterfaceIdentifier, void** Object)
 {
-	// TODO: Nicer wrapper around WinRT classes
-	if(ClassIdentifier == __uuidof(MuxFilterRecovery))
-		return WinrtDllGetClassObject(ClassIdentifier, InterfaceIdentifier, Object);
-	return DllGetClassObject(ClassIdentifier, InterfaceIdentifier, Object);
+    auto const Result = WinrtDllGetClassObject(ClassIdentifier, InterfaceIdentifier, Object);
+    if(SUCCEEDED(Result) || Result != CLASS_E_CLASSNOTAVAILABLE)
+        return Result;
+    return DllGetClassObject(ClassIdentifier, InterfaceIdentifier, Object);
 }
 
 STDAPI DllCanUnloadNowEx()
 {
-	// TODO: WinRT check
-	return DllCanUnloadNow();
+    auto const Result = WinrtDllCanUnloadNow();
+    if(Result != S_OK)
+        return S_FALSE;
+    return DllCanUnloadNow();
 }
 
 // if we declare the correct C runtime entrypoint and then forward it to the DShow base
