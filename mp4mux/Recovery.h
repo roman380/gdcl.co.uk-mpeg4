@@ -9,6 +9,112 @@
 #include "DebugTrace.h"
 #include "..\test\SampleGrabberEx.h"
 
+class MediaSample : public winrt::implements<MediaSample, IMediaSample, IMediaSample2>
+{
+public:
+    MediaSample() = default;
+
+// IMediaSample
+    IFACEMETHOD(GetPointer)(BYTE** ppBuffer) override
+    {
+        WI_ASSERT(ppBuffer);
+        *ppBuffer = m_Properties.pbBuffer;
+        return S_OK;
+    }
+    IFACEMETHOD_(long, GetSize)() override
+    {
+        return m_Properties.cbBuffer;
+    }
+    IFACEMETHOD(GetTime)(REFERENCE_TIME* StartTime, REFERENCE_TIME* StopTime) override
+    {
+        WI_ASSERT(StartTime && StopTime);
+        if(!(m_Properties.dwSampleFlags & AM_SAMPLE_TIMEVALID))
+            return VFW_E_SAMPLE_TIME_NOT_SET;
+        *StartTime = m_Properties.tStart;
+        if(!(m_Properties.dwSampleFlags & AM_SAMPLE_STOPVALID))
+            return VFW_S_NO_STOP_TIME;
+        *StopTime = m_Properties.tStop;
+        return S_OK;
+    }
+    IFACEMETHOD(SetTime)(REFERENCE_TIME* StartTime, REFERENCE_TIME* StopTime) override
+    {
+        StartTime; StopTime;
+        return E_NOTIMPL;
+    }
+    IFACEMETHOD(IsSyncPoint)() override
+    {
+        return (m_Properties.dwSampleFlags & AM_SAMPLE_SPLICEPOINT) ? S_OK : S_FALSE;
+    }
+    IFACEMETHOD(SetSyncPoint)(BOOL SyncPoint) override
+    {
+        SyncPoint;
+        return E_NOTIMPL;
+    }
+    IFACEMETHOD(IsPreroll)() override
+    {
+        return (m_Properties.dwSampleFlags & AM_SAMPLE_PREROLL) ? S_OK : S_FALSE;
+    }
+    IFACEMETHOD(SetPreroll)(BOOL Preroll) override
+    {
+        Preroll;
+        return E_NOTIMPL;
+    }
+    IFACEMETHOD_(long, GetActualDataLength)() override
+    {
+        return m_Properties.lActual;
+    }
+    IFACEMETHOD(SetActualDataLength)(long ActualDataLength) override
+    {
+        ActualDataLength;
+        return E_NOTIMPL;
+    }
+    IFACEMETHOD(GetMediaType)(AM_MEDIA_TYPE** MediaType) override
+    {
+        MediaType;
+        return E_NOTIMPL;
+    }
+    IFACEMETHOD(SetMediaType)(AM_MEDIA_TYPE* MediaType) override
+    {
+        MediaType;
+        return E_NOTIMPL;
+    }
+    IFACEMETHOD(IsDiscontinuity)() override
+    {
+        return (m_Properties.dwSampleFlags & AM_SAMPLE_DATADISCONTINUITY) ? S_OK : S_FALSE;
+    }
+    IFACEMETHOD(SetDiscontinuity)(BOOL Discontinuity) override
+    {
+        Discontinuity;
+        return E_NOTIMPL;
+    }
+    IFACEMETHOD(GetMediaTime)(LONGLONG* StartTime, LONGLONG* StopTime) override
+    {
+        WI_ASSERT(StartTime && StopTime); StartTime; StopTime;
+        return VFW_E_MEDIA_TIME_NOT_SET;
+    }
+    IFACEMETHOD(SetMediaTime)(LONGLONG* StartTime, LONGLONG* StopTime) override
+    {
+        StartTime; StopTime;
+        return E_NOTIMPL;
+    }
+
+// IMediaSample2
+    IFACEMETHOD(GetProperties)(DWORD PropertiesSize, BYTE* Properties) override
+    {
+        WI_ASSERT(PropertiesSize == sizeof m_Properties && Properties);
+        *reinterpret_cast<AM_SAMPLE2_PROPERTIES*>(Properties) = m_Properties;
+        return S_OK;
+    }
+    IFACEMETHOD(SetProperties)(DWORD PropertiesSize, BYTE const* Properties) override
+    {
+        PropertiesSize; Properties;
+        return E_NOTIMPL;
+    }
+
+    AM_SAMPLE2_PROPERTIES m_Properties;
+    std::vector<uint8_t> m_Data;
+};
+
 class __declspec(uuid("{9869C322-03DB-4A9B-A683-F6F6D732824C}")) SampleSource : public CSource
 {
 public:
@@ -61,6 +167,7 @@ public:
                         m_MediaSampleList.pop_front();
                     }
 
+                    //TRACE(L"MediaSample 0x%p\n", MediaSample.get());
                     if(!MediaSample) 
                     {
                         DeliverEndOfStream();
@@ -96,6 +203,42 @@ public:
         {
             WI_ASSERT(MediaSample);
             [[maybe_unused]] auto&& MediaSampleLock = m_MediaSampleMutex.lock_exclusive();
+            WI_ASSERT(m_MediaType.IsValid());
+            if(m_MediaType.subtype == MEDIASUBTYPE_H264)
+            {
+                // NOTE: H264ByteStreamHandler converts byte stream format to length prefixed NAL units written into resulting file, hence
+                //       byte stream media type corresponds to length prefixed content in the incomplete file.
+                auto const MediaSampleA = static_cast<::MediaSample*>(MediaSample.query<IMediaSample2>().get());
+                auto const MediaSampleB = winrt::make_self<::MediaSample>();
+                MediaSampleB->m_Properties = MediaSampleA->m_Properties;
+                MediaSampleB->m_Data.reserve(MediaSampleA->m_Data.size());
+                uint8_t const* I = MediaSampleA->m_Data.data();
+                uint8_t const* IB = I + MediaSampleA->m_Properties.lActual;
+                for(; ; )
+                {
+                    if(IB - I < 4)
+                        break;
+                    auto const S = _byteswap_ulong(*reinterpret_cast<unsigned long const*>(I));
+                    I += 4;
+                    if(IB - I < static_cast<ptrdiff_t>(S))
+                        break;
+                    static uint8_t constexpr const g_LongStartCodePrefix[] { 0x00, 0x00, 0x00, 0x01 };
+                    static uint8_t constexpr const g_ShortStartCodePrefix[] { 0x00, 0x00, 0x01 };
+                    auto const T = *I & 0x1F;
+                    if(T == 7 || T == 8)
+                        std::copy(std::cbegin(g_LongStartCodePrefix), std::cend(g_LongStartCodePrefix), std::back_inserter(MediaSampleB->m_Data));
+                    else
+                        std::copy(std::cbegin(g_ShortStartCodePrefix), std::cend(g_ShortStartCodePrefix), std::back_inserter(MediaSampleB->m_Data));
+                    std::copy(I, I + S, std::back_inserter(MediaSampleB->m_Data));
+                    I += S;
+                }
+                WI_ASSERT(I == IB);
+                MediaSampleB->m_Properties.pbBuffer = MediaSampleB->m_Data.data();
+                MediaSampleB->m_Properties.cbBuffer = static_cast<long>(MediaSampleB->m_Data.size());
+                MediaSampleB->m_Properties.lActual = MediaSampleB->m_Properties.cbBuffer;
+                m_MediaSampleList.emplace_back(static_cast<IMediaSample2*>(MediaSampleB.get()));
+                return;
+            }
             m_MediaSampleList.emplace_back(MediaSample);
         }
         void AddEndOfStream()
@@ -256,112 +399,6 @@ public:
         return Value;
     }
 
-    class MediaSample : public winrt::implements<MediaSample, IMediaSample, IMediaSample2>
-    {
-    public:
-        MediaSample() = default;
-
-    // IMediaSample
-        IFACEMETHOD(GetPointer)(BYTE** ppBuffer) override
-        {
-            WI_ASSERT(ppBuffer);
-            *ppBuffer = m_Properties.pbBuffer;
-            return S_OK;
-        }
-        IFACEMETHOD_(long, GetSize)() override
-        {
-            return m_Properties.cbBuffer;
-        }
-        IFACEMETHOD(GetTime)(REFERENCE_TIME* StartTime, REFERENCE_TIME* StopTime) override
-        {
-            WI_ASSERT(StartTime && StopTime);
-            if(!(m_Properties.dwSampleFlags & AM_SAMPLE_TIMEVALID))
-                return VFW_E_SAMPLE_TIME_NOT_SET;
-            *StartTime = m_Properties.tStart;
-            if(!(m_Properties.dwSampleFlags & AM_SAMPLE_STOPVALID))
-                return VFW_S_NO_STOP_TIME;
-            *StopTime = m_Properties.tStop;
-            return S_OK;
-        }
-        IFACEMETHOD(SetTime)(REFERENCE_TIME* StartTime, REFERENCE_TIME* StopTime) override
-        {
-            StartTime; StopTime;
-            return E_NOTIMPL;
-        }
-        IFACEMETHOD(IsSyncPoint)() override
-        {
-            return (m_Properties.dwSampleFlags & AM_SAMPLE_SPLICEPOINT) ? S_OK : S_FALSE;
-        }
-        IFACEMETHOD(SetSyncPoint)(BOOL SyncPoint) override
-        {
-            SyncPoint;
-            return E_NOTIMPL;
-        }
-        IFACEMETHOD(IsPreroll)() override
-        {
-            return (m_Properties.dwSampleFlags & AM_SAMPLE_PREROLL) ? S_OK : S_FALSE;
-        }
-        IFACEMETHOD(SetPreroll)(BOOL Preroll) override
-        {
-            Preroll;
-            return E_NOTIMPL;
-        }
-        IFACEMETHOD_(long, GetActualDataLength)() override
-        {
-            return m_Properties.lActual;
-        }
-        IFACEMETHOD(SetActualDataLength)(long ActualDataLength) override
-        {
-            ActualDataLength;
-            return E_NOTIMPL;
-        }
-        IFACEMETHOD(GetMediaType)(AM_MEDIA_TYPE** MediaType) override
-        {
-            MediaType;
-            return E_NOTIMPL;
-        }
-        IFACEMETHOD(SetMediaType)(AM_MEDIA_TYPE* MediaType) override
-        {
-            MediaType;
-            return E_NOTIMPL;
-        }
-        IFACEMETHOD(IsDiscontinuity)() override
-        {
-            return (m_Properties.dwSampleFlags & AM_SAMPLE_DATADISCONTINUITY) ? S_OK : S_FALSE;
-        }
-        IFACEMETHOD(SetDiscontinuity)(BOOL Discontinuity) override
-        {
-            Discontinuity;
-            return E_NOTIMPL;
-        }
-        IFACEMETHOD(GetMediaTime)(LONGLONG* StartTime, LONGLONG* StopTime) override
-        {
-            WI_ASSERT(StartTime && StopTime); StartTime; StopTime;
-            return VFW_E_MEDIA_TIME_NOT_SET;
-        }
-        IFACEMETHOD(SetMediaTime)(LONGLONG* StartTime, LONGLONG* StopTime) override
-        {
-            StartTime; StopTime;
-            return E_NOTIMPL;
-        }
-
-    // IMediaSample2
-        IFACEMETHOD(GetProperties)(DWORD PropertiesSize, BYTE* Properties) override
-        {
-            WI_ASSERT(PropertiesSize == sizeof m_Properties && Properties);
-            *reinterpret_cast<AM_SAMPLE2_PROPERTIES*>(Properties) = m_Properties;
-            return S_OK;
-        }
-        IFACEMETHOD(SetProperties)(DWORD PropertiesSize, BYTE const* Properties) override
-        {
-            PropertiesSize; Properties;
-            return E_NOTIMPL;
-        }
-
-        AM_SAMPLE2_PROPERTIES m_Properties;
-        std::vector<uint8_t> m_Data;
-    };
-
     void Run()
     {
         winrt::init_apartment(winrt::apartment_type::single_threaded);
@@ -516,7 +553,7 @@ public:
                                 IndexStream.read(reinterpret_cast<char*>(&MediaSample), sizeof MediaSample);
                                 THROW_HR_IF(E_FAIL, IndexStream.fail());
                                 Stream.seekg(MediaSample.Position, std::ios_base::beg);
-                                auto FilterSample = winrt::make_self<MuxFilterRecovery::MediaSample>();
+                                auto FilterSample = winrt::make_self<::MediaSample>();
                                 auto& Properties = FilterSample->m_Properties;
                                 FilterSample->m_Data.resize(MediaSample.Size);
                                 Stream.read(reinterpret_cast<char*>(FilterSample->m_Data.data()), MediaSample.Size);
@@ -531,7 +568,7 @@ public:
                                 Properties.pMediaType = nullptr;
                                 Properties.pbBuffer = FilterSample->m_Data.data();
                                 Properties.cbBuffer = static_cast<LONG>(FilterSample->m_Data.size());
-                                TRACE(L"Position %llu, Signature %hs, MediaSample.Index %u\n", static_cast<uint64_t>(Position), FormatFourCharacterCode(Signature).c_str(), MediaSample.Index);
+                                TRACE(L"Position %llu, Signature %hs, MediaSample.Index %u, .Position %llu, .Size %u\n", static_cast<uint64_t>(Position), FormatFourCharacterCode(Signature).c_str(), MediaSample.Index, MediaSample.Position, MediaSample.Size);
                                 Source->AddMediaSample(MediaSample.Index, FilterSample.as<IMediaSample>().get());
                                 if(!std::exchange(Running, true))
                                 {
