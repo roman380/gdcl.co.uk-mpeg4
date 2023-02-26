@@ -3,8 +3,8 @@
 LIBRARY         "mp4mux.dll"
 
 EXPORTS
-        DllGetClassObject PRIVATE
-        DllCanUnloadNow PRIVATE
+        DllGetClassObject=DllGetClassObjectEx PRIVATE
+        DllCanUnloadNow=DllCanUnloadNowEx PRIVATE
         DllRegisterServer PRIVATE
         DllUnregisterServer PRIVATE
 

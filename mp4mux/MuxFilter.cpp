@@ -105,8 +105,7 @@ Mpeg4Mux::Mpeg4Mux(LPUNKNOWN pUnk, HRESULT* phr)
 : CBaseFilter(NAME("Mpeg4Mux"), pUnk, &m_csFilter, *m_sudFilter.clsID),
   m_tWritten(0),
   m_bAlignTrackStartTimeDisabled(FALSE),
-  m_nMinimalMovieDuration(0),
-  m_bTemporaryIndexFileEnabled(FALSE)
+  m_nMinimalMovieDuration(0)
 {
     // create output pin and one free input
     m_pOutput = new MuxOutput(this, &m_csFilter, phr);
@@ -147,11 +146,11 @@ Mpeg4Mux::GetPin(int n)
 void
 Mpeg4Mux::CreateInput()
 {
-	ostringstream strm;
-	strm << "Input " << m_pInputs.size() + 1;
-	_bstr_t str = strm.str().c_str();
+    ostringstream strm;
+    strm << "Input " << m_pInputs.size() + 1;
+    _bstr_t str = strm.str().c_str();
 
-	HRESULT hr = S_OK;
+    HRESULT hr = S_OK;
     MuxInput* pPin = new MuxInput(this, &m_csFilter, &hr, str, (int) (m_pInputs.size()));
     pPin->AddRef();
     m_pInputs.push_back(pPin);
@@ -198,7 +197,7 @@ Mpeg4Mux::MakeTrack(int index, const CMediaType* pmt)
 {
     CAutoLock lock(&m_csTracks);
     UNREFERENCED_PARAMETER(index);
-    return m_pMovie->MakeTrack(pmt, m_TemporaryIndexFile.IsActive());
+    return m_pMovie->MakeTrack(pmt, m_TemporaryIndexFile.Active());
 }
 
 void 
@@ -214,22 +213,32 @@ Mpeg4Mux::Stop()
     HRESULT hr = S_OK;
     if (m_State != State_Stopped)
     {
-		// ensure that queue-writing is stopped
+        // ensure that queue-writing is stopped
         if (m_pMovie)
         {
             m_pMovie->Stop();
 
-			// switch to IStream for post-run fixup.
-			m_pOutput->UseIStream();
+            // switch to IStream for post-run fixup.
+            m_pOutput->UseIStream();
         }
 
         // stop all input pins
         hr = CBaseFilter::Stop();
 
+        #if !defined(NDEBUG)
+            if(m_SkipClose)
+            {
+                // WARN: Leak m_pMovie but intentionally
+                m_pMovie = nullptr;
+                m_TemporaryIndexFile.Flush();
+                return hr;
+            }
+        #endif
+
         if (m_pMovie)
         {
-			// write all queued data
-			m_pMovie->WriteOnStop();
+            // write all queued data
+            m_pMovie->WriteOnStop();
 
             // write all metadata
             hr = m_pMovie->Close(&m_tWritten);
@@ -239,7 +248,7 @@ Mpeg4Mux::Stop()
             m_pOutput->FillSpace();
         }
 
-		m_TemporaryIndexFile.Terminate();
+        m_TemporaryIndexFile.Terminate();
     }
     return hr;
 }
@@ -251,77 +260,73 @@ Mpeg4Mux::Pause()
     {
         m_pOutput->Reset();
         m_pMovie = new MovieWriter(m_pOutput);
-		m_pMovie->Initialize(m_bAlignTrackStartTimeDisabled, m_nMinimalMovieDuration);
+        m_pMovie->Initialize(m_bAlignTrackStartTimeDisabled, m_nMinimalMovieDuration);
         m_pMovie->SetComment(m_Comment);
-		#pragma region Temporary Index File
-		// ASSU: Output uses IStream
-		if(m_bTemporaryIndexFileEnabled)
-		{
-			QzCComPtr<IPin> pPin = m_pOutput->GetConnected();
-			if(pPin)
-			{
-				PIN_INFO PinInformation;
-				if(SUCCEEDED(pPin->QueryPinInfo(&PinInformation)) && PinInformation.pFilter)
-				{
-					QzCComPtr<IFileSinkFilter> pFileSinkFilter;
-					PinInformation.pFilter->QueryInterface(__uuidof(IFileSinkFilter), (VOID**) &pFileSinkFilter);
-					PinInformation.pFilter->Release();
-					if(pFileSinkFilter)
-					{
-						LPOLESTR pszPath = NULL;
-						pFileSinkFilter->GetCurFile(&pszPath, NULL);
-						TCHAR pszPathT[MAX_PATH];
-						// ASSU: Unicode build
-						if(pszPath)
-						{
-							_tcsncpy_s(pszPathT, pszPath, _TRUNCATE);
-							CoTaskMemFree(pszPath);
-							LPCTSTR pszFileName = PathFindFileName(pszPathT);
-							CAutoLock TemporaryIndexFileLock(&m_TemporaryIndexFileCriticalSection);
-							if(m_TemporaryIndexFile.Initialize(pszFileName))
-							{
-								m_TemporaryIndexFile.WriteHeader();
-								for(SIZE_T nIndex = 0; nIndex < m_pInputs.size(); nIndex++)
-								{
-									MuxInput* pInput = m_pInputs[nIndex];
-									if(!pInput->IsConnected())
-										continue;
-									CMediaType MediaType;
-									if(FAILED(pInput->ConnectionMediaType(&MediaType)))
-										continue;
-									m_TemporaryIndexFile.WriteInputPin((UINT16) pInput->GetIndex(), MediaType);
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-		#pragma endregion 
+        #pragma region Temporary Index File
+        // ASSU: Output uses IStream
+        if(m_TemporaryIndexFileEnabled)
+        {
+            wil::com_ptr<IPin> const Pin = m_pOutput->GetConnected();
+            if(Pin)
+            {
+                PIN_INFO PinInformation;
+                if(SUCCEEDED(Pin->QueryPinInfo(&PinInformation)) && PinInformation.pFilter)
+                {
+                    auto const FileSinkFilter = wil::com_query<IFileSinkFilter>(PinInformation.pFilter);
+                    PinInformation.pFilter->Release();
+                    if(FileSinkFilter)
+                    {
+                        wil::unique_cotaskmem_string Path;
+                        FileSinkFilter->GetCurFile(Path.put(), nullptr);
+                        if(Path)
+                        {
+                            auto const FileName = PathFindFileNameW(Path.get());
+                            CAutoLock TemporaryIndexFileLock(&m_TemporaryIndexFileCriticalSection);
+                            auto const TemporaryIndexFileDirectory = m_TemporaryIndexFileDirectory.empty() ? m_TemporaryIndexFile.DefaultDirectory() : m_TemporaryIndexFileDirectory;
+                            if(m_TemporaryIndexFile.Initialize(FileName, TemporaryIndexFileDirectory))
+                            {
+                                m_TemporaryIndexFile.WriteHeader();
+                                for(size_t Index = 0; Index < m_pInputs.size(); Index++)
+                                {
+                                    auto Input = m_pInputs[Index];
+                                    if(!Input->IsConnected())
+                                        continue;
+                                    CMediaType MediaType;
+                                    if(FAILED(Input->ConnectionMediaType(&MediaType)))
+                                        continue;
+                                    m_TemporaryIndexFile.WriteInputPin(static_cast<uint16_t>(Input->GetIndex()), MediaType);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        #pragma endregion 
     }
     return CBaseFilter::Pause();
 }
 
-VOID Mpeg4Mux::NotifyMediaSampleWrite(INT nTrackIndex, LONGLONG nDataPosition, SIZE_T nDataSize, IMediaSample* pMediaSample)
+void Mpeg4Mux::NotifyMediaSampleWrite(int TrackIndex, uint64_t DataPosition, size_t DataSize, IMediaSample* MediaSample)
 { 
-	ASSERT(pMediaSample);
-	if(!pMediaSample)
-		return; // No Media Sample
-	CAutoLock TemporaryIndexFileLock(&m_TemporaryIndexFileCriticalSection);
-	if(!m_TemporaryIndexFile.IsActive())
-		return; // No Index File
-	QzCComPtr<IMediaSample2> pMediaSample2;
-	pMediaSample->QueryInterface(__uuidof(IMediaSample2), (VOID**) &pMediaSample2);
-	if(!pMediaSample2)
-		return; // No Interface
-	AM_SAMPLE2_PROPERTIES Properties;
-	if(FAILED(pMediaSample2->GetProperties(sizeof Properties, (BYTE*) &Properties)))
-		return; // Failure
-	SIZE_T nInputIndex;
-	for(nInputIndex = 0; nInputIndex < m_pInputs.size(); nInputIndex++)
-		if(m_pInputs[nInputIndex]->GetIndex() == nTrackIndex)
-			break;
-	m_TemporaryIndexFile.WriteMediaSample((UINT16) nInputIndex, (UINT64) nDataPosition, (UINT32) nDataSize, Properties);
+    WI_ASSERT(MediaSample);
+    if(!MediaSample)
+        return; // No Media Sample
+    CAutoLock TemporaryIndexFileLock(&m_TemporaryIndexFileCriticalSection);
+    if(!m_TemporaryIndexFile.Active())
+        return; // No Index File
+    auto const MediaSample2 = wil::com_query<IMediaSample2>(MediaSample);
+    WI_ASSERT(MediaSample2);
+    if(!MediaSample2)
+        return; // No Interface
+    AM_SAMPLE2_PROPERTIES Properties;
+    if(FAILED(MediaSample2->GetProperties(sizeof Properties, reinterpret_cast<BYTE*>(&Properties))))
+        return; // Failure
+    size_t InputIndex;
+    for(InputIndex = 0; InputIndex < m_pInputs.size(); InputIndex++)
+        if(m_pInputs[InputIndex]->GetIndex() == TrackIndex)
+            break;
+    m_TemporaryIndexFile.WriteMediaSample(static_cast<uint16_t>(InputIndex), DataPosition, static_cast<uint32_t>(DataSize), Properties);
 }
 
 // ------- input pin -------------------------------------------------------
@@ -334,16 +339,16 @@ MuxInput::MuxInput(Mpeg4Mux* pFilter, CCritSec* pLock, HRESULT* phr, LPCWSTR pNa
   m_nMaximalCopyBufferCapacity(200 << 20), // 200 MB
   CBaseInputPin(NAME("MuxInput"), pFilter, pLock, phr, pName)
 {
-	ZeroMemory(&m_StreamInfo, sizeof(m_StreamInfo));
+    ZeroMemory(&m_StreamInfo, sizeof(m_StreamInfo));
 }
 
 MuxInput::~MuxInput()
 {
-	ASSERT(!m_pAllocator);
-	if (m_pCopyAlloc)
-	{
-		m_pCopyAlloc->Release();
-	}
+    ASSERT(!m_pAllocator);
+    if (m_pCopyAlloc)
+    {
+        m_pCopyAlloc->Release();
+    }
 }
 
 HRESULT 
@@ -367,89 +372,89 @@ MuxInput::GetMediaType(int iPosition, CMediaType* pmt)
 STDMETHODIMP 
 MuxInput::Receive(IMediaSample* pSample)
 {
-	#if defined(_DEBUG) && FALSE
-		AM_SAMPLE2_PROPERTIES Properties;
-		ZeroMemory(&Properties, sizeof Properties);
-		if(pSample)
-		{
-			QzCComPtr<IMediaSample2> pMediaSample2;
-			if(SUCCEEDED(pSample->QueryInterface(&pMediaSample2)))
-			{
-				const HRESULT nGetPropertiesResult = pMediaSample2->GetProperties(sizeof Properties, (BYTE*) &Properties);
-			}
-			REFERENCE_TIME nStartTime = 0, nStopTime = 0;
-			const HRESULT nGetTimeResult = pSample->GetTime(&nStartTime, &nStopTime);
-			BYTE* pnData = NULL;
-			pSample->GetPointer(&pnData);
-			const LONG nDataSize = pSample->GetActualDataLength();
-			//CHAR pszData[1024] = { 0 };
-			//for(SIZE_T nIndex = 0; nIndex < nDataSize; nIndex++)
-			static LONG g_nCounter = 0;
-			CHAR pszText[1024] = { 0 };
-			sprintf_s(pszText, "%hs: " "m_index %d, nGetTimeResult 0x%08X, nStartTime %I64d, nStopTime %I64d, nDataSize %d (%d)\n", __FUNCTION__, 
-				m_index,
-				nGetTimeResult, nStartTime, nStopTime, 
-				nDataSize,
-				++g_nCounter,
-				0);
-			OutputDebugStringA(pszText);
-		}
-	#endif // defined(_DEBUG)
+    #if defined(_DEBUG) && FALSE
+        AM_SAMPLE2_PROPERTIES Properties;
+        ZeroMemory(&Properties, sizeof Properties);
+        if(pSample)
+        {
+            QzCComPtr<IMediaSample2> pMediaSample2;
+            if(SUCCEEDED(pSample->QueryInterface(&pMediaSample2)))
+            {
+                const HRESULT nGetPropertiesResult = pMediaSample2->GetProperties(sizeof Properties, (BYTE*) &Properties);
+            }
+            REFERENCE_TIME nStartTime = 0, nStopTime = 0;
+            const HRESULT nGetTimeResult = pSample->GetTime(&nStartTime, &nStopTime);
+            BYTE* pnData = NULL;
+            pSample->GetPointer(&pnData);
+            const LONG nDataSize = pSample->GetActualDataLength();
+            //CHAR pszData[1024] = { 0 };
+            //for(SIZE_T nIndex = 0; nIndex < nDataSize; nIndex++)
+            static LONG g_nCounter = 0;
+            CHAR pszText[1024] = { 0 };
+            sprintf_s(pszText, "%hs: " "m_index %d, nGetTimeResult 0x%08X, nStartTime %I64d, nStopTime %I64d, nDataSize %d (%d)\n", __FUNCTION__, 
+                m_index,
+                nGetTimeResult, nStartTime, nStopTime, 
+                nDataSize,
+                ++g_nCounter,
+                0);
+            OutputDebugStringA(pszText);
+        }
+    #endif // defined(_DEBUG)
 
-	#if defined(WITH_DIRECTSHOWSPY)
-		if(m_pMediaSampleTrace)
-		{
-			QzCComPtr<IMediaSample2> pMediaSample2;
-			pSample->QueryInterface(__uuidof(IMediaSample2), (VOID**) &pMediaSample2);
-			if(pMediaSample2)
-			{
-				AM_SAMPLE2_PROPERTIES Properties { sizeof Properties };
-				pMediaSample2->GetProperties(sizeof Properties, (BYTE*) &Properties);
-				m_pMediaSampleTrace->RegisterMediaSample((IBaseFilter*) m_pFilter, Name(), (BYTE*) &Properties, nullptr, 0);
-			}
-		}
-	#endif // defined(WITH_DIRECTSHOWSPY)
+    #if defined(WITH_DIRECTSHOWSPY)
+        if(m_pMediaSampleTrace)
+        {
+            QzCComPtr<IMediaSample2> pMediaSample2;
+            pSample->QueryInterface(__uuidof(IMediaSample2), (VOID**) &pMediaSample2);
+            if(pMediaSample2)
+            {
+                AM_SAMPLE2_PROPERTIES Properties { sizeof Properties };
+                pMediaSample2->GetProperties(sizeof Properties, (BYTE*) &Properties);
+                m_pMediaSampleTrace->RegisterMediaSample((IBaseFilter*) m_pFilter, Name(), (BYTE*) &Properties, nullptr, 0);
+            }
+        }
+    #endif // defined(WITH_DIRECTSHOWSPY)
 
-	if(pSample->IsPreroll() != S_FALSE)
-		return S_OK;
+    if(pSample->IsPreroll() != S_FALSE)
+        return S_OK;
     HRESULT hr = CBaseInputPin::Receive(pSample);
     if (hr != S_OK)
     {
         return hr;
     }
-	// WARN: m_pTrack needs m_pLock protection for thread safety (see #2)
+    // WARN: m_pTrack needs m_pLock protection for thread safety (see #2)
     if (!m_pTrack)
         return E_FAIL;
 
-	if (ShouldDiscard(pSample))
-	{
-		return S_OK;
-	}
-	if (m_pCopyAlloc)
-	{
-		BYTE* pSrc;
-		pSample->GetPointer(&pSrc);
-		IMediaSamplePtr pOurs;
-		hr = m_pCopyAlloc->AppendAndWrap(pSrc, pSample->GetActualDataLength(), &pOurs);
-		if (SUCCEEDED(hr))
-		{
-			hr = CopySampleProps(pSample, pOurs);
-		}
-		if (SUCCEEDED(hr))
-		{
-			// HOTFIX: m_pTrack needs m_pLock protection for thread safety, we have to make sure m_pTrack is still valid (see #2)
-		    CAutoLock Lock(m_pLock);
-			if(!m_pTrack)
-				return E_FAIL;
-			hr = m_pTrack->Add(pOurs);
-		}
-		return hr;
-	}
+    if (ShouldDiscard(pSample))
+    {
+        return S_OK;
+    }
+    if (m_pCopyAlloc)
+    {
+        BYTE* pSrc;
+        pSample->GetPointer(&pSrc);
+        IMediaSamplePtr pOurs;
+        hr = m_pCopyAlloc->AppendAndWrap(pSrc, pSample->GetActualDataLength(), &pOurs);
+        if (SUCCEEDED(hr))
+        {
+            hr = CopySampleProps(pSample, pOurs);
+        }
+        if (SUCCEEDED(hr))
+        {
+            // HOTFIX: m_pTrack needs m_pLock protection for thread safety, we have to make sure m_pTrack is still valid (see #2)
+            CAutoLock Lock(m_pLock);
+            if(!m_pTrack)
+                return E_FAIL;
+            hr = m_pTrack->Add(pOurs);
+        }
+        return hr;
+    }
 
-	// HOTFIX: m_pTrack needs m_pLock protection for thread safety, we have to make sure m_pTrack is still valid (see #2)
-	CAutoLock Lock(m_pLock);
-	if(!m_pTrack)
-		return E_FAIL;
+    // HOTFIX: m_pTrack needs m_pLock protection for thread safety, we have to make sure m_pTrack is still valid (see #2)
+    CAutoLock Lock(m_pLock);
+    if(!m_pTrack)
+        return E_FAIL;
     return m_pTrack->Add(pSample);
 }
 
@@ -463,10 +468,10 @@ MuxInput::CopySampleProps(IMediaSample* pIn, IMediaSample* pOut)
         pOut->SetTime(&tStart, &tEnd);
     }
 
-	if (SUCCEEDED(pIn->GetMediaTime(&tStart, &tEnd)))
-	{
-		pOut->SetMediaTime(&tStart, &tEnd);
-	}
+    if (SUCCEEDED(pIn->GetMediaTime(&tStart, &tEnd)))
+    {
+        pOut->SetMediaTime(&tStart, &tEnd);
+    }
 
     if (pIn->IsSyncPoint() == S_OK)
     {
@@ -480,24 +485,24 @@ MuxInput::CopySampleProps(IMediaSample* pIn, IMediaSample* pOut)
     {
         pOut->SetPreroll(true);
     }
-	return S_OK;
+    return S_OK;
 }
 
 STDMETHODIMP 
 MuxInput::EndOfStream()
 {
-	#if defined(_DEBUG) && FALSE
-		CHAR pszText[1024] = { 0 };
-		sprintf_s(pszText, "%hs: " "m_index %d\n", __FUNCTION__, 
-			m_index,
-			0);
-		OutputDebugStringA(pszText);
-	#endif // defined(_DEBUG)
+    #if defined(_DEBUG) && FALSE
+        CHAR pszText[1024] = { 0 };
+        sprintf_s(pszText, "%hs: " "m_index %d\n", __FUNCTION__, 
+            m_index,
+            0);
+        OutputDebugStringA(pszText);
+    #endif // defined(_DEBUG)
 
-	#if defined(WITH_DIRECTSHOWSPY)
-		if(m_pMediaSampleTrace)
-			m_pMediaSampleTrace->RegisterEndOfStream((IBaseFilter*) m_pFilter, Name(), nullptr, 0);
-	#endif // defined(WITH_DIRECTSHOWSPY)
+    #if defined(WITH_DIRECTSHOWSPY)
+        if(m_pMediaSampleTrace)
+            m_pMediaSampleTrace->RegisterEndOfStream((IBaseFilter*) m_pFilter, Name(), nullptr, 0);
+    #endif // defined(WITH_DIRECTSHOWSPY)
 
     if ((m_pTrack != NULL) && (m_pTrack->OnEOS()))
     {
@@ -510,10 +515,10 @@ MuxInput::EndOfStream()
 STDMETHODIMP 
 MuxInput::BeginFlush()
 {
-	#if defined(WITH_DIRECTSHOWSPY)
-		if(m_pMediaSampleTrace)
-			m_pMediaSampleTrace->RegisterComment((IBaseFilter*) m_pFilter, Name(), L"Begin Flush", 0);
-	#endif // defined(WITH_DIRECTSHOWSPY)
+    #if defined(WITH_DIRECTSHOWSPY)
+        if(m_pMediaSampleTrace)
+            m_pMediaSampleTrace->RegisterComment((IBaseFilter*) m_pFilter, Name(), L"Begin Flush", 0);
+    #endif // defined(WITH_DIRECTSHOWSPY)
 
     // ensure no more data accepted, and queued
     // data is discarded, so no threads are blocking
@@ -527,10 +532,10 @@ MuxInput::BeginFlush()
 STDMETHODIMP 
 MuxInput::EndFlush()
 {
-	#if defined(WITH_DIRECTSHOWSPY)
-		if(m_pMediaSampleTrace)
-			m_pMediaSampleTrace->RegisterComment((IBaseFilter*) m_pFilter, Name(), L"End Flush", 0);
-	#endif // defined(WITH_DIRECTSHOWSPY)
+    #if defined(WITH_DIRECTSHOWSPY)
+        if(m_pMediaSampleTrace)
+            m_pMediaSampleTrace->RegisterComment((IBaseFilter*) m_pFilter, Name(), L"End Flush", 0);
+    #endif // defined(WITH_DIRECTSHOWSPY)
 
     // we don't re-enable writing -- we support only
     // one contiguous sequence in a file.
@@ -543,32 +548,32 @@ MuxInput::Active()
     HRESULT hr = CBaseInputPin::Active();
     if (SUCCEEDED(hr))
     {
-		#if defined(WITH_DIRECTSHOWSPY)
-			if(!m_pMediaSampleTrace)
-			{
-				ASSERT(m_pFilter && m_pFilter->GetFilterGraph());
-				ASSERT(m_pFilter && m_pFilter->GetFilterGraph());
-				QzCComPtr<AlaxInfoDirectShowSpy::IModuleVersionInformation> pModuleVersionInformation;
-				QzCComPtr<AlaxInfoDirectShowSpy::ISpy> pSpy;
-				m_pFilter->GetFilterGraph()->QueryInterface(__uuidof(AlaxInfoDirectShowSpy::IModuleVersionInformation), (VOID**) &pModuleVersionInformation);
-				m_pFilter->GetFilterGraph()->QueryInterface(__uuidof(AlaxInfoDirectShowSpy::ISpy), (VOID**) &pSpy);
-				if(pModuleVersionInformation && pSpy)
-				{
-					LONGLONG nFileVersion = 0;
-					pModuleVersionInformation->get_FileVersion(&nFileVersion);
-					if(nFileVersion >= ((1i64 << 48) + 1875)) // 1.0.0.1875+
-						pSpy->CreateMediaSampleTrace(&m_pMediaSampleTrace);
-				}
-			}
-		#endif // defined(WITH_DIRECTSHOWSPY)
+        #if defined(WITH_DIRECTSHOWSPY)
+            if(!m_pMediaSampleTrace)
+            {
+                ASSERT(m_pFilter && m_pFilter->GetFilterGraph());
+                ASSERT(m_pFilter && m_pFilter->GetFilterGraph());
+                QzCComPtr<AlaxInfoDirectShowSpy::IModuleVersionInformation> pModuleVersionInformation;
+                QzCComPtr<AlaxInfoDirectShowSpy::ISpy> pSpy;
+                m_pFilter->GetFilterGraph()->QueryInterface(__uuidof(AlaxInfoDirectShowSpy::IModuleVersionInformation), (VOID**) &pModuleVersionInformation);
+                m_pFilter->GetFilterGraph()->QueryInterface(__uuidof(AlaxInfoDirectShowSpy::ISpy), (VOID**) &pSpy);
+                if(pModuleVersionInformation && pSpy)
+                {
+                    LONGLONG nFileVersion = 0;
+                    pModuleVersionInformation->get_FileVersion(&nFileVersion);
+                    if(nFileVersion >= ((1i64 << 48) + 1875)) // 1.0.0.1875+
+                        pSpy->CreateMediaSampleTrace(&m_pMediaSampleTrace);
+                }
+            }
+        #endif // defined(WITH_DIRECTSHOWSPY)
 
-		if (m_pCopyAlloc)
-		{
-			m_CopyBuffer.ResetAbort();
-		}
+        if (m_pCopyAlloc)
+        {
+            m_CopyBuffer.ResetAbort();
+        }
 
         m_pTrack = m_pMux->MakeTrack(m_index, &m_mt);
-	}
+    }
     return hr;
 }
 
@@ -576,17 +581,17 @@ HRESULT
 MuxInput::Inactive()
 {
     // ensure that there are no more writes and no blocking threads
-	if (m_pTrack)
-	{
-		m_pTrack->Stop(false);
-		m_pTrack = NULL;
-	}
+    if (m_pTrack)
+    {
+        m_pTrack->Stop(false);
+        m_pTrack = NULL;
+    }
     HRESULT hr = CBaseInputPin::Inactive();
-	if (m_pCopyAlloc)
-	{
-		m_CopyBuffer.Abort();
-	}
-	return hr;
+    if (m_pCopyAlloc)
+    {
+        m_CopyBuffer.Abort();
+    }
+    return hr;
 }
 
 HRESULT 
@@ -611,185 +616,185 @@ MuxInput::CompleteConnect(IPin *pReceivePin)
 STDMETHODIMP 
 MuxInput::GetAllocator(IMemAllocator** ppAllocator)
 {
-	*ppAllocator = NULL;
-	QzCComPtr<IMemAllocator>& pAllocator = reinterpret_cast<QzCComPtr<IMemAllocator>&>(*ppAllocator);
+    *ppAllocator = NULL;
+    QzCComPtr<IMemAllocator>& pAllocator = reinterpret_cast<QzCComPtr<IMemAllocator>&>(*ppAllocator);
     CAutoLock lock(m_pLock);
-	if(!m_pAllocator)
-	{
-		HRESULT hr = S_OK;
+    if(!m_pAllocator)
+    {
+        HRESULT hr = S_OK;
 
-		// we supply our own allocator whose only purpose is to increase the requested number of
-		// buffers. if possible, we supply a sanity-check max buffer size
-		long cMaxBuffer = 0;
-		TypeHandler* ph = TypeHandler::Make(&m_mt);
-		if (ph)
-		{
-			if (ph->IsVideo())
-			{
-				cMaxBuffer = ph->Height() * ph->Width() * 4;
-			}
-			delete ph;
-		}
+        // we supply our own allocator whose only purpose is to increase the requested number of
+        // buffers. if possible, we supply a sanity-check max buffer size
+        long cMaxBuffer = 0;
+        TypeHandler* ph = TypeHandler::Make(&m_mt);
+        if (ph)
+        {
+            if (ph->IsVideo())
+            {
+                cMaxBuffer = ph->Height() * ph->Width() * 4;
+            }
+            delete ph;
+        }
 
-		MuxAllocator* pNewAllocator = new MuxAllocator(NULL, &hr, cMaxBuffer, &m_mt);
-		if(!pNewAllocator)
-			return E_OUTOFMEMORY;
-		ASSERT(SUCCEEDED(hr));
-		reinterpret_cast<QzCComPtr<IMemAllocator>&>(m_pAllocator) = pNewAllocator;
-	}
-	pAllocator = m_pAllocator;
+        MuxAllocator* pNewAllocator = new MuxAllocator(NULL, &hr, cMaxBuffer, &m_mt);
+        if(!pNewAllocator)
+            return E_OUTOFMEMORY;
+        ASSERT(SUCCEEDED(hr));
+        reinterpret_cast<QzCComPtr<IMemAllocator>&>(m_pAllocator) = pNewAllocator;
+    }
+    pAllocator = m_pAllocator;
     return S_OK;
 }
 
 STDMETHODIMP
 MuxInput::NotifyAllocator(IMemAllocator* pAlloc, BOOL bReadOnly)
 {
-	// WARN: Thread unsafe
-	ALLOCATOR_PROPERTIES propAlloc;
-	pAlloc->GetProperties(&propAlloc);
-	LOG((TEXT("[%d] NotifyAllocator: cbBuffer = %ld, cBuffers = %ld"), m_index, propAlloc.cbBuffer, propAlloc.cBuffers));
-	if(m_pCopyAlloc)
-	{
-		m_pCopyAlloc->Release();
-		m_pCopyAlloc = NULL;
-	}
-	if(propAlloc.cBuffers < 20)
-	{
-		// TODO: The idea of allocating contigous buffer going that large definitely needs a revisit
-		INT64 cSpace = (INT64) propAlloc.cbBuffer * MuxAllocator::GetSuggestBufferCount();
-		#pragma region Minimal Buffer Size (per Major Type)
-		// NOTE: Since we maintain contiguous buffer internally, it makes sense to allocate reasonable space to be able to append/accumulate data right there
-		if(m_mt.majortype == MEDIATYPE_Video)
-			cSpace = max(cSpace, 25 << 20); // 25 MB
-		if(m_mt.majortype == MEDIATYPE_Audio)
-			cSpace = max(cSpace, 1 << 20); // 1 MB
-		#pragma endregion
-		cSpace = min((INT64) m_nMaximalCopyBufferCapacity, cSpace);
-		HRESULT hr = m_CopyBuffer.Allocate((SIZE_T) cSpace);
-		if(SUCCEEDED(hr))
-		{
-			m_pCopyAlloc = new Suballocator(&m_CopyBuffer, &hr);
-			m_pCopyAlloc->AddRef();
-		}
-	}
-	return __super::NotifyAllocator(pAlloc, bReadOnly);
+    // WARN: Thread unsafe
+    ALLOCATOR_PROPERTIES propAlloc;
+    pAlloc->GetProperties(&propAlloc);
+    LOG((TEXT("[%d] NotifyAllocator: cbBuffer = %ld, cBuffers = %ld"), m_index, propAlloc.cbBuffer, propAlloc.cBuffers));
+    if(m_pCopyAlloc)
+    {
+        m_pCopyAlloc->Release();
+        m_pCopyAlloc = NULL;
+    }
+    if(propAlloc.cBuffers < 20)
+    {
+        // TODO: The idea of allocating contigous buffer going that large definitely needs a revisit
+        INT64 cSpace = (INT64) propAlloc.cbBuffer * MuxAllocator::GetSuggestBufferCount();
+        #pragma region Minimal Buffer Size (per Major Type)
+        // NOTE: Since we maintain contiguous buffer internally, it makes sense to allocate reasonable space to be able to append/accumulate data right there
+        if(m_mt.majortype == MEDIATYPE_Video)
+            cSpace = max(cSpace, 25 << 20); // 25 MB
+        if(m_mt.majortype == MEDIATYPE_Audio)
+            cSpace = max(cSpace, 1 << 20); // 1 MB
+        #pragma endregion
+        cSpace = min((INT64) m_nMaximalCopyBufferCapacity, cSpace);
+        HRESULT hr = m_CopyBuffer.Allocate((SIZE_T) cSpace);
+        if(SUCCEEDED(hr))
+        {
+            m_pCopyAlloc = new Suballocator(&m_CopyBuffer, &hr);
+            m_pCopyAlloc->AddRef();
+        }
+    }
+    return __super::NotifyAllocator(pAlloc, bReadOnly);
 }
-	
+    
 STDMETHODIMP
 MuxInput::StartAt(const REFERENCE_TIME* ptStart, DWORD dwCookie)
 {
-	if (ptStart == NULL)
-	{
-		m_StreamInfo.dwFlags &= ~AM_STREAM_INFO_DISCARDING;
-	}
-	else if (*ptStart == MAXLONGLONG) 
-	{
-		// cancels a start request (but does not stop)
-		m_StreamInfo.dwFlags &= ~(AM_STREAM_INFO_START_DEFINED);
+    if (ptStart == NULL)
+    {
+        m_StreamInfo.dwFlags &= ~AM_STREAM_INFO_DISCARDING;
+    }
+    else if (*ptStart == MAXLONGLONG) 
+    {
+        // cancels a start request (but does not stop)
+        m_StreamInfo.dwFlags &= ~(AM_STREAM_INFO_START_DEFINED);
 
-		// if running, and stop pending, then by some weird overloading of the spec, this means start now
-		if (m_pMux->IsActive() && (m_StreamInfo.dwFlags & AM_STREAM_INFO_STOP_DEFINED))
-		{
-			m_StreamInfo.dwFlags &= ~AM_STREAM_INFO_DISCARDING;
-		}
-	}
-	else
-	{
-		m_StreamInfo.dwFlags |= (AM_STREAM_INFO_START_DEFINED | AM_STREAM_INFO_DISCARDING);
-		m_StreamInfo.dwStartCookie = dwCookie;
-		m_StreamInfo.tStart = *ptStart;
-		m_pTrack->SetStartAt(m_StreamInfo.tStart);
-		DbgLog((LOG_TRACE, 0, "Mux StartAt %d ms", long(m_StreamInfo.tStart/10000)));
-	}
-	return S_OK;
-	
+        // if running, and stop pending, then by some weird overloading of the spec, this means start now
+        if (m_pMux->IsActive() && (m_StreamInfo.dwFlags & AM_STREAM_INFO_STOP_DEFINED))
+        {
+            m_StreamInfo.dwFlags &= ~AM_STREAM_INFO_DISCARDING;
+        }
+    }
+    else
+    {
+        m_StreamInfo.dwFlags |= (AM_STREAM_INFO_START_DEFINED | AM_STREAM_INFO_DISCARDING);
+        m_StreamInfo.dwStartCookie = dwCookie;
+        m_StreamInfo.tStart = *ptStart;
+        m_pTrack->SetStartAt(m_StreamInfo.tStart);
+        DbgLog((LOG_TRACE, 0, "Mux StartAt %d ms", long(m_StreamInfo.tStart/10000)));
+    }
+    return S_OK;
+    
 }
 
 STDMETHODIMP
 MuxInput::StopAt(const REFERENCE_TIME* ptStop, BOOL bSendExtra, DWORD dwCookie)
 {
-	CAutoLock lock(&m_csStreamControl);
+    CAutoLock lock(&m_csStreamControl);
 
-	if (ptStop == NULL)
-	{
-		m_StreamInfo.dwFlags |= AM_STREAM_INFO_DISCARDING;
-	}
-	else if (*ptStop == MAXLONGLONG) 
-	{
-		m_StreamInfo.dwFlags &= ~(AM_STREAM_INFO_STOP_DEFINED);
-	}
-	else
-	{
-		m_StreamInfo.dwFlags |= AM_STREAM_INFO_STOP_DEFINED | (bSendExtra ? AM_STREAM_INFO_STOP_SEND_EXTRA : 0);
-		m_StreamInfo.dwStopCookie = dwCookie;
-		m_StreamInfo.tStop = *ptStop;
-		DbgLog((LOG_TRACE, 0, "Mux StopAt %d ms", long(m_StreamInfo.tStop/10000)));
-	}
-	return S_OK;
+    if (ptStop == NULL)
+    {
+        m_StreamInfo.dwFlags |= AM_STREAM_INFO_DISCARDING;
+    }
+    else if (*ptStop == MAXLONGLONG) 
+    {
+        m_StreamInfo.dwFlags &= ~(AM_STREAM_INFO_STOP_DEFINED);
+    }
+    else
+    {
+        m_StreamInfo.dwFlags |= AM_STREAM_INFO_STOP_DEFINED | (bSendExtra ? AM_STREAM_INFO_STOP_SEND_EXTRA : 0);
+        m_StreamInfo.dwStopCookie = dwCookie;
+        m_StreamInfo.tStop = *ptStop;
+        DbgLog((LOG_TRACE, 0, "Mux StopAt %d ms", long(m_StreamInfo.tStop/10000)));
+    }
+    return S_OK;
 }
 
 STDMETHODIMP
 MuxInput::GetInfo(AM_STREAM_INFO* pInfo)
 {
-	CAutoLock lock(&m_csStreamControl);
+    CAutoLock lock(&m_csStreamControl);
 
-	*pInfo = m_StreamInfo;
-	return S_OK;
+    *pInfo = m_StreamInfo;
+    return S_OK;
 }
 
 bool 
 MuxInput::ShouldDiscard(IMediaSample* pSample)
 {
-	CAutoLock lock(&m_csStreamControl);
-	if (m_StreamInfo.dwFlags & AM_STREAM_INFO_DISCARDING)
-	{
-		if (m_StreamInfo.dwFlags & AM_STREAM_INFO_START_DEFINED)
-		{
-			REFERENCE_TIME tStart, tStop;
-			const HRESULT nGetTimeResult = pSample->GetTime(&tStart, &tStop);
-			if(nGetTimeResult == VFW_S_NO_STOP_TIME)
-				tStop = tStart + 1;
-			if(SUCCEEDED(nGetTimeResult) && (tStop > m_StreamInfo.tStart))
-			{
-				m_StreamInfo.dwFlags &= ~(AM_STREAM_INFO_DISCARDING | AM_STREAM_INFO_START_DEFINED);
-				if (m_StreamInfo.dwStartCookie)
-				{
-					m_pMux->NotifyEvent(EC_STREAM_CONTROL_STARTED, (LONG_PTR) this, m_StreamInfo.dwStartCookie);
-					m_StreamInfo.dwStartCookie = 0;
-				}
-				if ((tStart < m_StreamInfo.tStart) && m_pTrack->Handler()->CanTruncate())
-				{
-					m_pTrack->Handler()->Truncate(pSample, m_StreamInfo.tStart);
-				}
-			}
-		}
-	}
-	else
-	{
-		if (m_StreamInfo.dwFlags & AM_STREAM_INFO_STOP_DEFINED)
-		{
-			REFERENCE_TIME tStart, tStop;
-			const HRESULT nGetTimeResult = pSample->GetTime(&tStart, &tStop);
-			//if(nGetTimeResult == VFW_S_NO_STOP_TIME)
-			//	tStop = tStart + 1;
-			if(SUCCEEDED(nGetTimeResult))
-			{
-				DbgLog((LOG_TRACE, 0, "Pending stop %d ms, sample %d", long(m_StreamInfo.tStop/10000), long(tStart/10000)));
+    CAutoLock lock(&m_csStreamControl);
+    if (m_StreamInfo.dwFlags & AM_STREAM_INFO_DISCARDING)
+    {
+        if (m_StreamInfo.dwFlags & AM_STREAM_INFO_START_DEFINED)
+        {
+            REFERENCE_TIME tStart, tStop;
+            const HRESULT nGetTimeResult = pSample->GetTime(&tStart, &tStop);
+            if(nGetTimeResult == VFW_S_NO_STOP_TIME)
+                tStop = tStart + 1;
+            if(SUCCEEDED(nGetTimeResult) && (tStop > m_StreamInfo.tStart))
+            {
+                m_StreamInfo.dwFlags &= ~(AM_STREAM_INFO_DISCARDING | AM_STREAM_INFO_START_DEFINED);
+                if (m_StreamInfo.dwStartCookie)
+                {
+                    m_pMux->NotifyEvent(EC_STREAM_CONTROL_STARTED, (LONG_PTR) this, m_StreamInfo.dwStartCookie);
+                    m_StreamInfo.dwStartCookie = 0;
+                }
+                if ((tStart < m_StreamInfo.tStart) && m_pTrack->Handler()->CanTruncate())
+                {
+                    m_pTrack->Handler()->Truncate(pSample, m_StreamInfo.tStart);
+                }
+            }
+        }
+    }
+    else
+    {
+        if (m_StreamInfo.dwFlags & AM_STREAM_INFO_STOP_DEFINED)
+        {
+            REFERENCE_TIME tStart, tStop;
+            const HRESULT nGetTimeResult = pSample->GetTime(&tStart, &tStop);
+            //if(nGetTimeResult == VFW_S_NO_STOP_TIME)
+            //	tStop = tStart + 1;
+            if(SUCCEEDED(nGetTimeResult))
+            {
+                DbgLog((LOG_TRACE, 0, "Pending stop %d ms, sample %d", long(m_StreamInfo.tStop/10000), long(tStart/10000)));
 
-				if (tStart >= m_StreamInfo.tStop)
-				{
-					m_StreamInfo.dwFlags |= AM_STREAM_INFO_DISCARDING;
-					m_StreamInfo.dwFlags &= ~(AM_STREAM_INFO_STOP_DEFINED);
-					if (m_StreamInfo.dwStopCookie)
-					{
-						m_pMux->NotifyEvent(EC_STREAM_CONTROL_STOPPED, (LONG_PTR) this, m_StreamInfo.dwStopCookie);
-						m_StreamInfo.dwStopCookie = 0;
-					}
-				}
-			}
-		}
-	}
-	return (m_StreamInfo.dwFlags & AM_STREAM_INFO_DISCARDING) ? true : false;
+                if (tStart >= m_StreamInfo.tStop)
+                {
+                    m_StreamInfo.dwFlags |= AM_STREAM_INFO_DISCARDING;
+                    m_StreamInfo.dwFlags &= ~(AM_STREAM_INFO_STOP_DEFINED);
+                    if (m_StreamInfo.dwStopCookie)
+                    {
+                        m_pMux->NotifyEvent(EC_STREAM_CONTROL_STOPPED, (LONG_PTR) this, m_StreamInfo.dwStopCookie);
+                        m_StreamInfo.dwStopCookie = 0;
+                    }
+                }
+            }
+        }
+    }
+    return (m_StreamInfo.dwFlags & AM_STREAM_INFO_DISCARDING) ? true : false;
 }
 
 // ----------------------
@@ -801,12 +806,12 @@ MuxAllocator::MuxAllocator(LPUNKNOWN pUnk, HRESULT* phr, long cMaxBuffer, const 
   m_mt(*pmt),
   m_nMinimalBufferCount(GetSuggestBufferCount())
 {
-	NOTE("MuxAllocator::MuxAllocator\n");
+    NOTE("MuxAllocator::MuxAllocator\n");
 }
 
 MuxAllocator::~MuxAllocator()
 {
-	NOTE("MuxAllocator::~MuxAllocator\n");
+    NOTE("MuxAllocator::~MuxAllocator\n");
 }
 
 // we override this just to increase the requested buffer count
@@ -819,13 +824,13 @@ MuxAllocator::SetProperties(
 
     ALLOCATOR_PROPERTIES prop = *pRequest;
 
-	// some encoders request excessively large output buffers and if we
-	// ask for 100 of those, we will use up the system memory
-	if ((m_cMaxBuffer == 0) || (prop.cbBuffer <= m_cMaxBuffer))
-	{
-		if (prop.cBuffers < m_nMinimalBufferCount)
-			prop.cBuffers = m_nMinimalBufferCount;
-	}
+    // some encoders request excessively large output buffers and if we
+    // ask for 100 of those, we will use up the system memory
+    if ((m_cMaxBuffer == 0) || (prop.cbBuffer <= m_cMaxBuffer))
+    {
+        if (prop.cBuffers < m_nMinimalBufferCount)
+            prop.cBuffers = m_nMinimalBufferCount;
+    }
     return CMemAllocator::SetProperties(&prop, pActual);
 }
 
@@ -888,11 +893,11 @@ MuxOutput::CompleteConnect(IPin *pReceivePin)
     }
     return CBaseOutputPin::CompleteConnect(pReceivePin);
 }
-	
+    
 HRESULT 
 MuxOutput::BreakConnect()
 {
-	return __super::BreakConnect();
+    return __super::BreakConnect();
 }
 
 void 
@@ -1024,13 +1029,13 @@ MuxOutput::FillSpace()
     }
 }
 
-VOID MuxOutput::NotifyMediaSampleWrite(INT nTrackIndex, IMediaSample* pMediaSample, SIZE_T nDataSize)
+void MuxOutput::NotifyMediaSampleWrite(int TrackIndex, IMediaSample* MediaSample, size_t DataSize)
 { 
-	ASSERT(pMediaSample);
-	// NOTE: nDataSize is effectively written number of bytes, which might be different from media sample data in case respective handler added certain formatting
-	const LONGLONG nDataPosition = m_llBytes - nDataSize;
-	ASSERT(m_pMux);
-	m_pMux->NotifyMediaSampleWrite(nTrackIndex, nDataPosition, nDataSize, pMediaSample);
+    WI_ASSERT(MediaSample);
+    // NOTE: nDataSize is effectively written number of bytes, which might be different from media sample data in case respective handler added certain formatting
+    auto const DataPosition = static_cast<uint64_t>(m_llBytes - DataSize);
+    ASSERT(m_pMux);
+    m_pMux->NotifyMediaSampleWrite(TrackIndex, DataPosition, DataSize, MediaSample);
 }
 
 // ---- seeking support ------------------------------------------------

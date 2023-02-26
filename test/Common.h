@@ -204,12 +204,19 @@ namespace Test
 
 	struct RunFilterGraphContext
 	{
+		RunFilterGraphContext() = default;
+		template <typename TimeoutTimeType>
+		RunFilterGraphContext(TimeoutTimeType TimeoutTime) :
+			TimeoutTime(duration_cast<milliseconds>(TimeoutTime))
+		{
+		}
+
+		std::optional<milliseconds> TimeoutTime;
 		std::function<void()> HandleAfterRun;
 		std::function<bool()> HandleTimeout;
 	};
 
-	template <typename TimeoutDuration>
-	inline void RunFilterGraph(wil::com_ptr<IFilterGraph2> const& FilterGraph2, TimeoutDuration const& TimeoutTime, std::optional<RunFilterGraphContext> Context = std::nullopt)
+	inline void RunFilterGraph(wil::com_ptr<IFilterGraph2> const& FilterGraph2, std::optional<RunFilterGraphContext> Context = std::nullopt)
 	{
 		WI_ASSERT(FilterGraph2);
 		auto const MediaControl = FilterGraph2.query<IMediaControl>();
@@ -262,10 +269,19 @@ namespace Test
 			} else
 		#endif
 		{
-			WI_ASSERT(!Context.has_value() || !Context.value().HandleTimeout);
+			auto const TimeoutTime = Context.has_value() && Context.value().TimeoutTime.has_value() ? static_cast<DWORD>(duration_cast<milliseconds>(Context.value().TimeoutTime.value()).count()) : INFINITE;
 			LONG EventCode;
-			THROW_IF_FAILED(MediaEventEx->WaitForCompletion(static_cast<LONG>(std::chrono::duration_cast<milliseconds>(TimeoutTime).count()), &EventCode));
-			Assert::IsTrue(EventCode == EC_COMPLETE);
+			auto const Result = MediaEventEx->WaitForCompletion(static_cast<LONG>(TimeoutTime), &EventCode);
+			if(Result == E_ABORT)
+			{
+				auto& HandleTimeout = Context.value().HandleTimeout;
+				if(HandleTimeout)
+					HandleTimeout();
+			} else
+			{
+				THROW_IF_FAILED(Result);
+				Assert::IsTrue(EventCode == EC_COMPLETE);
+			}
 		}
 		Logger::WriteMessage(Format(L"Before IMediaControl::Stop\n").c_str());
 		THROW_IF_FAILED(MediaControl->Stop());
@@ -281,4 +297,8 @@ inline std::wstring OutputPath(wchar_t const* Name)
 	wchar_t Path[MAX_PATH];
 	WI_VERIFY(PathCombineW(Path, Directory, Name));
 	return Path;
+}
+inline std::wstring OutputPath(std::wstring const& Name)
+{
+	return OutputPath(Name.c_str());
 }

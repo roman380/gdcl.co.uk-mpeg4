@@ -81,6 +81,32 @@ typedef struct MuxFilter MuxFilter;
 #endif 	/* __MuxFilter_FWD_DEFINED__ */
 
 
+#ifndef __IMuxFilterRecoverySite_FWD_DEFINED__
+#define __IMuxFilterRecoverySite_FWD_DEFINED__
+typedef interface IMuxFilterRecoverySite IMuxFilterRecoverySite;
+
+#endif 	/* __IMuxFilterRecoverySite_FWD_DEFINED__ */
+
+
+#ifndef __IMuxFilterRecovery_FWD_DEFINED__
+#define __IMuxFilterRecovery_FWD_DEFINED__
+typedef interface IMuxFilterRecovery IMuxFilterRecovery;
+
+#endif 	/* __IMuxFilterRecovery_FWD_DEFINED__ */
+
+
+#ifndef __MuxFilterRecovery_FWD_DEFINED__
+#define __MuxFilterRecovery_FWD_DEFINED__
+
+#ifdef __cplusplus
+typedef class MuxFilterRecovery MuxFilterRecovery;
+#else
+typedef struct MuxFilterRecovery MuxFilterRecovery;
+#endif /* __cplusplus */
+
+#endif 	/* __MuxFilterRecovery_FWD_DEFINED__ */
+
+
 /* header files for imported files */
 #include "oaidl.h"
 #include "ocidl.h"
@@ -310,7 +336,7 @@ EXTERN_C const IID IID_IMuxFilter;
         virtual HRESULT STDMETHODCALLTYPE IsTemporaryIndexFileEnabled( void) = 0;
         
         virtual HRESULT STDMETHODCALLTYPE SetTemporaryIndexFileEnabled( 
-            /* [in] */ BOOL bTemporaryIndexFileEnabled) = 0;
+            /* [in] */ BOOL TemporaryIndexFileEnabled) = 0;
         
         virtual HRESULT STDMETHODCALLTYPE GetAlignTrackStartTimeDisabled( void) = 0;
         
@@ -325,6 +351,9 @@ EXTERN_C const IID IID_IMuxFilter;
         
         virtual HRESULT STDMETHODCALLTYPE SetComment( 
             /* [in] */ BSTR Comment) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE SetTemporaryIndexFileDirectory( 
+            /* [in] */ BSTR TemporaryIndexFileDirectory) = 0;
         
     };
     
@@ -357,7 +386,7 @@ EXTERN_C const IID IID_IMuxFilter;
         DECLSPEC_XFGVIRT(IMuxFilter, SetTemporaryIndexFileEnabled)
         HRESULT ( STDMETHODCALLTYPE *SetTemporaryIndexFileEnabled )( 
             IMuxFilter * This,
-            /* [in] */ BOOL bTemporaryIndexFileEnabled);
+            /* [in] */ BOOL TemporaryIndexFileEnabled);
         
         DECLSPEC_XFGVIRT(IMuxFilter, GetAlignTrackStartTimeDisabled)
         HRESULT ( STDMETHODCALLTYPE *GetAlignTrackStartTimeDisabled )( 
@@ -382,6 +411,11 @@ EXTERN_C const IID IID_IMuxFilter;
         HRESULT ( STDMETHODCALLTYPE *SetComment )( 
             IMuxFilter * This,
             /* [in] */ BSTR Comment);
+        
+        DECLSPEC_XFGVIRT(IMuxFilter, SetTemporaryIndexFileDirectory)
+        HRESULT ( STDMETHODCALLTYPE *SetTemporaryIndexFileDirectory )( 
+            IMuxFilter * This,
+            /* [in] */ BSTR TemporaryIndexFileDirectory);
         
         END_INTERFACE
     } IMuxFilterVtbl;
@@ -409,8 +443,8 @@ EXTERN_C const IID IID_IMuxFilter;
 #define IMuxFilter_IsTemporaryIndexFileEnabled(This)	\
     ( (This)->lpVtbl -> IsTemporaryIndexFileEnabled(This) ) 
 
-#define IMuxFilter_SetTemporaryIndexFileEnabled(This,bTemporaryIndexFileEnabled)	\
-    ( (This)->lpVtbl -> SetTemporaryIndexFileEnabled(This,bTemporaryIndexFileEnabled) ) 
+#define IMuxFilter_SetTemporaryIndexFileEnabled(This,TemporaryIndexFileEnabled)	\
+    ( (This)->lpVtbl -> SetTemporaryIndexFileEnabled(This,TemporaryIndexFileEnabled) ) 
 
 #define IMuxFilter_GetAlignTrackStartTimeDisabled(This)	\
     ( (This)->lpVtbl -> GetAlignTrackStartTimeDisabled(This) ) 
@@ -426,6 +460,9 @@ EXTERN_C const IID IID_IMuxFilter;
 
 #define IMuxFilter_SetComment(This,Comment)	\
     ( (This)->lpVtbl -> SetComment(This,Comment) ) 
+
+#define IMuxFilter_SetTemporaryIndexFileDirectory(This,TemporaryIndexFileDirectory)	\
+    ( (This)->lpVtbl -> SetTemporaryIndexFileDirectory(This,TemporaryIndexFileDirectory) ) 
 
 #endif /* COBJMACROS */
 
@@ -444,6 +481,244 @@ EXTERN_C const CLSID CLSID_MuxFilter;
 
 class DECLSPEC_UUID("5FD85181-E542-4e52-8D9D-5D613C30131B")
 MuxFilter;
+#endif
+
+#ifndef __IMuxFilterRecoverySite_INTERFACE_DEFINED__
+#define __IMuxFilterRecoverySite_INTERFACE_DEFINED__
+
+/* interface IMuxFilterRecoverySite */
+/* [unique][nonextensible][uuid][object] */ 
+
+
+EXTERN_C const IID IID_IMuxFilterRecoverySite;
+
+#if defined(__cplusplus) && !defined(CINTERFACE)
+    
+    MIDL_INTERFACE("3DB13CCE-05D7-4C98-B0E6-C9AC45F20307")
+    IMuxFilterRecoverySite : public IUnknown
+    {
+    public:
+        virtual HRESULT STDMETHODCALLTYPE AfterStart( void) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE BeforeStop( void) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE Progress( 
+            /* [in] */ DOUBLE Progress) = 0;
+        
+    };
+    
+    
+#else 	/* C style interface */
+
+    typedef struct IMuxFilterRecoverySiteVtbl
+    {
+        BEGIN_INTERFACE
+        
+        DECLSPEC_XFGVIRT(IUnknown, QueryInterface)
+        HRESULT ( STDMETHODCALLTYPE *QueryInterface )( 
+            IMuxFilterRecoverySite * This,
+            /* [in] */ REFIID riid,
+            /* [annotation][iid_is][out] */ 
+            _COM_Outptr_  void **ppvObject);
+        
+        DECLSPEC_XFGVIRT(IUnknown, AddRef)
+        ULONG ( STDMETHODCALLTYPE *AddRef )( 
+            IMuxFilterRecoverySite * This);
+        
+        DECLSPEC_XFGVIRT(IUnknown, Release)
+        ULONG ( STDMETHODCALLTYPE *Release )( 
+            IMuxFilterRecoverySite * This);
+        
+        DECLSPEC_XFGVIRT(IMuxFilterRecoverySite, AfterStart)
+        HRESULT ( STDMETHODCALLTYPE *AfterStart )( 
+            IMuxFilterRecoverySite * This);
+        
+        DECLSPEC_XFGVIRT(IMuxFilterRecoverySite, BeforeStop)
+        HRESULT ( STDMETHODCALLTYPE *BeforeStop )( 
+            IMuxFilterRecoverySite * This);
+        
+        DECLSPEC_XFGVIRT(IMuxFilterRecoverySite, Progress)
+        HRESULT ( STDMETHODCALLTYPE *Progress )( 
+            IMuxFilterRecoverySite * This,
+            /* [in] */ DOUBLE Progress);
+        
+        END_INTERFACE
+    } IMuxFilterRecoverySiteVtbl;
+
+    interface IMuxFilterRecoverySite
+    {
+        CONST_VTBL struct IMuxFilterRecoverySiteVtbl *lpVtbl;
+    };
+
+    
+
+#ifdef COBJMACROS
+
+
+#define IMuxFilterRecoverySite_QueryInterface(This,riid,ppvObject)	\
+    ( (This)->lpVtbl -> QueryInterface(This,riid,ppvObject) ) 
+
+#define IMuxFilterRecoverySite_AddRef(This)	\
+    ( (This)->lpVtbl -> AddRef(This) ) 
+
+#define IMuxFilterRecoverySite_Release(This)	\
+    ( (This)->lpVtbl -> Release(This) ) 
+
+
+#define IMuxFilterRecoverySite_AfterStart(This)	\
+    ( (This)->lpVtbl -> AfterStart(This) ) 
+
+#define IMuxFilterRecoverySite_BeforeStop(This)	\
+    ( (This)->lpVtbl -> BeforeStop(This) ) 
+
+#define IMuxFilterRecoverySite_Progress(This,Progress)	\
+    ( (This)->lpVtbl -> Progress(This,Progress) ) 
+
+#endif /* COBJMACROS */
+
+
+#endif 	/* C style interface */
+
+
+
+
+#endif 	/* __IMuxFilterRecoverySite_INTERFACE_DEFINED__ */
+
+
+#ifndef __IMuxFilterRecovery_INTERFACE_DEFINED__
+#define __IMuxFilterRecovery_INTERFACE_DEFINED__
+
+/* interface IMuxFilterRecovery */
+/* [unique][nonextensible][uuid][object] */ 
+
+
+EXTERN_C const IID IID_IMuxFilterRecovery;
+
+#if defined(__cplusplus) && !defined(CINTERFACE)
+    
+    MIDL_INTERFACE("29872F46-01FE-49C4-9E56-6C582D4531F9")
+    IMuxFilterRecovery : public IUnknown
+    {
+    public:
+        virtual HRESULT STDMETHODCALLTYPE Initialize( 
+            /* [in] */ IMuxFilterRecoverySite *Site,
+            /* [in] */ BSTR Path,
+            /* [in] */ BSTR TemporaryIndexFileDirectory) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE Needed( 
+            /* [out] */ BOOL *Needed) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE Active( 
+            /* [out] */ BOOL *Active) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE Start( void) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE Stop( void) = 0;
+        
+    };
+    
+    
+#else 	/* C style interface */
+
+    typedef struct IMuxFilterRecoveryVtbl
+    {
+        BEGIN_INTERFACE
+        
+        DECLSPEC_XFGVIRT(IUnknown, QueryInterface)
+        HRESULT ( STDMETHODCALLTYPE *QueryInterface )( 
+            IMuxFilterRecovery * This,
+            /* [in] */ REFIID riid,
+            /* [annotation][iid_is][out] */ 
+            _COM_Outptr_  void **ppvObject);
+        
+        DECLSPEC_XFGVIRT(IUnknown, AddRef)
+        ULONG ( STDMETHODCALLTYPE *AddRef )( 
+            IMuxFilterRecovery * This);
+        
+        DECLSPEC_XFGVIRT(IUnknown, Release)
+        ULONG ( STDMETHODCALLTYPE *Release )( 
+            IMuxFilterRecovery * This);
+        
+        DECLSPEC_XFGVIRT(IMuxFilterRecovery, Initialize)
+        HRESULT ( STDMETHODCALLTYPE *Initialize )( 
+            IMuxFilterRecovery * This,
+            /* [in] */ IMuxFilterRecoverySite *Site,
+            /* [in] */ BSTR Path,
+            /* [in] */ BSTR TemporaryIndexFileDirectory);
+        
+        DECLSPEC_XFGVIRT(IMuxFilterRecovery, Needed)
+        HRESULT ( STDMETHODCALLTYPE *Needed )( 
+            IMuxFilterRecovery * This,
+            /* [out] */ BOOL *Needed);
+        
+        DECLSPEC_XFGVIRT(IMuxFilterRecovery, Active)
+        HRESULT ( STDMETHODCALLTYPE *Active )( 
+            IMuxFilterRecovery * This,
+            /* [out] */ BOOL *Active);
+        
+        DECLSPEC_XFGVIRT(IMuxFilterRecovery, Start)
+        HRESULT ( STDMETHODCALLTYPE *Start )( 
+            IMuxFilterRecovery * This);
+        
+        DECLSPEC_XFGVIRT(IMuxFilterRecovery, Stop)
+        HRESULT ( STDMETHODCALLTYPE *Stop )( 
+            IMuxFilterRecovery * This);
+        
+        END_INTERFACE
+    } IMuxFilterRecoveryVtbl;
+
+    interface IMuxFilterRecovery
+    {
+        CONST_VTBL struct IMuxFilterRecoveryVtbl *lpVtbl;
+    };
+
+    
+
+#ifdef COBJMACROS
+
+
+#define IMuxFilterRecovery_QueryInterface(This,riid,ppvObject)	\
+    ( (This)->lpVtbl -> QueryInterface(This,riid,ppvObject) ) 
+
+#define IMuxFilterRecovery_AddRef(This)	\
+    ( (This)->lpVtbl -> AddRef(This) ) 
+
+#define IMuxFilterRecovery_Release(This)	\
+    ( (This)->lpVtbl -> Release(This) ) 
+
+
+#define IMuxFilterRecovery_Initialize(This,Site,Path,TemporaryIndexFileDirectory)	\
+    ( (This)->lpVtbl -> Initialize(This,Site,Path,TemporaryIndexFileDirectory) ) 
+
+#define IMuxFilterRecovery_Needed(This,Needed)	\
+    ( (This)->lpVtbl -> Needed(This,Needed) ) 
+
+#define IMuxFilterRecovery_Active(This,Active)	\
+    ( (This)->lpVtbl -> Active(This,Active) ) 
+
+#define IMuxFilterRecovery_Start(This)	\
+    ( (This)->lpVtbl -> Start(This) ) 
+
+#define IMuxFilterRecovery_Stop(This)	\
+    ( (This)->lpVtbl -> Stop(This) ) 
+
+#endif /* COBJMACROS */
+
+
+#endif 	/* C style interface */
+
+
+
+
+#endif 	/* __IMuxFilterRecovery_INTERFACE_DEFINED__ */
+
+
+EXTERN_C const CLSID CLSID_MuxFilterRecovery;
+
+#ifdef __cplusplus
+
+class DECLSPEC_UUID("73D9D53D-30A3-451E-976A-2B4186FE27EC")
+MuxFilterRecovery;
 #endif
 #endif /* __GdclMp4Mux_LIBRARY_DEFINED__ */
 

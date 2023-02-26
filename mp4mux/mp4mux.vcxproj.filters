@@ -135,9 +135,12 @@
     <ClCompile Include="$(DirectShowDir)\baseclasses\wxutil.cpp">
       <Filter>Source Files\BaseClasses</Filter>
     </ClCompile>
+    <ClCompile Include="Recovery.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="mp4mux.def">
+    <None Include="$(ProjectName).def">
       <Filter>Source Files</Filter>
     </None>
   </ItemGroup>
@@ -178,15 +181,21 @@
     <ClInclude Include="Bitstream.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Recovery.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DebugTrace.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <Midl Include="mp4mux.idl">
+    <Midl Include="$(ProjectName).idl">
       <Filter>Source Files</Filter>
     </Midl>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="mp4mux.rc">
-      <Filter>Resource Files</Filter>
+    <ResourceCompile Include="$(ProjectName).rc">
+      <Filter>Source Files</Filter>
     </ResourceCompile>
   </ItemGroup>
 </Project>

@@ -35,21 +35,21 @@ class MuxAllocator : public CMemAllocator, public IMuxMemAllocator
 public:
 // MuxAllocator
     MuxAllocator(LPUNKNOWN pUnk, HRESULT* phr, long cMaxBuffer, const CMediaType* pmt);
-	~MuxAllocator();
-	static LONG GetSuggestBufferCount()
-	{
-		return 100;
-	}
+    ~MuxAllocator();
+    static LONG GetSuggestBufferCount()
+    {
+        return 100;
+    }
 
 // IUnknown
     DECLARE_IUNKNOWN
     STDMETHODIMP NonDelegatingQueryInterface(REFIID InterfaceIdentifier, VOID** ppvObject)
-	{
-		#define A(x) if(InterfaceIdentifier == __uuidof(x)) return GetInterface((x*) this, ppvObject);
-		A(IMuxMemAllocator)
-		#undef A
-		return __super::NonDelegatingQueryInterface(InterfaceIdentifier, ppvObject);
-	}
+    {
+        #define A(x) if(InterfaceIdentifier == __uuidof(x)) return GetInterface((x*) this, ppvObject);
+        A(IMuxMemAllocator)
+        #undef A
+        return __super::NonDelegatingQueryInterface(InterfaceIdentifier, ppvObject);
+    }
 
 // IMemAllocator
     // we override this just to increase the requested buffer count
@@ -58,23 +58,23 @@ public:
             ALLOCATOR_PROPERTIES* pActual);
 
 // IMuxMemAllocator
-	STDMETHOD(GetMinimalBufferCount)(LONG* pnMinimalBufferCount)
-	{
-		if(!pnMinimalBufferCount)
-			return E_POINTER;
-		*pnMinimalBufferCount = m_nMinimalBufferCount;
-		return S_OK;
-	}
-	STDMETHOD(SetMinimalBufferCount)(LONG nMinimalBufferCount)
-	{
-		m_nMinimalBufferCount = nMinimalBufferCount;
-		return S_OK;
-	}
+    STDMETHOD(GetMinimalBufferCount)(LONG* pnMinimalBufferCount)
+    {
+        if(!pnMinimalBufferCount)
+            return E_POINTER;
+        *pnMinimalBufferCount = m_nMinimalBufferCount;
+        return S_OK;
+    }
+    STDMETHOD(SetMinimalBufferCount)(LONG nMinimalBufferCount)
+    {
+        m_nMinimalBufferCount = nMinimalBufferCount;
+        return S_OK;
+    }
 
 private:
-	long m_cMaxBuffer;
+    long m_cMaxBuffer;
     CMediaType m_mt;
-	LONG m_nMinimalBufferCount;
+    LONG m_nMinimalBufferCount;
 };
 
 // input pin, receives data corresponding to one
@@ -88,12 +88,12 @@ class MuxInput
 {
 public:
     MuxInput(Mpeg4Mux* pFilter, CCritSec* pLock, HRESULT* phr, LPCWSTR pName, int index);
-	~MuxInput();
+    ~MuxInput();
 
     INT GetIndex() const
-	{
-		return m_index;
-	}
+    {
+        return m_index;
+    }
 
     // lifetime management for pins is normally delegated to the filter, but
     // we need to be able to create and delete them independently, so keep 
@@ -109,27 +109,27 @@ public:
 
     DECLARE_IUNKNOWN
     STDMETHODIMP NonDelegatingQueryInterface(REFIID InterfaceIdentifier, VOID** ppvObject)
-	{
-		#define A(x) if(InterfaceIdentifier == __uuidof(x)) return GetInterface((x*) this, ppvObject);
-		A(IAMStreamControl)
-		A(IMuxInputPin)
-		#undef A
-		return __super::NonDelegatingQueryInterface(InterfaceIdentifier, ppvObject);
-	}
+    {
+        #define A(x) if(InterfaceIdentifier == __uuidof(x)) return GetInterface((x*) this, ppvObject);
+        A(IAMStreamControl)
+        A(IMuxInputPin)
+        #undef A
+        return __super::NonDelegatingQueryInterface(InterfaceIdentifier, ppvObject);
+    }
 
     // CBasePin overrides
     HRESULT CheckMediaType(const CMediaType* pmt);
     HRESULT GetMediaType(int iPosition, CMediaType* pmt);
     
     // input
-	STDMETHODIMP NewSegment(REFERENCE_TIME nStartTime, REFERENCE_TIME nStopTime, DOUBLE fRate)
-	{
-		#if defined(WITH_DIRECTSHOWSPY)
-			if(m_pMediaSampleTrace)
-				m_pMediaSampleTrace->RegisterNewSegment((IBaseFilter*) m_pFilter, Name(), nStartTime, nStopTime, fRate, nullptr, 0);
-		#endif // defined(WITH_DIRECTSHOWSPY)
-		return __super::NewSegment(nStartTime, nStopTime, fRate);
-	}
+    STDMETHODIMP NewSegment(REFERENCE_TIME nStartTime, REFERENCE_TIME nStopTime, DOUBLE fRate)
+    {
+        #if defined(WITH_DIRECTSHOWSPY)
+            if(m_pMediaSampleTrace)
+                m_pMediaSampleTrace->RegisterNewSegment((IBaseFilter*) m_pFilter, Name(), nStartTime, nStopTime, fRate, nullptr, 0);
+        #endif // defined(WITH_DIRECTSHOWSPY)
+        return __super::NewSegment(nStartTime, nStopTime, fRate);
+    }
     STDMETHODIMP Receive(IMediaSample* pSample);
     STDMETHODIMP EndOfStream();
     STDMETHODIMP BeginFlush();
@@ -145,50 +145,50 @@ public:
 
     // support custom allocator
     STDMETHOD(GetAllocator)(IMemAllocator** ppAllocator) override;
-	STDMETHOD(NotifyAllocator)(IMemAllocator* pAlloc, BOOL bReadOnly) override;
+    STDMETHOD(NotifyAllocator)(IMemAllocator* pAlloc, BOOL bReadOnly) override;
 
-	// IAMStreamControl methods
-	STDMETHOD(StartAt)(const REFERENCE_TIME* ptStart, DWORD dwCookie) override;
-	STDMETHOD(StopAt)(const REFERENCE_TIME* ptStop, BOOL bSendExtra, DWORD dwCookie) override;
-	STDMETHOD(GetInfo)(AM_STREAM_INFO* pInfo) override;
+    // IAMStreamControl methods
+    STDMETHOD(StartAt)(const REFERENCE_TIME* ptStart, DWORD dwCookie) override;
+    STDMETHOD(StopAt)(const REFERENCE_TIME* ptStop, BOOL bSendExtra, DWORD dwCookie) override;
+    STDMETHOD(GetInfo)(AM_STREAM_INFO* pInfo) override;
 
-	// IMuxInputPin
-	STDMETHOD(GetMemAllocators)(IUnknown** ppMemAllocatorUnknown, IUnknown** ppCopyMemAllocatorUnknown) override
-	{
-		if(!ppMemAllocatorUnknown || !ppCopyMemAllocatorUnknown)
-			return E_POINTER;
-		QzCComPtr<IMemAllocator>& pMemAllocator = reinterpret_cast<QzCComPtr<IMemAllocator>&>(*ppMemAllocatorUnknown);
-		QzCComPtr<IMemAllocator>& pCopyMemAllocator = reinterpret_cast<QzCComPtr<IMemAllocator>&>(*ppCopyMemAllocatorUnknown);
-		// WARN: Thread unsafe
-		pMemAllocator = m_pAllocator;
-		pCopyMemAllocator = m_pCopyAlloc;
-		return S_OK;
-	}
-	STDMETHOD(SetMaximalCopyMemAllocatorCapacity)(ULONG nCapacity) override
-	{
-		m_nMaximalCopyBufferCapacity = (SIZE_T) nCapacity;
-		return S_OK;
-	}
+    // IMuxInputPin
+    STDMETHOD(GetMemAllocators)(IUnknown** ppMemAllocatorUnknown, IUnknown** ppCopyMemAllocatorUnknown) override
+    {
+        if(!ppMemAllocatorUnknown || !ppCopyMemAllocatorUnknown)
+            return E_POINTER;
+        QzCComPtr<IMemAllocator>& pMemAllocator = reinterpret_cast<QzCComPtr<IMemAllocator>&>(*ppMemAllocatorUnknown);
+        QzCComPtr<IMemAllocator>& pCopyMemAllocator = reinterpret_cast<QzCComPtr<IMemAllocator>&>(*ppCopyMemAllocatorUnknown);
+        // WARN: Thread unsafe
+        pMemAllocator = m_pAllocator;
+        pCopyMemAllocator = m_pCopyAlloc;
+        return S_OK;
+    }
+    STDMETHOD(SetMaximalCopyMemAllocatorCapacity)(ULONG nCapacity) override
+    {
+        m_nMaximalCopyBufferCapacity = (SIZE_T) nCapacity;
+        return S_OK;
+    }
 
 private:
-	bool ShouldDiscard(IMediaSample* pSample);
-	HRESULT CopySampleProps(IMediaSample* pIn, IMediaSample* pOut);
+    bool ShouldDiscard(IMediaSample* pSample);
+    HRESULT CopySampleProps(IMediaSample* pIn, IMediaSample* pOut);
 
 private:
     Mpeg4Mux* m_pMux;
     int m_index;
     TrackWriter* m_pTrack;
 
-	CCritSec m_csStreamControl;
-	AM_STREAM_INFO m_StreamInfo;
+    CCritSec m_csStreamControl;
+    AM_STREAM_INFO m_StreamInfo;
 
-	SIZE_T m_nMaximalCopyBufferCapacity;
-	ContigBuffer m_CopyBuffer;
-	Suballocator* m_pCopyAlloc;
+    SIZE_T m_nMaximalCopyBufferCapacity;
+    ContigBuffer m_CopyBuffer;
+    Suballocator* m_pCopyAlloc;
 
-	#if defined(WITH_DIRECTSHOWSPY)
-		QzCComPtr<AlaxInfoDirectShowSpy::IMediaSampleTrace> m_pMediaSampleTrace;
-	#endif // defined(WITH_DIRECTSHOWSPY)
+    #if defined(WITH_DIRECTSHOWSPY)
+        QzCComPtr<AlaxInfoDirectShowSpy::IMediaSampleTrace> m_pMediaSampleTrace;
+    #endif // defined(WITH_DIRECTSHOWSPY)
 };
 
 
@@ -207,7 +207,7 @@ public:
     HRESULT GetMediaType(int iPosition, CMediaType* pmt);
     HRESULT DecideBufferSize(IMemAllocator * pAlloc, ALLOCATOR_PROPERTIES * pprop);
     HRESULT CompleteConnect(IPin *pReceivePin);
-	HRESULT BreakConnect();
+    HRESULT BreakConnect();
 
     // called from filter
     void Reset();
@@ -219,7 +219,7 @@ public:
     LONGLONG Position();
     HRESULT Replace(LONGLONG pos, const BYTE* pBuffer, long cBytes);
     HRESULT Append(const BYTE* pBuffer, long cBytes);
-	VOID NotifyMediaSampleWrite(INT nTrackIndex, IMediaSample* pMediaSample, SIZE_T nDataSize) override;
+    void NotifyMediaSampleWrite(int TrackIndex, IMediaSample* MediaSample, size_t DataSize) override;
 
 private:
     Mpeg4Mux* m_pMux;
@@ -273,13 +273,13 @@ public:
 
     DECLARE_IUNKNOWN
     STDMETHODIMP NonDelegatingQueryInterface(REFIID InterfaceIdentifier, VOID** ppvObject)
-	{
-		#define A(x) if(InterfaceIdentifier == __uuidof(x)) return GetInterface((x*) this, ppvObject);
-		A(IMediaSeeking)
-		A(IMuxFilter)
-		#undef A
-		return __super::NonDelegatingQueryInterface(InterfaceIdentifier, ppvObject);
-	}
+    {
+        #define A(x) if(InterfaceIdentifier == __uuidof(x)) return GetInterface((x*) this, ppvObject);
+        A(IMediaSeeking)
+        A(IMuxFilter)
+        #undef A
+        return __super::NonDelegatingQueryInterface(InterfaceIdentifier, ppvObject);
+    }
 
     // filter registration tables
     static const AMOVIESETUP_MEDIATYPE m_sudType[];
@@ -300,9 +300,9 @@ public:
     bool CanReceive(const CMediaType* pmt);
     TrackWriter* MakeTrack(int index, const CMediaType* pmt);
     void OnEOS();
-	REFERENCE_TIME Start() { return m_tStart;}
+    REFERENCE_TIME Start() { return m_tStart;}
 
-	VOID NotifyMediaSampleWrite(INT nTrackIndex, LONGLONG nDataPosition, SIZE_T nDataSize, IMediaSample* pMediaSample);
+    void NotifyMediaSampleWrite(int TrackIndex, uint64_t DataPosition, size_t DataSize, IMediaSample* MediaSample);
 
     // we implement IMediaSeeking to allow encoding
     // of specific portions of an input clip, and
@@ -331,125 +331,145 @@ public:
 
 // IMuxFilter
     STDMETHOD(IsTemporaryIndexFileEnabled)() override
-	{
-		//_Z4(atlTraceCOM, 4, _T("this 0x%p\n"), this);
-		//_ATLTRY
-		//{
-		    CAutoLock lock(&m_csFilter);
-			if(!m_bTemporaryIndexFileEnabled)
-				return S_FALSE;
-		//}
-		//_ATLCATCH(Exception)
-		//{
-		//	_C(Exception);
-		//}
-		return S_OK;
-	}
-    STDMETHOD(SetTemporaryIndexFileEnabled)(BOOL bTemporaryIndexFileEnabled) override
-	{
-		//_Z4(atlTraceCOM, 4, _T("this 0x%p, bEnabled %d\n"), this, bEnabled);
-		//_ATLTRY
-		//{
-		    CAutoLock lock(&m_csFilter);
-			if(m_bTemporaryIndexFileEnabled == bTemporaryIndexFileEnabled)
-				return S_FALSE;
-			//__D(IsActive(), VFW_E_WRONG_STATE);
-			m_bTemporaryIndexFileEnabled = bTemporaryIndexFileEnabled;
-		//}
-		//_ATLCATCH(Exception)
-		//{
-		//	_C(Exception);
-		//}
-		return S_OK;
-	}
-	STDMETHOD(GetAlignTrackStartTimeDisabled)() override
-	{
-		//_Z4(atlTraceCOM, 4, _T("this 0x%p\n"), this);
-		//_ATLTRY
-		//{
-		    CAutoLock lock(&m_csFilter);
-			if(!m_bAlignTrackStartTimeDisabled)
-				return S_FALSE;
-		//}
-		//_ATLCATCH(Exception)
-		//{
-		//	_C(Exception);
-		//}
-		return S_OK;
-	}
-	STDMETHOD(SetAlignTrackStartTimeDisabled)(BOOL bAlignTrackStartTimeDisabled) override
-	{
-		//_Z4(atlTraceCOM, 4, _T("this 0x%p, bAlignTrackStartTimeDisabled %d\n"), this, bAlignTrackStartTimeDisabled);
-		//_ATLTRY
-		//{
-		    CAutoLock lock(&m_csFilter);
-			if(m_bAlignTrackStartTimeDisabled == bAlignTrackStartTimeDisabled)
-				return S_FALSE;
-			//__D(IsActive(), VFW_E_WRONG_STATE);
-			m_bAlignTrackStartTimeDisabled = bAlignTrackStartTimeDisabled;
-		//}
-		//_ATLCATCH(Exception)
-		//{
-		//	_C(Exception);
-		//}
-		return S_OK;
-	}
-	STDMETHOD(GetMinimalMovieDuration)(LONGLONG* pnMinimalMovieDuration) override
-	{
-		//_Z4(atlTraceCOM, 4, _T("this 0x%p\n"), this);
-		//_ATLTRY
-		//{
-		//	__D(pnMinimalMovieDuration, E_POINTER);
-			CAutoLock lock(&m_csFilter);
-			*pnMinimalMovieDuration = (LONGLONG) m_nMinimalMovieDuration;
-		//}
-		//_ATLCATCH(Exception)
-		//{
-		//	_C(Exception);
-		//}
-		return S_OK;
-	}
-	STDMETHOD(SetMinimalMovieDuration)(LONGLONG nMinimalMovieDuration) override
-	{
-		//_Z4(atlTraceCOM, 4, _T("this 0x%p, nMinimalMovieDuration %I64d\n"), this, nMinimalMovieDuration);
-		//_ATLTRY
-		//{
-			CAutoLock lock(&m_csFilter);
-			if(m_nMinimalMovieDuration == (REFERENCE_TIME) nMinimalMovieDuration)
-				return S_FALSE;
-			//__D(IsActive(), VFW_E_WRONG_STATE);
-			m_nMinimalMovieDuration = (REFERENCE_TIME) nMinimalMovieDuration;
-		//}
-		//_ATLCATCH(Exception)
-		//{
-		//	_C(Exception);
-		//}
-		return S_OK;
-	}
-	STDMETHOD(SetComment)(BSTR Comment) override
-	{
-		//_Z4(atlTraceCOM, 4, _T("this 0x%p, Comment 0x%p \"%ls\"\n"), this, Comment, Comment ? Comment : L"");
-		//_ATLTRY
-		//{
-			CAutoLock lock(&m_csFilter);
-			//__D(IsActive(), VFW_E_WRONG_STATE);
-			if(Comment)
-			{
-				auto const CommentLength = wcslen(Comment);
-				m_Comment.resize(WideCharToMultiByte(CP_UTF8, 0, Comment, static_cast<int>(CommentLength), nullptr, 0, nullptr, nullptr) + 1);
-				m_Comment.resize(WideCharToMultiByte(CP_UTF8, 0, Comment, static_cast<int>(CommentLength), const_cast<char*>(m_Comment.data()), static_cast<int>(m_Comment.size()), nullptr, nullptr));
-			} else
-				m_Comment.clear();
-			if(m_pMovie)
-				m_pMovie->SetComment(m_Comment);
-		//}
-		//_ATLCATCH(Exception)
-		//{
-		//	_C(Exception);
-		//}
-		return S_OK;
-	}
-	
+    {
+        //TRACE(L"this 0x%p\n", this);
+        try
+        {
+            CAutoLock lock(&m_csFilter);
+            if(!m_TemporaryIndexFileEnabled)
+                return S_FALSE;
+        }
+        CATCH_RETURN();
+        return S_OK;
+    }
+    STDMETHOD(SetTemporaryIndexFileEnabled)(BOOL TemporaryIndexFileEnabled) override
+    {
+        //TRACE(L"this 0x%p, TemporaryIndexFileEnabled %d\n", this, TemporaryIndexFileEnabled);
+        try
+        {
+            CAutoLock lock(&m_csFilter);
+            if(m_TemporaryIndexFileEnabled == static_cast<bool>(TemporaryIndexFileEnabled))
+                return S_FALSE;
+            //__D(IsActive(), VFW_E_WRONG_STATE);
+            m_TemporaryIndexFileEnabled = static_cast<bool>(TemporaryIndexFileEnabled);
+        }
+        CATCH_RETURN();
+        return S_OK;
+    }
+    STDMETHOD(GetAlignTrackStartTimeDisabled)() override
+    {
+        //TRACE(atlTraceCOM, 4, _T("this 0x%p\n"), this);
+        //_ATLTRY
+        //{
+            CAutoLock lock(&m_csFilter);
+            if(!m_bAlignTrackStartTimeDisabled)
+                return S_FALSE;
+        //}
+        //_ATLCATCH(Exception)
+        //{
+        //	_C(Exception);
+        //}
+        return S_OK;
+    }
+    STDMETHOD(SetAlignTrackStartTimeDisabled)(BOOL bAlignTrackStartTimeDisabled) override
+    {
+        //TRACE(atlTraceCOM, 4, _T("this 0x%p, bAlignTrackStartTimeDisabled %d\n"), this, bAlignTrackStartTimeDisabled);
+        //_ATLTRY
+        //{
+            CAutoLock lock(&m_csFilter);
+            if(m_bAlignTrackStartTimeDisabled == bAlignTrackStartTimeDisabled)
+                return S_FALSE;
+            //__D(IsActive(), VFW_E_WRONG_STATE);
+            m_bAlignTrackStartTimeDisabled = bAlignTrackStartTimeDisabled;
+        //}
+        //_ATLCATCH(Exception)
+        //{
+        //	_C(Exception);
+        //}
+        return S_OK;
+    }
+    STDMETHOD(GetMinimalMovieDuration)(LONGLONG* pnMinimalMovieDuration) override
+    {
+        //TRACE(atlTraceCOM, 4, _T("this 0x%p\n"), this);
+        //_ATLTRY
+        //{
+        //	__D(pnMinimalMovieDuration, E_POINTER);
+            CAutoLock lock(&m_csFilter);
+            *pnMinimalMovieDuration = (LONGLONG) m_nMinimalMovieDuration;
+        //}
+        //_ATLCATCH(Exception)
+        //{
+        //	_C(Exception);
+        //}
+        return S_OK;
+    }
+    STDMETHOD(SetMinimalMovieDuration)(LONGLONG nMinimalMovieDuration) override
+    {
+        //TRACE(atlTraceCOM, 4, _T("this 0x%p, nMinimalMovieDuration %I64d\n"), this, nMinimalMovieDuration);
+        //_ATLTRY
+        //{
+            CAutoLock lock(&m_csFilter);
+            if(m_nMinimalMovieDuration == (REFERENCE_TIME) nMinimalMovieDuration)
+                return S_FALSE;
+            //__D(IsActive(), VFW_E_WRONG_STATE);
+            m_nMinimalMovieDuration = (REFERENCE_TIME) nMinimalMovieDuration;
+        //}
+        //_ATLCATCH(Exception)
+        //{
+        //	_C(Exception);
+        //}
+        return S_OK;
+    }
+    STDMETHOD(SetComment)(BSTR Comment) override
+    {
+        //TRACE(atlTraceCOM, 4, _T("this 0x%p, Comment 0x%p \"%ls\"\n"), this, Comment, Comment ? Comment : L"");
+        //_ATLTRY
+        //{
+            CAutoLock lock(&m_csFilter);
+            //__D(IsActive(), VFW_E_WRONG_STATE);
+            if(Comment)
+            {
+                auto const CommentLength = wcslen(Comment);
+                m_Comment.resize(WideCharToMultiByte(CP_UTF8, 0, Comment, static_cast<int>(CommentLength), nullptr, 0, nullptr, nullptr) + 1);
+                m_Comment.resize(WideCharToMultiByte(CP_UTF8, 0, Comment, static_cast<int>(CommentLength), const_cast<char*>(m_Comment.data()), static_cast<int>(m_Comment.size()), nullptr, nullptr));
+            } else
+                m_Comment.clear();
+            if(m_pMovie)
+                m_pMovie->SetComment(m_Comment);
+        //}
+        //_ATLCATCH(Exception)
+        //{
+        //	_C(Exception);
+        //}
+        return S_OK;
+    }
+    STDMETHOD(SetTemporaryIndexFileDirectory)(BSTR TemporaryIndexFileDirectory) override
+    {
+        //TRACE(L"this 0x%p, TemporaryIndexFileDirectory %ls\n", this, TemporaryIndexFileDirectory ? TemporaryIndexFileDirectory : L"(null)");
+        try
+        {
+            CAutoLock lock(&m_csFilter);
+            //__D(IsActive(), VFW_E_WRONG_STATE);
+            m_TemporaryIndexFileDirectory = TemporaryIndexFileDirectory;
+        }
+        CATCH_RETURN();
+        return S_OK;
+    }
+    #if !defined(NDEBUG)
+        STDMETHOD(SetSkipClose)(BOOL SkipClose) override
+        {
+            //TRACE(L"this 0x%p, SkipClose %d\n", this, SkipClose);
+            try
+            {
+                CAutoLock lock(&m_csFilter);
+                //__D(IsActive(), VFW_E_WRONG_STATE);
+                m_SkipClose = static_cast<bool>(SkipClose);
+            }
+            CATCH_RETURN();
+            return S_OK;
+        }
+    #endif
+    
 private:
     // construct only via class factory
     Mpeg4Mux(LPUNKNOWN pUnk, HRESULT* phr);
@@ -457,7 +477,7 @@ private:
 
 private:
     CCritSec m_csFilter;
-	std::string m_Comment;
+    std::string m_Comment;
     CCritSec m_csTracks;
     MuxOutput* m_pOutput;
     vector<MuxInput*> m_pInputs;
@@ -466,11 +486,16 @@ private:
     // for reporting (via GetCurrentPosition) after completion
     REFERENCE_TIME m_tWritten;
 
-	BOOL m_bAlignTrackStartTimeDisabled;
-	REFERENCE_TIME m_nMinimalMovieDuration;
+    BOOL m_bAlignTrackStartTimeDisabled;
+    REFERENCE_TIME m_nMinimalMovieDuration;
 
-	BOOL m_bTemporaryIndexFileEnabled;
+    bool m_TemporaryIndexFileEnabled = false;
+    std::wstring m_TemporaryIndexFileDirectory;
     CCritSec m_TemporaryIndexFileCriticalSection;
-	CTemporaryIndexFile m_TemporaryIndexFile;
+    CTemporaryIndexFile m_TemporaryIndexFile;
+
+    #if !defined(NDEBUG)
+        bool m_SkipClose = false;
+    #endif
 };
 
