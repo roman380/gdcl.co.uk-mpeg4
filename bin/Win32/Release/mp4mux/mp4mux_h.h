@@ -606,10 +606,10 @@ EXTERN_C const IID IID_IMuxFilterRecovery;
             /* [in] */ BSTR TemporaryIndexFileDirectory) = 0;
         
         virtual HRESULT STDMETHODCALLTYPE Needed( 
-            /* [out] */ BOOL *Needed) = 0;
+            /* [retval][out] */ BOOL *Needed) = 0;
         
         virtual HRESULT STDMETHODCALLTYPE Active( 
-            /* [out] */ BOOL *Active) = 0;
+            /* [retval][out] */ BOOL *Active) = 0;
         
         virtual HRESULT STDMETHODCALLTYPE Start( void) = 0;
         
@@ -649,12 +649,12 @@ EXTERN_C const IID IID_IMuxFilterRecovery;
         DECLSPEC_XFGVIRT(IMuxFilterRecovery, Needed)
         HRESULT ( STDMETHODCALLTYPE *Needed )( 
             IMuxFilterRecovery * This,
-            /* [out] */ BOOL *Needed);
+            /* [retval][out] */ BOOL *Needed);
         
         DECLSPEC_XFGVIRT(IMuxFilterRecovery, Active)
         HRESULT ( STDMETHODCALLTYPE *Active )( 
             IMuxFilterRecovery * This,
-            /* [out] */ BOOL *Active);
+            /* [retval][out] */ BOOL *Active);
         
         DECLSPEC_XFGVIRT(IMuxFilterRecovery, Start)
         HRESULT ( STDMETHODCALLTYPE *Start )( 
