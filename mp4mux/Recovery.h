@@ -304,6 +304,11 @@ class __declspec(uuid("{73D9D53D-30A3-451E-976A-2B4186FE27EC}")) MuxFilterRecove
     public winrt::implements<MuxFilterRecovery, IMuxFilterRecovery>
 {
 public:
+    MuxFilterRecovery() = default;
+    ~MuxFilterRecovery()
+    {
+        WI_ASSERT(!m_Thread.joinable());
+    }
 
     static std::string FormatFourCharacterCode(uint32_t Value)
     {
@@ -497,7 +502,12 @@ public:
                             auto const Time = std::chrono::system_clock::now();
                             if(Time - ReportTime >= g_ReportPeriodTime)
                             {
-                                WI_VERIFY_SUCCEEDED(m_Site->Progress(static_cast<double>(Position) / IndexFileSize));
+                                auto const Progress = static_cast<double>(Position) / IndexFileSize;
+                                {
+                                    [[maybe_unused]] auto&& DataLock = m_DataMutex.lock_exclusive();
+                                    m_Progress = Progress;
+                                }
+                                WI_VERIFY_SUCCEEDED(m_Site->Progress(Progress));
                                 ReportTime = Time;
                             }
                         }
@@ -670,10 +680,14 @@ public:
         TRACE(L"this 0x%p\n", this);
         try
         {
-            [[maybe_unused]] auto&& DataLock = m_DataMutex.lock_exclusive();
+            [[maybe_unused]] auto&& ThreadLock = m_ThreadMutex.lock_exclusive();
             if(m_Active)
                 return S_FALSE;
             WI_ASSERT(!m_Thread.joinable());
+            {
+                [[maybe_unused]] auto&& DataLock = m_DataMutex.lock_exclusive();
+                m_Progress = 0;
+            }
             m_ThreadTermination.store(false);
             m_Thread = std::move(std::thread([&] { Run(); }));
             m_Active = true;
@@ -686,11 +700,23 @@ public:
         TRACE(L"this 0x%p\n", this);
         try
         {
-            [[maybe_unused]] auto&& DataLock = m_DataMutex.lock_exclusive();
+            [[maybe_unused]] auto&& ThreadLock = m_ThreadMutex.lock_exclusive();
             m_ThreadTermination.store(true);
             if(m_Thread.joinable())
                 m_Thread.join();
             m_Active = false;
+        }
+        CATCH_RETURN();
+        return S_OK;
+    }
+    IFACEMETHOD(Progress)(DOUBLE* Progress) override
+    {
+        //TRACE(L"this 0x%p\n", this);
+        try
+        {
+            THROW_HR_IF_NULL(E_POINTER, Progress);
+            [[maybe_unused]] auto&& DataLock = m_DataMutex.lock_shared();
+            *Progress = m_Progress;
         }
         CATCH_RETURN();
         return S_OK;
@@ -703,6 +729,8 @@ private:
     std::wstring m_TemporaryIndexFileDirectory;
     std::optional<bool> m_Needed;
     std::atomic_bool m_Active = false;
+    double m_Progress;
+    mutable wil::srwlock m_ThreadMutex;
     std::atomic_bool m_ThreadTermination;
     std::thread m_Thread;
     std::optional<HRESULT> m_Result;

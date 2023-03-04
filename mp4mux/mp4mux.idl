@@ -94,6 +94,7 @@ library GdclMp4Mux
 		HRESULT Active([out, retval] BOOL* Active);
 		HRESULT Start();
 		HRESULT Stop();
+		HRESULT Progress([out, retval] DOUBLE* Progress);
 	};
 	[
 		uuid(73D9D53D-30A3-451E-976A-2B4186FE27EC)
