@@ -47,6 +47,7 @@
     <Import Project="$(SolutionDir)AlaxInfoDirectShowSpy.props" />
     <Import Project="$(ProjectDir)$(ProjectName).props" />
     <Import Project="$(SolutionDir)tool\UpdateVersionInfoGit.props" />
+    <Import Project="$(SolutionDir)CreateInterop.props" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <ItemDefinitionGroup>
