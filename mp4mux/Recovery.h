@@ -497,7 +497,7 @@ public:
                             break;
                         if(m_ThreadTermination)
                             break;
-                        if(m_Site && RecordIndex % 64)
+                        if(!(RecordIndex % 256))
                         {
                             auto const Time = std::chrono::system_clock::now();
                             if(Time - ReportTime >= g_ReportPeriodTime)
@@ -507,7 +507,8 @@ public:
                                     [[maybe_unused]] auto&& DataLock = m_DataMutex.lock_exclusive();
                                     m_Progress = Progress;
                                 }
-                                WI_VERIFY_SUCCEEDED(m_Site->Progress(Progress));
+                                if(m_Site)
+                                    WI_VERIFY_SUCCEEDED(m_Site->Progress(Progress));
                                 ReportTime = Time;
                             }
                         }
@@ -688,9 +689,9 @@ public:
                 [[maybe_unused]] auto&& DataLock = m_DataMutex.lock_exclusive();
                 m_Progress = 0;
             }
+            m_Active = true;
             m_ThreadTermination.store(false);
             m_Thread = std::move(std::thread([&] { Run(); }));
-            m_Active = true;
         }
         CATCH_RETURN();
         return S_OK;
