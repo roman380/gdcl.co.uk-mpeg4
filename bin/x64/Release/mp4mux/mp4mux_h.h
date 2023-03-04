@@ -615,6 +615,9 @@ EXTERN_C const IID IID_IMuxFilterRecovery;
         
         virtual HRESULT STDMETHODCALLTYPE Stop( void) = 0;
         
+        virtual HRESULT STDMETHODCALLTYPE Progress( 
+            /* [retval][out] */ DOUBLE *Progress) = 0;
+        
     };
     
     
@@ -664,6 +667,11 @@ EXTERN_C const IID IID_IMuxFilterRecovery;
         HRESULT ( STDMETHODCALLTYPE *Stop )( 
             IMuxFilterRecovery * This);
         
+        DECLSPEC_XFGVIRT(IMuxFilterRecovery, Progress)
+        HRESULT ( STDMETHODCALLTYPE *Progress )( 
+            IMuxFilterRecovery * This,
+            /* [retval][out] */ DOUBLE *Progress);
+        
         END_INTERFACE
     } IMuxFilterRecoveryVtbl;
 
@@ -701,6 +709,9 @@ EXTERN_C const IID IID_IMuxFilterRecovery;
 
 #define IMuxFilterRecovery_Stop(This)	\
     ( (This)->lpVtbl -> Stop(This) ) 
+
+#define IMuxFilterRecovery_Progress(This,Progress)	\
+    ( (This)->lpVtbl -> Progress(This,Progress) ) 
 
 #endif /* COBJMACROS */
 
