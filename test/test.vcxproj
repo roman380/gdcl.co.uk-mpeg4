@@ -72,6 +72,7 @@
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="FilePropertyStore.cpp" />
+    <ClCompile Include="Performance.cpp" />
     <ClCompile Include="Recovery.cpp" />
   </ItemGroup>
   <ItemGroup>
