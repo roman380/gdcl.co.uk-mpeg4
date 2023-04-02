@@ -65,7 +65,7 @@ namespace Test
 			Library Library(L"mp4mux.dll"), DemultiplexerLibrary(L"mp4demux.dll");
 			{
 				auto const FilterGraph2 = wil::CoCreateInstance<IFilterGraph2>(CLSID_FilterGraph, CLSCTX_INPROC_SERVER);
-				wil::com_ptr<IPin> CurrectOutputPin;
+				wil::com_ptr<IPin> CurrentOutputPin;
 				#pragma region Multiplexer
 				{
 					auto const Filter = Library.CreateInstance<MuxFilter, IMuxFilter>();
@@ -75,7 +75,7 @@ namespace Test
 					auto const BaseFilter = Filter.query<IBaseFilter>();
 					AddFilter(FilterGraph2, BaseFilter, L"Multiplexer");
 					AddSourceFilters(FilterGraph2, BaseFilter);
-					CurrectOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
+					CurrentOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
 				}
 				#pragma endregion
 				#pragma region File Writer
@@ -85,8 +85,8 @@ namespace Test
 					THROW_IF_FAILED(FileSinkFilter2->SetFileName(Path.c_str(), nullptr));
 					THROW_IF_FAILED(FileSinkFilter2->SetMode(AM_FILE_OVERWRITE));
 					AddFilter(FilterGraph2, BaseFilter, L"Renderer");
-					THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter).get()));
-					CurrectOutputPin.reset();
+					THROW_IF_FAILED(FilterGraph2->Connect(CurrentOutputPin.get(), Pin(BaseFilter).get()));
+					CurrentOutputPin.reset();
 				}
 				#pragma endregion
 				RunFilterGraph(FilterGraph2, 3s);
@@ -122,14 +122,14 @@ namespace Test
 			auto const Site = winrt::make_self<SampleGrabberSite>([&] (IMediaSample*) { SampleCount++; });
 			{
 				auto const FilterGraph2 = wil::CoCreateInstance<IFilterGraph2>(CLSID_FilterGraph, CLSCTX_INPROC_SERVER);
-				wil::com_ptr<IPin> CurrectOutputPin;
+				wil::com_ptr<IPin> CurrentOutputPin;
 				#pragma region Source
 				{
 					auto const BaseFilter = wil::CoCreateInstance<IBaseFilter>(CLSID_AsyncReader, CLSCTX_INPROC_SERVER);
 					auto const FileSourceFilter = BaseFilter.query<IFileSourceFilter>();
 					THROW_IF_FAILED(FileSourceFilter->Load(Path.c_str(), nullptr));
 					AddFilter(FilterGraph2, BaseFilter, L"Source");
-					CurrectOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
+					CurrentOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
 				}
 				#pragma endregion
 				#pragma region Demultiplexer
@@ -137,24 +137,24 @@ namespace Test
 					auto const Filter = DemultiplexerLibrary.CreateInstance<DemuxFilter, IDemuxFilter>();
 					auto const BaseFilter = Filter.query<IBaseFilter>();
 					AddFilter(FilterGraph2, BaseFilter, L"Demultiplexer");
-					THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
-					CurrectOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
+					THROW_IF_FAILED(FilterGraph2->Connect(CurrentOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
+					CurrentOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
 				}
 				#pragma endregion
 				#pragma region SampleGrabber
 				{
 					auto const BaseFilter = AddSampleGrabberFilter(Site.get());
 					AddFilter(FilterGraph2, BaseFilter, L"SampleGrabber");
-					THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
-					CurrectOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
+					THROW_IF_FAILED(FilterGraph2->Connect(CurrentOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
+					CurrentOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
 				}
 				#pragma endregion
 				#pragma region NullRenderer
 				{
 					auto const BaseFilter = wil::CoCreateInstance<IBaseFilter>(__uuidof(NullRenderer), CLSCTX_INPROC_SERVER);
 					AddFilter(FilterGraph2, BaseFilter, L"NullRenderer");
-					THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
-					CurrectOutputPin.reset();
+					THROW_IF_FAILED(FilterGraph2->Connect(CurrentOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
+					CurrentOutputPin.reset();
 				}
 				#pragma endregion
 				THROW_IF_FAILED(FilterGraph2.query<IMediaFilter>()->SetSyncSource(nullptr));
@@ -183,9 +183,9 @@ namespace Test
 				THROW_IF_FAILED(Filter->put_Live(VARIANT_TRUE));
 				auto const SourceBaseFilter = Filter.query<IBaseFilter>();
 				AddFilter(FilterGraph2, SourceBaseFilter, L"Source");
-				auto const CurrectOutputPin = Pin(SourceBaseFilter);
-				THROW_IF_FAILED(CurrectOutputPin.query<IAMStreamControl>()->StopAt(&g_StopTime, FALSE, 1));
-				THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(MultiplexerBaseFilter, PINDIR_INPUT).get()));
+				auto const CurrentOutputPin = Pin(SourceBaseFilter);
+				THROW_IF_FAILED(CurrentOutputPin.query<IAMStreamControl>()->StopAt(&g_StopTime, FALSE, 1));
+				THROW_IF_FAILED(FilterGraph2->Connect(CurrentOutputPin.get(), Pin(MultiplexerBaseFilter, PINDIR_INPUT).get()));
 			});
 		}
 
@@ -203,18 +203,18 @@ namespace Test
 				THROW_IF_FAILED(Filter->put_Live(!VARIANT_TRUE)); // TODO: Fix live audio?
 				auto const SourceBaseFilter = Filter.query<IBaseFilter>();
 				AddFilter(FilterGraph2, SourceBaseFilter, L"Source");
-				auto CurrectOutputPin = Pin(SourceBaseFilter);
-				THROW_IF_FAILED(CurrectOutputPin.query<IAMStreamControl>()->StopAt(&g_StopTime, FALSE, 1));
+				auto CurrentOutputPin = Pin(SourceBaseFilter);
+				THROW_IF_FAILED(CurrentOutputPin.query<IAMStreamControl>()->StopAt(&g_StopTime, FALSE, 1));
 				#if 1
 					{
 						struct __declspec(uuid("{8946E78B-FC60-4A6C-9CCF-A7A3C9CF5E31}")) Mpeg4AacAudioEncoderFilter;
 						auto const BaseFilter = wil::CoCreateInstance<IBaseFilter>(__uuidof(Mpeg4AacAudioEncoderFilter), CLSCTX_INPROC_SERVER);
 						AddFilter(FilterGraph2, BaseFilter, L"Encoder");
-						THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
-						CurrectOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
+						THROW_IF_FAILED(FilterGraph2->Connect(CurrentOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
+						CurrentOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
 					}
 				#endif
-				THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(MultiplexerBaseFilter, PINDIR_INPUT).get()));
+				THROW_IF_FAILED(FilterGraph2->Connect(CurrentOutputPin.get(), Pin(MultiplexerBaseFilter, PINDIR_INPUT).get()));
 			});
 		}
 
@@ -238,9 +238,9 @@ namespace Test
 					THROW_IF_FAILED(Filter->put_Live(VARIANT_TRUE));
 					auto const SourceBaseFilter = Filter.query<IBaseFilter>();
 					AddFilter(FilterGraph2, SourceBaseFilter, L"Video Source");
-					auto const CurrectOutputPin = Pin(SourceBaseFilter);
-					THROW_IF_FAILED(CurrectOutputPin.query<IAMStreamControl>()->StopAt(&g_StopTime, FALSE, 1));
-					THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(MultiplexerBaseFilter, PINDIR_INPUT, 0).get()));
+					auto const CurrentOutputPin = Pin(SourceBaseFilter);
+					THROW_IF_FAILED(CurrentOutputPin.query<IAMStreamControl>()->StopAt(&g_StopTime, FALSE, 1));
+					THROW_IF_FAILED(FilterGraph2->Connect(CurrentOutputPin.get(), Pin(MultiplexerBaseFilter, PINDIR_INPUT, 0).get()));
 				}
 				{
 					auto const Filter = wil::CoCreateInstance<IAudioSourceFilter>(__uuidof(AudioSourceFilter), CLSCTX_INPROC_SERVER);
@@ -249,18 +249,18 @@ namespace Test
 					THROW_IF_FAILED(Filter->put_Live(!VARIANT_TRUE)); // TODO: Fix live audio?
 					auto const SourceBaseFilter = Filter.query<IBaseFilter>();
 					AddFilter(FilterGraph2, SourceBaseFilter, L"Audio Source");
-					auto CurrectOutputPin = Pin(SourceBaseFilter);
-					THROW_IF_FAILED(CurrectOutputPin.query<IAMStreamControl>()->StopAt(&g_StopTime, FALSE, 1));
+					auto CurrentOutputPin = Pin(SourceBaseFilter);
+					THROW_IF_FAILED(CurrentOutputPin.query<IAMStreamControl>()->StopAt(&g_StopTime, FALSE, 1));
 					#if 1 // WARN: PCM audio is handled differently in MuxFilter and... is basically incompatible
 						{
 							struct __declspec(uuid("{8946E78B-FC60-4A6C-9CCF-A7A3C9CF5E31}")) Mpeg4AacAudioEncoderFilter;
 							auto const BaseFilter = wil::CoCreateInstance<IBaseFilter>(__uuidof(Mpeg4AacAudioEncoderFilter), CLSCTX_INPROC_SERVER);
 							AddFilter(FilterGraph2, BaseFilter, L"Encoder");
-							THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
-							CurrectOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
+							THROW_IF_FAILED(FilterGraph2->Connect(CurrentOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
+							CurrentOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
 						}
 					#endif
-					THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(MultiplexerBaseFilter, PINDIR_INPUT, 1).get()));
+					THROW_IF_FAILED(FilterGraph2->Connect(CurrentOutputPin.get(), Pin(MultiplexerBaseFilter, PINDIR_INPUT, 1).get()));
 				}
 			});
 		}

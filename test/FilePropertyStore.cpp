@@ -97,7 +97,7 @@ namespace Test
 			{
 				Library Library(L"mp4mux.dll");
 				auto const FilterGraph2 = wil::CoCreateInstance<IFilterGraph2>(CLSID_FilterGraph, CLSCTX_INPROC_SERVER);
-				wil::com_ptr<IPin> CurrectOutputPin;
+				wil::com_ptr<IPin> CurrentOutputPin;
 				#pragma region Source
 				{
 					auto const Filter = wil::CoCreateInstance<IVideoSourceFilter>(__uuidof(VideoSourceFilter), CLSCTX_INPROC_SERVER);
@@ -108,8 +108,8 @@ namespace Test
 					THROW_IF_FAILED(Filter->SetMediaTypeRate(25, 1));
 					auto const SourceBaseFilter = Filter.query<IBaseFilter>();
 					AddFilter(FilterGraph2, SourceBaseFilter, L"Source");
-					CurrectOutputPin = Pin(SourceBaseFilter);
-					THROW_IF_FAILED(CurrectOutputPin.query<IAMStreamControl>()->StopAt(&g_StopTime, FALSE, 1));
+					CurrentOutputPin = Pin(SourceBaseFilter);
+					THROW_IF_FAILED(CurrentOutputPin.query<IAMStreamControl>()->StopAt(&g_StopTime, FALSE, 1));
 				}
 				#pragma endregion
 				#pragma region Multiplexer
@@ -118,8 +118,8 @@ namespace Test
 					THROW_IF_FAILED(Filter->SetComment(const_cast<BSTR>(FromMultiByte(g_Comment).c_str())));
 					auto const BaseFilter = Filter.query<IBaseFilter>();
 					AddFilter(FilterGraph2, BaseFilter, L"Multiplexer");
-					THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
-					CurrectOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
+					THROW_IF_FAILED(FilterGraph2->Connect(CurrentOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
+					CurrentOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
 				}
 				#pragma endregion
 				#pragma region File Writer
@@ -129,8 +129,8 @@ namespace Test
 					THROW_IF_FAILED(FileSinkFilter2->SetFileName(Path.c_str(), nullptr));
 					THROW_IF_FAILED(FileSinkFilter2->SetMode(AM_FILE_OVERWRITE));
 					AddFilter(FilterGraph2, BaseFilter, L"Renderer");
-					THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter).get()));
-					CurrectOutputPin.reset();
+					THROW_IF_FAILED(FilterGraph2->Connect(CurrentOutputPin.get(), Pin(BaseFilter).get()));
+					CurrentOutputPin.reset();
 				}
 				#pragma endregion
 				THROW_IF_FAILED(FilterGraph2.query<IMediaFilter>()->SetSyncSource(nullptr)); // ASAP
