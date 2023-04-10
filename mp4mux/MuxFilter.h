@@ -217,8 +217,8 @@ public:
     // AtomWriter methods
     LONGLONG Length();
     LONGLONG Position();
-    HRESULT Replace(LONGLONG pos, const BYTE* pBuffer, long cBytes);
-    HRESULT Append(const BYTE* pBuffer, long cBytes);
+    HRESULT Replace(LONGLONG pos, const BYTE* pBuffer, size_t cBytes);
+    HRESULT Append(const BYTE* pBuffer, size_t cBytes);
     void NotifyMediaSampleWrite(int TrackIndex, IMediaSample* MediaSample, size_t DataSize) override;
 
 private:

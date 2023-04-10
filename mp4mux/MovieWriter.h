@@ -69,8 +69,8 @@ public:
 
     virtual LONGLONG Length() = 0;
     virtual LONGLONG Position() = 0;
-    virtual HRESULT Replace(LONGLONG pos, const BYTE* pBuffer, long cBytes) = 0;
-    virtual HRESULT Append(const BYTE* pBuffer, long cBytes) = 0;
+    virtual HRESULT Replace(LONGLONG pos, uint8_t const* pBuffer, size_t cBytes) = 0;
+    virtual HRESULT Append(uint8_t const* pBuffer, size_t cBytes) = 0;
 
     virtual void NotifyMediaSampleWrite(int TrackIndex, IMediaSample* MediaSample, size_t DataSize)
     { 
@@ -96,11 +96,11 @@ public:
     {
         return m_pContainer->Position() + m_llOffset;
     }
-    HRESULT Replace(LONGLONG pos, const BYTE* pBuffer, long cBytes) 
+    HRESULT Replace(LONGLONG pos, const BYTE* pBuffer, size_t cBytes) 
     {
         return m_pContainer->Replace(m_llOffset + pos, pBuffer, cBytes);
     }
-    HRESULT Append(const BYTE* pBuffer, long cBytes)
+    HRESULT Append(const BYTE* pBuffer, size_t cBytes)
     {
         m_cBytes += cBytes;
         return m_pContainer->Append(pBuffer, cBytes);
@@ -425,9 +425,9 @@ public:
     HRESULT WriteHead(Atom* patm);
     REFERENCE_TIME LastWrite();
 
-    void IndexChunk(LONGLONG posChunk, long nSamples);
-    void IndexSample(bool bSync, REFERENCE_TIME tStart, REFERENCE_TIME tStop, long cBytes);
-    void OldIndex(LONGLONG posChunk, long cBytes);
+    void IndexChunk(LONGLONG posChunk, size_t nSamples);
+    void IndexSample(bool bSync, REFERENCE_TIME tStart, REFERENCE_TIME tStop, size_t cBytes);
+    void OldIndex(LONGLONG posChunk, size_t cBytes);
     void SetOldIndexStart(REFERENCE_TIME tStart)
     {
         m_Durations.SetOldIndexStart(tStart);

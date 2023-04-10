@@ -97,7 +97,6 @@
     <ClCompile Include="mp4mux.cpp" />
     <ClCompile Include="MuxFilter.cpp" />
     <ClCompile Include="NALUnit.cpp" />
-    <ClCompile Include="ParseBuffer.cpp" />
     <ClCompile Include="Recovery.cpp" />
     <ClCompile Include="StdAfx.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
@@ -118,7 +117,6 @@
     <ClInclude Include="MovieWriter.h" />
     <ClInclude Include="MuxFilter.h" />
     <ClInclude Include="NALUnit.h" />
-    <ClInclude Include="ParseBuffer.h" />
     <ClInclude Include="Recovery.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="smartptr.h" />

@@ -665,11 +665,11 @@ MuxInput::NotifyAllocator(IMemAllocator* pAlloc, BOOL bReadOnly)
         #pragma region Minimal Buffer Size (per Major Type)
         // NOTE: Since we maintain contiguous buffer internally, it makes sense to allocate reasonable space to be able to append/accumulate data right there
         if(m_mt.majortype == MEDIATYPE_Video)
-            cSpace = max(cSpace, 25 << 20); // 25 MB
+            cSpace = std::max<int64_t>(cSpace, 25 << 20); // 25 MB
         if(m_mt.majortype == MEDIATYPE_Audio)
-            cSpace = max(cSpace, 1 << 20); // 1 MB
+            cSpace = std::max<int64_t>(cSpace, 1 << 20); // 1 MB
         #pragma endregion
-        cSpace = min((INT64) m_nMaximalCopyBufferCapacity, cSpace);
+        cSpace = std::min<int64_t>(m_nMaximalCopyBufferCapacity, cSpace);
         HRESULT hr = m_CopyBuffer.Allocate((SIZE_T) cSpace);
         if(SUCCEEDED(hr))
         {
@@ -930,7 +930,7 @@ MuxOutput::Length()
 }
 
 HRESULT 
-MuxOutput::Append(const BYTE* pBuffer, long cBytes)
+MuxOutput::Append(const BYTE* pBuffer, size_t cBytes)
 {
     HRESULT hr = Replace(m_llBytes, pBuffer, cBytes);
     m_llBytes += cBytes;
@@ -938,7 +938,7 @@ MuxOutput::Append(const BYTE* pBuffer, long cBytes)
 }
 
 HRESULT 
-MuxOutput::Replace(LONGLONG pos, const BYTE* pBuffer, long cBytes)
+MuxOutput::Replace(LONGLONG pos, const BYTE* pBuffer, size_t cBytes)
 {
     // all media content is written when the graph is running,
     // using IMemInputPin. On stop (during our stop, but after the
@@ -962,8 +962,8 @@ MuxOutput::Replace(LONGLONG pos, const BYTE* pBuffer, long cBytes)
             if (SUCCEEDED(hr))
             {
                 ULONG cActual;
-                hr = pStream->Write(pBuffer, cBytes, &cActual);
-                if (SUCCEEDED(hr) && ((long)cActual != cBytes))
+                hr = pStream->Write(pBuffer, static_cast<ULONG>(cBytes), &cActual);
+                if (SUCCEEDED(hr) && (cActual != cBytes))
                 {
                     hr = E_FAIL;
                 }
@@ -978,11 +978,11 @@ MuxOutput::Replace(LONGLONG pos, const BYTE* pBuffer, long cBytes)
             hr = GetDeliveryBuffer(&pSample, NULL, NULL, 0);
             if (SUCCEEDED(hr))
             {
-                long cThis = min(pSample->GetSize(), cBytes);
+                size_t cThis = std::min<size_t>(pSample->GetSize(), cBytes);
                 BYTE* pDest;
                 pSample->GetPointer(&pDest);
                 CopyMemory(pDest, pBuffer,  cThis);
-                pSample->SetActualDataLength(cThis);
+                pSample->SetActualDataLength(static_cast<long>(cThis));
     
                 // time stamps indicate file position in bytes
                 LONGLONG tStart = pos;

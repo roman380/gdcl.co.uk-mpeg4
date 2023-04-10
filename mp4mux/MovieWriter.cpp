@@ -645,32 +645,32 @@ TrackWriter::LastWrite()
 }
 
 void 
-TrackWriter::IndexChunk(LONGLONG posChunk, long nSamples)
+TrackWriter::IndexChunk(LONGLONG posChunk, size_t nSamples)
 {
-    m_SC.Add(nSamples);
+    m_SC.Add(static_cast<long>(nSamples));
     m_CO.Add(posChunk);
 }
 
 void 
-TrackWriter::IndexSample(bool bSync, REFERENCE_TIME tStart, REFERENCE_TIME tStop, long cBytes)
+TrackWriter::IndexSample(bool bSync, REFERENCE_TIME tStart, REFERENCE_TIME tStop, size_t cBytes)
 {
     // CTS offset means ES type-specific content parser?
 	// -- this is done now by calculation from the frames start time (heuristically!)
 
-    m_Sizes.Add(cBytes);
+    m_Sizes.Add(static_cast<long>(cBytes));
     m_Durations.Add(tStart, tStop);
     m_Syncs.Add(bSync);
 }
 
 void 
-TrackWriter::OldIndex(LONGLONG posChunk, long cBytes)
+TrackWriter::OldIndex(LONGLONG posChunk, size_t cBytes)
 {
 	// check if it works before optimising it!
-	int nSamples = cBytes / m_pType->BlockAlign();
-	m_Sizes.AddMultiple(1, nSamples);
-	m_Durations.AddOldFormat(nSamples);
+	size_t nSamples = cBytes / m_pType->BlockAlign();
+	m_Sizes.AddMultiple(1, static_cast<long>(nSamples));
+	m_Durations.AddOldFormat(static_cast<long>(nSamples));
 
-	m_SC.Add(nSamples);
+	m_SC.Add(static_cast<long>(nSamples));
 	m_CO.Add(posChunk);
 }
 
@@ -907,14 +907,14 @@ MediaChunk::Write(Atom* patm)
 
 	if (m_bOldIndexFormat)
 	{
-		long cBytes = 0;
+		size_t cBytes = 0;
 
 		// ensure that we don't break in the middle of a sample (Maxim Kartavenkov)
-		const int MAX_PCM_SIZE = 22050;
-		int max_bytes = MAX_PCM_SIZE - (MAX_PCM_SIZE % m_pTrack->Handler()->BlockAlign());
+		const size_t MAX_PCM_SIZE = 22050;
+		size_t max_bytes = MAX_PCM_SIZE - (MAX_PCM_SIZE % m_pTrack->Handler()->BlockAlign());
 
 		list<IMediaSample*>::iterator it = m_Samples.begin();
-		long cAvail = 0;
+		size_t cAvail = 0;
 		BYTE* pBuffer = NULL;
 
 		for (;;)
@@ -934,13 +934,13 @@ MediaChunk::Write(Atom* patm)
 					m_pTrack->SetOldIndexStart(tStart);
 				}
 			}
-			long cThis = max_bytes - cBytes;
+			size_t cThis = max_bytes - cBytes;
 			if (cThis > cAvail)
 			{
 				cThis = cAvail;
 			}
 
-			int cActual = 0;
+			size_t cActual = 0;
 			m_pTrack->Handler()->WriteData(patm, pBuffer, cThis, &cActual);
 			cBytes += cActual;
 			cAvail -= cActual;
@@ -964,8 +964,8 @@ MediaChunk::Write(Atom* patm)
 	// across several buffers, with Sync flag at start and
 	// time on last buffer.
 	bool bSync = false;
-	long cBytes = 0;
-	long nSamples = 0;
+	size_t cBytes = 0;
+	size_t nSamples = 0;
 
 	// loop once through the samples writing the data
 	list<IMediaSample*>::iterator it;
@@ -984,7 +984,7 @@ MediaChunk::Write(Atom* patm)
 		// write payload, including any transformation (eg BSF to length-prepended)
 		BYTE* pBuffer;
 		pSample->GetPointer(&pBuffer);
-		int cActual = 0;
+		size_t cActual = 0;
 		m_pTrack->Handler()->WriteData(patm, pBuffer, pSample->GetActualDataLength(), &cActual);
 		cBytes += cActual;
 		REFERENCE_TIME tStart, tEnd;

@@ -37,19 +37,19 @@ public:
     };
     Descriptor(TagType type);
 
-    void Append(const BYTE* pBuffer, long cBytes);
+    void Append(uint8_t const* pBuffer, size_t cBytes);
     void Append(Descriptor* pdesc);
     long Length();
-    void Write(BYTE* pBuffer);
+    void Write(uint8_t* pBuffer);
     HRESULT Write(Atom* patm);
 private:
-    void Reserve(long cBytes);
+    void Reserve(size_t cBytes);
 
 private:
     TagType m_type;
-    long m_cBytes;
-    long m_cValid;
-    smart_array<BYTE> m_pBuffer;
+    size_t m_cBytes;
+    size_t m_cValid;
+    smart_array<uint8_t> m_pBuffer;
 };
 
 class Atom;
@@ -89,7 +89,7 @@ public:
 		return UNITS / SampleRate();
 	}
 
-	virtual HRESULT WriteData(Atom* patm, const BYTE* pData, int cBytes, int* pcActual);
+	virtual HRESULT WriteData(Atom* patm, uint8_t const* pData, size_t cBytes, size_t* pcActual);
     static bool CanSupport(const CMediaType* pmt);
     static TypeHandler* Make(const CMediaType* pmt);
 };

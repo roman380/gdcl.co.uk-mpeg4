@@ -7,6 +7,10 @@
 //////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
+
+#include <utility>
+#include <vector>
+
 #include <dvdmedia.h>
 #include <mmreg.h>  // for a-law and u-law G.711 audio types
 #include <wmcodecdsp.h> // MEDIASUBTYPE_DOLBY_DDPLUS
@@ -14,7 +18,6 @@
 #include <ksmedia.h> // FORMAT_UVCH264Video
 #include "MovieWriter.h"
 #include "nalunit.h"
-#include "ParseBuffer.h"
 #include "Bitstream.h"
 #include "logger.h"
 
@@ -24,14 +27,6 @@
 FOURCCMap MEDIASUBTYPE_MPEGLAYER3(WAVE_FORMAT_MPEGLAYER3);
 FOURCCMap MEDIASUBTYPE_ADTS(MAKEFOURCC('A', 'D', 'T', 'S'));
 //FOURCCMap MEDIASUBTYPE_RAW_AAC1(WAVE_FORMAT_RAW_AAC1);
-
-void WriteVariable(ULONG val, BYTE* pDest, int cBytes)
-{
-	for (int i = 0; i < cBytes; i++)
-	{
-		pDest[i] = BYTE((val >> (8 * (cBytes - (i+1)))) & 0xff);
-	}
-}
 
 class DivxHandler : public TypeHandler
 {
@@ -64,7 +59,7 @@ public:
 	long Height();
 
     void WriteDescriptor(Atom* patm, int id, int dataref, long scale);
-	HRESULT WriteData(Atom* patm, const BYTE* pData, int cBytes, int* pcActual);
+	HRESULT WriteData(Atom* patm, const BYTE* pData, size_t cBytes, size_t* pcActual) override;
 
 private:
     CMediaType m_mt;
@@ -84,28 +79,28 @@ public:
         return 'vide';
     }
     void WriteTREF(Atom* patm) {UNREFERENCED_PARAMETER(patm);}
-    bool IsVideo() 
+    bool IsVideo() override
     {
         return true;
     }
-    bool IsAudio()
+    bool IsAudio() override
     { 
         return false;
     }
-    long SampleRate()
+    long SampleRate() override
     {
         // an approximation is sufficient
         return 30;
     }
-    long Scale()
+    long Scale() override
     {
         return DEFAULT_TIMESCALE;
     }
-	long Width();
-	long Height();
+	long Width() override;
+	long Height() override;
 
-    void WriteDescriptor(Atom* patm, int id, int dataref, long scale);
-	LONGLONG FrameDuration();
+    void WriteDescriptor(Atom* patm, int id, int dataref, long scale) override;
+	LONGLONG FrameDuration() override;
 
 protected:
     CMediaType m_mt;
@@ -114,24 +109,149 @@ protected:
 class H264ByteStreamHandler : public H264Handler
 {
 public:
-	H264ByteStreamHandler(const CMediaType* pmt);
+    H264ByteStreamHandler(CMediaType const* MediaType) : 
+		H264Handler(MediaType)
+    {
+		auto const& Format = *m_mt.FormatType();
+        if(Format == FORMAT_MPEG2Video)
+        {
+            auto const* Mpeg2VideoInfo = reinterpret_cast<MPEG2VIDEOINFO const*>(m_mt.Format());
+			m_FrameSize = std::make_pair(Mpeg2VideoInfo->hdr.bmiHeader.biWidth, Mpeg2VideoInfo->hdr.bmiHeader.biHeight);
+            m_FrameTime = Mpeg2VideoInfo->hdr.AvgTimePerFrame;
+        } else
+        if(Format == FORMAT_VideoInfo)
+        {
+            auto const* VideoInfoHeader = reinterpret_cast<VIDEOINFOHEADER const*>(m_mt.Format());
+			m_FrameSize = std::make_pair(VideoInfoHeader->bmiHeader.biWidth, VideoInfoHeader->bmiHeader.biHeight);
+            m_FrameTime = VideoInfoHeader->AvgTimePerFrame;
+        } else
+        if(Format == FORMAT_VideoInfo2)
+        {
+            auto const* VideoInfoHeader2 = reinterpret_cast<VIDEOINFOHEADER2 const*>(m_mt.Format());
+			m_FrameSize = std::make_pair(VideoInfoHeader2->bmiHeader.biWidth, VideoInfoHeader2->bmiHeader.biHeight);
+            m_FrameTime = VideoInfoHeader2->AvgTimePerFrame;
+        } else
+        // TODO: or H264Handler
+        if(Format == FORMAT_UVCH264Video)
+        {
+            auto const* H264VideoInfo = reinterpret_cast<KS_H264VIDEOINFO const*>(m_mt.Format());
+			m_FrameSize = std::make_pair(H264VideoInfo->wWidth, H264VideoInfo->wHeight);
+            m_FrameTime = H264VideoInfo->dwFrameInterval;
+        }
+    }
 
-    void WriteDescriptor(Atom* patm, int id, int dataref, long scale);
-	LONGLONG FrameDuration();
-	HRESULT WriteData(Atom* patm, const BYTE* pData, int cBytes, int* pcActual);
+    void WriteDescriptor(Atom* patm, int id, int dataref, long scale)
+    {
+        UNREFERENCED_PARAMETER(scale);
+        UNREFERENCED_PARAMETER(id);
+        smart_ptr<Atom> psd = patm->CreateAtom('avc1');
 
-	long Width()	{ return m_cx; }
-	long Height()	{ return m_cy; }
+        // locate param sets in parse buffer
+        NALUnit sps, pps;
+        NALUnit nal;
+        uint8_t const* ParamSetData = m_ParamSets.data();
+        auto ParamSetDataBoundary = ParamSetData + m_ParamSets.size();
+        while(nal.Parse(ParamSetData, ParamSetDataBoundary - ParamSetData, 4))
+        {
+            ParamSetData = nal.Start() + nal.Length();
+            if(nal.Type() == NALUnit::NAL_Sequence_Params)
+                sps = nal; //std::move(nal); TODO
+            else 
+			if(nal.Type() == NALUnit::NAL_Picture_Params)
+                pps = nal; //std::move(nal);
+        }
 
-	enum { nalunit_length_field = 4 };
+        SeqParamSet seq;
+        seq.Parse(&sps);
+
+        BYTE b[78];
+        ZeroMemory(b, 78);
+        WriteShort(dataref, b + 6);
+        WriteShort(m_FrameSize.first, b + 24);
+        WriteShort(m_FrameSize.second, b + 26);
+        b[29] = 0x48;
+        b[33] = 0x48;
+        b[41] = 1;
+        b[75] = 24;
+        WriteShort(-1, b + 76);
+        psd->Append(b, 78);
+
+        smart_ptr<Atom> pesd = psd->CreateAtom('avcC');
+        b[0] = 1;           // version 1
+        b[1] = (BYTE) seq.Profile();
+        b[2] = seq.Compat();
+        b[3] = (BYTE) seq.Level();
+        // length of length-preceded nalus
+        b[4] = BYTE(0xfC | (4 - 1));
+
+        b[5] = 0xe1;        // 1 SPS
+
+        // in the descriptor, the length field for param set nalus is always 2
+        pesd->Append(b, 6);
+		*reinterpret_cast<uint16_t*>(&b[0]) = _byteswap_ushort(static_cast<uint16_t>(sps.Length()));
+        pesd->Append(b, 2);
+        pesd->Append(sps.Start(), sps.Length());
+
+        b[0] = 1;   // 1 PPS
+		*reinterpret_cast<uint16_t*>(&b[1]) = _byteswap_ushort(static_cast<uint16_t>(pps.Length()));
+        pesd->Append(b, 3);
+        pesd->Append(pps.Start(), pps.Length());
+
+        pesd->Close();
+        psd->Close();
+    }
+    long Width() override
+	{
+        return m_FrameSize.first;
+    }
+    long Height() override
+    {
+        return m_FrameSize.second;
+    }
+    LONGLONG FrameDuration() override
+    {
+        return m_FrameTime;
+    }
+    HRESULT WriteData(Atom* Atom, uint8_t const* Data, size_t DataSize, size_t* ActualDataSize) override
+    {
+		WI_ASSERT(ActualDataSize);
+		std::vector<uint8_t> TemporaryData;
+		// HOTFIX: Atom::Append is incredibly inefficient doing a pair of seek + write calls for every appendage;
+		//         to improve things, collect the data and write in a single call
+		TemporaryData.reserve(4 * 32 + static_cast<size_t>(DataSize));
+		auto const DataBoundary = Data + DataSize;
+        NALUnit nal;
+        while(nal.Parse(Data, DataBoundary - Data))
+        {
+            Data = nal.Start() + nal.Length();
+            uint32_t const Length = _byteswap_ulong(static_cast<uint32_t>(nal.Length()));
+
+            if(!m_SPS && (nal.Type() == NALUnit::NAL_Sequence_Params))
+            {
+                m_SPS = true;
+				std::copy(reinterpret_cast<uint8_t const*>(&Length), reinterpret_cast<uint8_t const*>(&Length + 1), std::back_inserter(m_ParamSets));
+				std::copy(nal.Start(), nal.Start() + nal.Length(), std::back_inserter(m_ParamSets));
+            } else if(!m_PPS && (nal.Type() == NALUnit::NAL_Picture_Params))
+            {
+                m_PPS = true;
+				std::copy(reinterpret_cast<uint8_t const*>(&Length), reinterpret_cast<uint8_t const*>(&Length + 1), std::back_inserter(m_ParamSets));
+				std::copy(nal.Start(), nal.Start() + nal.Length(), std::back_inserter(m_ParamSets));
+            }
+
+			std::copy(reinterpret_cast<uint8_t const*>(&Length), reinterpret_cast<uint8_t const*>(&Length + 1), std::back_inserter(TemporaryData));
+			std::copy(nal.Start(), nal.Start() + nal.Length(), std::back_inserter(TemporaryData));
+        }
+        Atom->Append(TemporaryData.data(), TemporaryData.size());
+        *ActualDataSize = TemporaryData.size();
+        return S_OK;
+    }
+
 private:
-	REFERENCE_TIME m_tFrame;
-	long m_cx;
-	long m_cy;
-
-	ParseBuffer m_ParamSets;		// stores param sets for WriteDescriptor
-	bool m_bSPS;
-	bool m_bPPS;
+    std::pair<long, long> m_FrameSize = std::make_pair(0, 0);
+    REFERENCE_TIME m_FrameTime = 0;
+	std::vector<uint8_t> m_ParamSets;
+    bool m_SPS = false;
+    bool m_PPS = false;
 };
 
 class FOURCCVideoHandler : public TypeHandler
@@ -177,7 +297,7 @@ public:
 	long Width();
 	long Height();
     void WriteDescriptor(Atom* patm, int id, int dataref, long scale);
-	HRESULT WriteData(Atom* patm, const BYTE* pData, int cBytes, int* pcActual);
+	HRESULT WriteData(Atom* patm, const BYTE* pData, size_t cBytes, size_t* pcActual) override;
 
 	bool IsNonMP4()			{ return m_bMJPG; }
 
@@ -312,7 +432,7 @@ public:
 	long Width()	{ return 0; }
 	long Height()	{ return 0; }
     void WriteDescriptor(Atom* patm, int id, int dataref, long scale);
-	HRESULT WriteData(Atom* patm, const BYTE* pData, int cBytes, int* pcActual);
+	HRESULT WriteData(Atom* patm, const BYTE* pData, size_t cBytes, size_t* pcActual) override;
 
 private:
     CMediaType m_mt;
@@ -472,7 +592,7 @@ public:
 	long Height()				{ return 0;		 }
 
 	long Scale();
-	HRESULT WriteData(Atom* patm, const BYTE* pData, int cbData, int* pcActual);
+	HRESULT WriteData(Atom* patm, const BYTE* pData, size_t cbData, size_t* pcActual) override;
     void WriteDescriptor(Atom* patm, int id, int dataref, long scale);
 
 private:
@@ -526,7 +646,7 @@ public:
 	long Height()				{ return 0;		 }
 
 	long Scale();
-	HRESULT WriteData(Atom* patm, const BYTE* pData, int cbData, int* pcActual);
+	HRESULT WriteData(Atom* patm, const BYTE* pData, size_t cbData, size_t* pcActual) override;
     void WriteDescriptor(Atom* patm, int id, int dataref, long scale);
 
 
@@ -875,7 +995,7 @@ TypeHandler::Make(const CMediaType* pmt)
 }
 
 HRESULT 
-TypeHandler::WriteData(Atom* patm, const BYTE* pData, int cBytes, int* pcActual)
+TypeHandler::WriteData(Atom* patm, const BYTE* pData, size_t cBytes, size_t* pcActual)
 {
 	*pcActual = cBytes;
 	return patm->Append(pData, cBytes);
@@ -973,7 +1093,7 @@ DivxHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
     psd->Close();
 }
 
-inline bool NextStartCode(const BYTE*&pBuffer, long& cBytes)
+inline bool NextStartCode(const BYTE*&pBuffer, size_t& cBytes)
 {
     while ((cBytes >= 4) &&
            (*(UNALIGNED DWORD *)pBuffer & 0x00FFFFFF) != 0x00010000) {
@@ -984,12 +1104,12 @@ inline bool NextStartCode(const BYTE*&pBuffer, long& cBytes)
 }
 
 HRESULT 
-DivxHandler::WriteData(Atom* patm, const BYTE* pData, int cBytes, int* pcActual)
+DivxHandler::WriteData(Atom* patm, const BYTE* pData, size_t cBytes, size_t* pcActual)
 {
 	if (m_cConfig == 0)
 	{
 		const BYTE* p = pData;
-		long c = cBytes;
+		size_t c = cBytes;
 		const BYTE* pVOL = NULL;
 		while (NextStartCode(p, c))
 		{
@@ -1044,13 +1164,13 @@ AACHandler::AACHandler(const CMediaType* pmt)
 }
 
 HRESULT 
-AACHandler::WriteData(Atom* patm, const BYTE* pData, int cBytes, int* pcActual)
+AACHandler::WriteData(Atom* patm, const BYTE* pData, size_t cBytes, size_t* pcActual)
 {
 	if ((cBytes > 7) && (pData[0] == 0xff) && ((pData[1] & 0xF0) == 0xF0))
 	{
 		if (m_mt.FormatLength() == sizeof(WAVEFORMATEX))
 		{
-			int len = ((pData[3] & 0x3) << 11) + (pData[4] << 3) + ((pData[5] >> 5) & 0x7);
+			unsigned int len = ((pData[3] & 0x3) << 11) + (pData[4] << 3) + ((pData[5] >> 5) & 0x7);
 			if (len == cBytes)
 			{
 				int header = 7;
@@ -1499,7 +1619,7 @@ struct APP0
 	DWORD fieldsize;
 };
 
-HRESULT FOURCCVideoHandler::WriteData(Atom* patm, const BYTE* pData, int cBytes, int* pcActual)
+HRESULT FOURCCVideoHandler::WriteData(Atom* patm, const BYTE* pData, size_t cBytes, size_t* pcActual)
 {
 	if (!m_bProcessMJPG)
 	{
@@ -1525,7 +1645,7 @@ HRESULT FOURCCVideoHandler::WriteData(Atom* patm, const BYTE* pData, int cBytes,
 	
 	int total = 0;
 	const BYTE* fieldstart = pData;
-	int cBytesTotal = cBytes;
+	size_t cBytesTotal = cBytes;
 
 	// point at which we insert APP0 and/or APP1.
 	const BYTE* pInsertBefore = 0;
@@ -1537,7 +1657,7 @@ HRESULT FOURCCVideoHandler::WriteData(Atom* patm, const BYTE* pData, int cBytes,
 
 	while (cBytes > 0)
 	{
-		int markerlen = 1;
+		unsigned int markerlen = 1;
 		if (*pData == 0xFF)
 		{
 			if (cBytes < 2)
@@ -2463,11 +2583,11 @@ long DolbyDigitalHandler::Scale()
     }
 }
 
-HRESULT DolbyDigitalHandler::WriteData(Atom* patm, const BYTE* pData, int cbData, int* pcActual)
+HRESULT DolbyDigitalHandler::WriteData(Atom* patm, const BYTE* pData, size_t cbData, size_t* pcActual)
 {
 	if (!m_bParsed)
 	{
-		if (!m_info.Parse(pData, cbData))
+		if (!m_info.Parse(pData, static_cast<int>(cbData)))
 		{
 			return E_INVALIDARG;
 		}
@@ -2785,18 +2905,18 @@ int DolbyDigitalPlusHandler::GetDependentSubstreams(int substreamid, int& chan_l
 	return num_dep_sub;
 }
 
-HRESULT DolbyDigitalPlusHandler::WriteData(Atom* patm, const BYTE* pData, int cbData, int* pcActual)
+HRESULT DolbyDigitalPlusHandler::WriteData(Atom* patm, const BYTE* pData, size_t cbData, size_t* pcActual)
 {
 	if (m_streams.size() == 0)
 	{
 		const BYTE* pFrame = pData;
-		int cbFrame = cbData;
+		size_t cbFrame = cbData;
 
 		while (cbFrame > 0)
 		{
 			EAC3StreamInfo info;
 
-			if (!info.Parse(pFrame, cbFrame))
+			if (!info.Parse(pFrame, static_cast<int>(cbFrame)))
 				return E_INVALIDARG;
 
 			if (StreamInfoExists(info))
@@ -2905,7 +3025,7 @@ Descriptor::Descriptor(TagType type)
 }
 
 void
-Descriptor::Append(const BYTE* pBuffer, long cBytes)
+Descriptor::Append(uint8_t const* pBuffer, size_t cBytes)
 {
     Reserve(cBytes);
     CopyMemory(m_pBuffer+m_cValid, pBuffer, cBytes);
@@ -2913,12 +3033,12 @@ Descriptor::Append(const BYTE* pBuffer, long cBytes)
 }
 
 void
-Descriptor::Reserve(long cBytes)
+Descriptor::Reserve(size_t cBytes)
 {
     if ((m_cValid + cBytes) > m_cBytes)
     {
         // increment memory in 128 byte chunks
-        long inc = ((cBytes+127)/128) * 128;
+        size_t inc = ((cBytes+127)/128) * 128;
         smart_array<BYTE> pNew = new BYTE[m_cBytes + inc];
         if (m_cValid > 0)
         {
@@ -2942,13 +3062,13 @@ long
 Descriptor::Length()
 {
     long cHdr = 2;
-    long cBody = m_cValid;
+    size_t cBody = m_cValid;
     while (cBody > 0x7f)
     {
         cHdr++;
         cBody >>= 7;
     }
-    return cHdr + m_cValid;
+    return static_cast<long>(cHdr + m_cValid);
 
 }
 
@@ -2963,7 +3083,7 @@ Descriptor::Write(BYTE* pBuffer)
 	}
 	else
 	{
-		long cBody = m_cValid;
+		size_t cBody = m_cValid;
 		while (cBody)
 		{
 			BYTE b = BYTE(cBody & 0x7f);
@@ -2985,158 +3105,6 @@ Descriptor::Write(Atom* patm)
     smart_array<BYTE> ptemp = new BYTE[cBytes];
     Write(ptemp);
     return patm->Append(ptemp, cBytes);
-}
-
-// --- H264 BSF support --------------
-H264ByteStreamHandler::H264ByteStreamHandler(const CMediaType* pmt)
-: H264Handler(pmt),
-  m_bSPS(false),
-  m_bPPS(false)
-{
-	if(*m_mt.FormatType() == FORMAT_MPEG2Video)
-	{
-		MPEG2VIDEOINFO* pvi = (MPEG2VIDEOINFO*)m_mt.Format();
-		m_tFrame = pvi->hdr.AvgTimePerFrame;
-		m_cx = pvi->hdr.bmiHeader.biWidth;
-		m_cy = pvi->hdr.bmiHeader.biHeight;
-	} else 
-	if(*m_mt.FormatType() == FORMAT_VideoInfo)
-	{
-		VIDEOINFOHEADER* pvi = (VIDEOINFOHEADER*)m_mt.Format();
-		m_tFrame = pvi->AvgTimePerFrame;
-		m_cx = pvi->bmiHeader.biWidth;
-		m_cy = pvi->bmiHeader.biHeight;
-	} else 
-	if(*m_mt.FormatType() == FORMAT_VideoInfo2)
-	{
-		VIDEOINFOHEADER2* pvi = (VIDEOINFOHEADER2*)m_mt.Format();
-		m_tFrame = pvi->AvgTimePerFrame;
-		m_cx = pvi->bmiHeader.biWidth;
-		m_cy = pvi->bmiHeader.biHeight;
-	} else 
-	// TODO: or H264Handler
-	if(*m_mt.FormatType() == FORMAT_UVCH264Video)
-	{
-		KS_H264VIDEOINFO* pvi = (KS_H264VIDEOINFO*)m_mt.Format();
-		m_tFrame = pvi->dwFrameInterval;
-		m_cx = pvi->wWidth;
-		m_cy = pvi->wHeight;
-	} else
-		m_tFrame = m_cx = m_cy = 0;
-}
-
-void 
-H264ByteStreamHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
-{
-    UNREFERENCED_PARAMETER(scale);
-    UNREFERENCED_PARAMETER(id);
-    smart_ptr<Atom> psd = patm->CreateAtom('avc1');
-
-	// locate param sets in parse buffer
-	NALUnit sps, pps;
-	NALUnit nal;
-	const BYTE* pBuffer = m_ParamSets.Data();
-	long cBytes = m_ParamSets.Size();
-	while (nal.Parse(pBuffer, cBytes, nalunit_length_field, true))
-	{
-		if (nal.Type() == NALUnit::NAL_Sequence_Params)
-		{
-			sps = nal;
-		}
-		else if (nal.Type() == NALUnit::NAL_Picture_Params)
-		{
-			pps = nal;
-		}
-		const BYTE* pNext = nal.Start() + nal.Length();
-		cBytes-= long(pNext - pBuffer);
-		pBuffer = pNext;
-	}
-
-	SeqParamSet seq;
-	seq.Parse(&sps);
-
-    BYTE b[78];
-    ZeroMemory(b, 78);
-    WriteShort(dataref, b+6);
-    WriteShort(m_cx, b+24);
-    WriteShort(m_cy, b+26);
-    b[29] = 0x48;
-    b[33] = 0x48;
-    b[41] = 1;
-    b[75] = 24;
-    WriteShort(-1, b+76);
-    psd->Append(b, 78);
-
-    smart_ptr<Atom> pesd = psd->CreateAtom('avcC');
-    b[0] = 1;           // version 1
-    b[1] = (BYTE)seq.Profile();
-    b[2] = seq.Compat();
-    b[3] = (BYTE)seq.Level();
-    // length of length-preceded nalus
-    b[4] = BYTE(0xfC | (nalunit_length_field - 1));
-
-    b[5] = 0xe1;        // 1 SPS
-
-	// in the descriptor, the length field for param set nalus is always 2
-	pesd->Append(b, 6);
-	WriteVariable(sps.Length(), b, 2);
-	pesd->Append(b, 2);
-	pesd->Append(sps.Start(), sps.Length());
-
-    b[0] = 1;   // 1 PPS
-	WriteVariable(pps.Length(), b+1, 2);
-	pesd->Append(b, 3);
-	pesd->Append(pps.Start(), pps.Length());
-
-    pesd->Close();
-    psd->Close();
-}
-
-LONGLONG 
-H264ByteStreamHandler::FrameDuration()
-{
-	return m_tFrame;
-}
-
-HRESULT 
-H264ByteStreamHandler::WriteData(Atom* patm, const BYTE* pData, int cBytes, int* pcActual)
-{
-	int cActual = 0;
-
-	NALUnit nal;
-	while(nal.Parse(pData, cBytes, 0, true))
-	{
-		const BYTE* pNext = nal.Start() + nal.Length();
-		cBytes-= long(pNext - pData);
-		pData = pNext;
-
-		// convert length to correct byte order
-		BYTE length[nalunit_length_field];
-		WriteVariable(nal.Length(), length, nalunit_length_field);
-
-		if (!m_bSPS && (nal.Type() == NALUnit::NAL_Sequence_Params))
-		{
-			// store in length-preceded format for use in WriteDescriptor
-			m_bSPS = true;
-			m_ParamSets.Append(length, nalunit_length_field);
-			m_ParamSets.Append(nal.Start(), nal.Length());
-		}
-		else if (!m_bPPS && (nal.Type() == NALUnit::NAL_Picture_Params))
-		{
-			// store in length-preceded format for use in WriteDescriptor
-			m_bPPS = true;
-			m_ParamSets.Append(length, nalunit_length_field);
-			m_ParamSets.Append(nal.Start(), nal.Length());
-		}
-
-		// write length and data to file
-		patm->Append(length, nalunit_length_field);
-		patm->Append(nal.Start(), nal.Length());
-		cActual += nalunit_length_field + nal.Length();
-	}
-
-	*pcActual = cActual;
-	return S_OK;
 }
 
 void 
