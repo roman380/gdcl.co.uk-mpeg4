@@ -119,7 +119,6 @@
     <ClInclude Include="NALUnit.h" />
     <ClInclude Include="Recovery.h" />
     <ClInclude Include="resource.h" />
-    <ClInclude Include="smartptr.h" />
     <ClInclude Include="StdAfx.h" />
     <ClInclude Include="TemporaryIndexFile.h" />
     <ClInclude Include="TypeHandler.h" />

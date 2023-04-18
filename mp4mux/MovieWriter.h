@@ -10,6 +10,9 @@
 
 #pragma once
 
+#include <memory>
+#include <algorithm>
+#include <utility>
 #include <string>
 #include <vector>
 #include <list>
@@ -102,12 +105,13 @@ public:
     }
 
     HRESULT Close();
-    Atom* CreateAtom(DWORD type);
+    std::shared_ptr<Atom> CreateAtom(DWORD type); // TODO: Should be rather unique_ptr?
+
 private:
     AtomWriter* m_pContainer;
-    bool m_bClosed;
+    bool m_bClosed = false;
     LONGLONG m_llOffset;
-    LONGLONG m_cBytes;
+    LONGLONG m_cBytes = 0;
 };
 
 // a collection of samples, to be written as one contiguous 
@@ -123,7 +127,7 @@ public:
     }
 
     HRESULT AddSample(IMediaSample* pSample);
-    HRESULT Write(Atom* patm);
+    HRESULT Write(std::shared_ptr<Atom> const& Atom);
     long Length() const
     {
         return m_cBytes;
@@ -153,8 +157,6 @@ private:
     std::list<wil::com_ptr<IMediaSample>> m_MediaSampleList;
 };
 
-typedef smart_ptr<MediaChunk> MediaChunkPtr;
-
 // --- indexing ---
 
 // a growable list of 32-bit values maintained in
@@ -166,7 +168,7 @@ public:
     ListOfLongs();
 
     void Append(long l);
-    HRESULT Write(Atom* patm);
+    HRESULT Write(std::shared_ptr<Atom> const& Atom);
     enum {
         EntriesPerBlock = 4096/4,
     };
@@ -187,7 +189,7 @@ public:
     ListOfI64();
 
     void Append(LONGLONG ll);
-    HRESULT Write(Atom* patm);
+    HRESULT Write(std::shared_ptr<Atom> const& Atom);
     enum {
         EntriesPerBlock = 4096/8,
     };
@@ -208,7 +210,7 @@ class ListOfPairs
 public:
     ListOfPairs();
     void Append(long l);
-    HRESULT Write(Atom* patm);
+    HRESULT Write(std::shared_ptr<Atom> const& Atom);
     long Entries() { return m_cEntries; }
 private:
     ListOfLongs m_Table;
@@ -230,7 +232,7 @@ public:
 
     void Add(long cBytes);
     void AddMultiple(long cBytes, long count);
-    HRESULT Write(Atom* patm);
+    HRESULT Write(std::shared_ptr<Atom> const& Atom);
 private:
     ListOfLongs m_Table;
 
@@ -260,8 +262,8 @@ public:
     void Add(REFERENCE_TIME tStart, REFERENCE_TIME tEnd);
     void AddOldFormat(int count);
     void SetOldIndexStart(REFERENCE_TIME tStart);
-    HRESULT WriteEDTS(Atom* patm, long scale);
-    HRESULT WriteTable(Atom* patm);
+    HRESULT WriteEDTS(std::shared_ptr<Atom> const& Atom, long scale);
+    HRESULT WriteTable(std::shared_ptr<Atom> const& Atom);
     REFERENCE_TIME Duration()
     {
         return m_tStopLast;
@@ -352,7 +354,7 @@ public:
     SamplesPerChunkIndex(long dataref);
 
     void Add(long nSamples);
-    HRESULT Write(Atom* patm);
+    HRESULT Write(std::shared_ptr<Atom> const& Atom);
 private:
     long m_dataref;
     ListOfLongs m_Table;
@@ -373,7 +375,7 @@ class ChunkOffsetIndex
 {
 public:
     void Add(LONGLONG posChunk);
-    HRESULT Write(Atom* patm);
+    HRESULT Write(std::shared_ptr<Atom> const& Atom);
 private:
     ListOfLongs m_Table32;
     ListOfI64 m_Table64;
@@ -386,7 +388,7 @@ public:
     SyncIndex();
 
     void Add(bool bSync);
-    HRESULT Write(Atom* patm);
+    HRESULT Write(std::shared_ptr<Atom> const& Atom);
 private:
     long m_nSamples;
     bool m_bAllSync;
@@ -397,7 +399,7 @@ private:
 class TrackWriter
 {
 public:
-    TrackWriter(MovieWriter* pMovie, int index, TypeHandler* ptype, bool NotifyMediaSampleWrite = false);
+    TrackWriter(MovieWriter* pMovie, int index, std::unique_ptr<TypeHandler>&& TypeHandler, bool NotifyMediaSampleWrite = false);
 
     HRESULT Add(IMediaSample* pSample);
 
@@ -413,8 +415,8 @@ public:
     // no more writes accepted -- partial/queued writes abandoned (optionally)
     void Stop(bool bFlush);
 
-    bool GetHeadTime(LONGLONG* ptHead);
-    HRESULT WriteHead(Atom* patm);
+    bool GetHeadTime(LONGLONG* ptHead) const;
+    HRESULT WriteHead(std::shared_ptr<Atom> const& Atom);
     REFERENCE_TIME LastWrite() const
     {
         CAutoLock lock(&m_csQueue);
@@ -428,7 +430,7 @@ public:
     {
         m_Durations.SetOldIndexStart(tStart);
     }
-    HRESULT Close(Atom* patm);
+    HRESULT Close(std::shared_ptr<Atom> const& Atom);
 
     REFERENCE_TIME SampleDuration()
     {
@@ -456,7 +458,7 @@ public:
     {
         return m_pType->IsAudio();
     }
-    TypeHandler* Handler()
+    std::shared_ptr<TypeHandler> const& Handler() const
     {
         return m_pType;
     }
@@ -497,15 +499,15 @@ public:
 private:
     MovieWriter* m_pMovie;
     int m_index;
-    smart_ptr<TypeHandler> m_pType;
+    std::shared_ptr<TypeHandler> m_pType;
     bool m_NotifyMediaSampleWrite;
 
     mutable CCritSec m_csQueue;
     bool m_bEOS = false;
     bool m_bStopped = false;
     REFERENCE_TIME m_tLast = 0;
-    MediaChunkPtr m_pCurrent;
-    list<MediaChunkPtr> m_Queue;
+    std::shared_ptr<MediaChunk> m_pCurrent;
+    std::list<std::shared_ptr<MediaChunk>> m_Queue;
 
     SizeIndex m_Sizes;
     DurationIndex m_Durations;
@@ -519,9 +521,6 @@ private:
     // timestamps
     REFERENCE_TIME m_StartAt = 0;
 };
-
-typedef smart_ptr<TrackWriter> TrackWriterPtr;
-
 
 class MovieWriter
 {
@@ -538,7 +537,7 @@ public:
         m_Comment = Comment;
     }
 
-    TrackWriter* MakeTrack(const CMediaType* pmt, BOOL bNotifyMediaSampleWrite = FALSE);
+    std::shared_ptr<TrackWriter> MakeTrack(const CMediaType* pmt, bool NotifyMediaSampleWrite = false);
     HRESULT Close(REFERENCE_TIME* pDuration);
 
     // ensures that CheckQueues is not active when
@@ -564,7 +563,7 @@ public:
     {
         return (long)m_Tracks.size();
     }
-    TrackWriter* Track(long nTrack)
+    std::shared_ptr<TrackWriter> const& Track(long nTrack) const
     {
         return m_Tracks[nTrack];
     }
@@ -580,7 +579,7 @@ public:
     void NotifyMediaSampleWrite(INT TrackIndex, wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize);
 
 private:
-    void MakeIODS(Atom* pmoov);
+    void MakeIODS(std::shared_ptr<Atom> const& pmoov);
     void InsertFTYP(AtomWriter* pFile);
     void WriteTrack(int indexReady);
 
@@ -593,8 +592,8 @@ private:
     CCritSec m_csWrite;
     bool m_bStopped;
     bool m_bFTYPInserted;
-    smart_ptr<Atom> m_patmMDAT;
-    vector<TrackWriterPtr> m_Tracks;
+    std::shared_ptr<Atom> m_patmMDAT;
+    std::vector<std::shared_ptr<TrackWriter>> m_Tracks;
 
     CCritSec m_csBitrate;
     vector<int> m_Bitrates;

@@ -13,6 +13,8 @@
 
 #pragma once
 
+#include <memory>
+
 #include "mp4mux_h.h"
 #include "MovieWriter.h"
 #include "TemporaryIndexFile.h"
@@ -177,7 +179,7 @@ private:
 private:
     Mpeg4Mux* m_pMux;
     int m_index;
-    TrackWriter* m_pTrack;
+    std::shared_ptr<TrackWriter> m_pTrack;
 
     CCritSec m_csStreamControl;
     AM_STREAM_INFO m_StreamInfo;
@@ -298,7 +300,7 @@ public:
     void OnDisconnect(int index);
     void OnConnect(int index);
     bool CanReceive(const CMediaType* pmt);
-    TrackWriter* MakeTrack(int index, const CMediaType* pmt);
+    std::shared_ptr<TrackWriter> MakeTrack(int index, const CMediaType* pmt);
     void OnEOS();
     REFERENCE_TIME Start() { return m_tStart;}
 
@@ -481,7 +483,7 @@ private:
     CCritSec m_csTracks;
     MuxOutput* m_pOutput;
     vector<MuxInput*> m_pInputs;
-    smart_ptr<MovieWriter> m_pMovie;
+    std::shared_ptr<MovieWriter> m_pMovie;
 
     // for reporting (via GetCurrentPosition) after completion
     REFERENCE_TIME m_tWritten;

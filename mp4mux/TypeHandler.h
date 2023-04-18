@@ -84,7 +84,7 @@ public:
 		}
 	    std::memcpy(pBuffer + idx, m_pBuffer.data(), m_pBuffer.size());
     }
-    HRESULT Write(Atom* patm) const;
+    HRESULT Write(std::shared_ptr<Atom> const& patm) const;
 
 private:
     void Reserve(size_t cBytes)
@@ -111,12 +111,15 @@ public:
 	{
 		return DWORD('mhlr');
 	}
-    virtual void WriteTREF(Atom* patm) = 0;
+    virtual void WriteTREF(std::shared_ptr<Atom> const& Atom)
+    {
+		UNREFERENCED_PARAMETER(Atom);
+    }
     virtual bool IsVideo() = 0;
     virtual bool IsAudio() = 0;
 	virtual bool IsOldIndexFormat() { return false; }
 	virtual bool IsNonMP4()			{ return IsOldIndexFormat(); }
-    virtual void WriteDescriptor(Atom* patm, int id, int dataref, long scale) = 0;
+    virtual void WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int dataref, long scale) = 0;
     virtual long SampleRate() = 0;
     virtual long Scale() = 0;
 	virtual long Width() = 0;
@@ -135,8 +138,8 @@ public:
 		return UNITS / SampleRate();
 	}
 
-	virtual HRESULT WriteData(Atom* patm, uint8_t const* pData, size_t cBytes, size_t* pcActual);
+	virtual HRESULT WriteData(std::shared_ptr<Atom> const& Atom, uint8_t const* pData, size_t cBytes, size_t* pcActual);
     static bool CanSupport(const CMediaType* pmt);
-    static TypeHandler* Make(const CMediaType* pmt);
+    static std::unique_ptr<TypeHandler> Make(const CMediaType* pmt);
 };
 

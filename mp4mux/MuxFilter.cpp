@@ -192,7 +192,7 @@ Mpeg4Mux::CanReceive(const CMediaType* pmt)
     return TypeHandler::CanSupport(pmt);
 }
 
-TrackWriter* 
+std::shared_ptr<TrackWriter>
 Mpeg4Mux::MakeTrack(int index, const CMediaType* pmt)
 {
     CAutoLock lock(&m_csTracks);
@@ -259,7 +259,7 @@ Mpeg4Mux::Pause()
     if (m_State == State_Stopped)
     {
         m_pOutput->Reset();
-        m_pMovie = new MovieWriter(m_pOutput);
+        m_pMovie = std::make_shared<MovieWriter>(m_pOutput);
         m_pMovie->Initialize(m_bAlignTrackStartTimeDisabled, m_nMinimalMovieDuration);
         m_pMovie->SetComment(m_Comment);
         #pragma region Temporary Index File
@@ -626,14 +626,11 @@ MuxInput::GetAllocator(IMemAllocator** ppAllocator)
         // we supply our own allocator whose only purpose is to increase the requested number of
         // buffers. if possible, we supply a sanity-check max buffer size
         long cMaxBuffer = 0;
-        TypeHandler* ph = TypeHandler::Make(&m_mt);
-        if (ph)
+        auto const Handler = TypeHandler::Make(&m_mt);
+        if (Handler)
         {
-            if (ph->IsVideo())
-            {
-                cMaxBuffer = ph->Height() * ph->Width() * 4;
-            }
-            delete ph;
+            if (Handler->IsVideo())
+                cMaxBuffer = Handler->Height() * Handler->Width() * 4;
         }
 
         MuxAllocator* pNewAllocator = new MuxAllocator(NULL, &hr, cMaxBuffer, &m_mt);
