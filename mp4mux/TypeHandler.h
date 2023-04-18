@@ -35,21 +35,67 @@ public:
         // Command tags
         ObjDescrUpdate = 1,
     };
-    Descriptor(TagType type);
 
-    void Append(uint8_t const* pBuffer, size_t cBytes);
-    void Append(Descriptor* pdesc);
-    long Length();
-    void Write(uint8_t* pBuffer);
-    HRESULT Write(Atom* patm);
-private:
-    void Reserve(size_t cBytes);
+    Descriptor(TagType type) :
+        m_type(type)
+    {
+    }
+
+    void Append(uint8_t const* pBuffer, size_t cBytes)
+    {
+	    std::copy(pBuffer, pBuffer + cBytes, std::back_inserter(m_pBuffer));
+    }
+    void Append(Descriptor* pdesc)
+    {
+        auto const cBytes = pdesc->Length();
+        Reserve(cBytes);
+        m_pBuffer.resize(m_pBuffer.size() + cBytes);
+        pdesc->Write(m_pBuffer.data() + m_pBuffer.size());
+    }
+    size_t Length() const
+    {
+        long cHdr = 2;
+        size_t cBody = m_pBuffer.size();
+        while (cBody > 0x7f)
+        {
+            cHdr++;
+            cBody >>= 7;
+        }
+        return cHdr + m_pBuffer.size();
+
+    }
+    void Write(uint8_t* pBuffer) const
+    {
+        size_t idx = 0;
+        pBuffer[idx++] = static_cast<uint8_t>(m_type);
+	    if (m_pBuffer.empty())
+	    {
+		    pBuffer[idx++] = 0;
+            return;
+        }
+		size_t cBody = m_pBuffer.size();
+		while (cBody)
+		{
+			uint8_t b = static_cast<uint8_t>(cBody & 0x7f);
+			cBody >>= 7;
+			if (cBody)
+				b |= 0x80;
+			pBuffer[idx++] = b;
+		}
+	    std::memcpy(pBuffer + idx, m_pBuffer.data(), m_pBuffer.size());
+    }
+    HRESULT Write(Atom* patm) const;
 
 private:
-    TagType m_type;
-    size_t m_cBytes;
-    size_t m_cValid;
-    smart_array<uint8_t> m_pBuffer;
+    void Reserve(size_t cBytes)
+    {
+        static auto constexpr const g_Alignment = 128;
+        static_assert(!(g_Alignment & (g_Alignment - 1)));
+        m_pBuffer.reserve((m_pBuffer.size() + cBytes + (g_Alignment - 1)) & ~(g_Alignment - 1));
+    }
+
+    TagType const m_type;
+    std::vector<uint8_t> m_pBuffer;
 };
 
 class Atom;

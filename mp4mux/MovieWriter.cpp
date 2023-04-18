@@ -981,9 +981,8 @@ MediaChunk::GetDuration() const
 // ---- index classes --------------------
 
 ListOfLongs::ListOfLongs()
-: m_nEntriesInLast(0)
 {
-    m_Blocks.push_back(new BYTE[EntriesPerBlock * 4]);
+    m_Blocks.emplace_back(std::vector<uint8_t>(EntriesPerBlock * 4));
 }
 
 void 
@@ -991,11 +990,11 @@ ListOfLongs::Append(long l)
 {
     if (m_nEntriesInLast >= EntriesPerBlock)
     {
-        m_Blocks.push_back(new BYTE[EntriesPerBlock * 4]);
+        m_Blocks.emplace_back(std::vector<uint8_t>(EntriesPerBlock * 4));
 		m_nEntriesInLast = 0;
     }
-    BytePtr p = m_Blocks[m_Blocks.size() - 1];
-    WriteLong(l, p + m_nEntriesInLast*4);
+    auto& p = m_Blocks.back();
+    WriteLong(l, p.data() + m_nEntriesInLast * 4);
     m_nEntriesInLast++;
 }
 
@@ -1005,8 +1004,8 @@ ListOfLongs::Write(Atom* patm)
     // write all the full blocks
     for (UINT i = 0; i < m_Blocks.size() -1; i++)
     {
-        BytePtr p = m_Blocks[i];
-        HRESULT hr = patm->Append(p, EntriesPerBlock*4);
+        auto& p = m_Blocks[i];
+        HRESULT hr = patm->Append(p.data(), EntriesPerBlock*4);
         if (FAILED(hr))
         {
             return hr;
@@ -1016,8 +1015,8 @@ ListOfLongs::Write(Atom* patm)
     // partial last block
     if (m_nEntriesInLast > 0)
     {
-        BytePtr p = m_Blocks[m_Blocks.size() - 1];
-        HRESULT hr = patm->Append(p, m_nEntriesInLast * 4);
+        auto& p = m_Blocks.back();
+        HRESULT hr = patm->Append(p.data(), m_nEntriesInLast * 4);
         if (FAILED(hr))
         {
             return hr;
@@ -1033,17 +1032,16 @@ ListOfLongs::Entry(long nEntry)
     long nValue = 0;
     if (nEntry < Entries())
     {
-        BytePtr p = m_Blocks[nEntry/EntriesPerBlock];
-        nValue = ReadLong(p + (nEntry % EntriesPerBlock)*4);
+        auto& p = m_Blocks[nEntry/EntriesPerBlock];
+        nValue = ReadLong(p.data() + (nEntry % EntriesPerBlock)*4);
     }
     return nValue;
 }
 
 
 ListOfI64::ListOfI64()
-: m_nEntriesInLast(0)
 {
-    m_Blocks.push_back(new BYTE[EntriesPerBlock * 8]);
+    m_Blocks.emplace_back(std::vector<uint8_t>(EntriesPerBlock * 8));
 }
 
 void 
@@ -1051,11 +1049,11 @@ ListOfI64::Append(LONGLONG ll)
 {
     if (m_nEntriesInLast >= EntriesPerBlock)
     {
-        m_Blocks.push_back(new BYTE[EntriesPerBlock * 8]);
+        m_Blocks.emplace_back(std::vector<uint8_t>(EntriesPerBlock * 8));
 		m_nEntriesInLast = 0;
     }
-    BytePtr p = m_Blocks[m_Blocks.size() - 1];
-    WriteI64(ll, p + m_nEntriesInLast*8);
+    auto& p = m_Blocks.back();
+    WriteI64(ll, p.data() + m_nEntriesInLast*8);
     m_nEntriesInLast++;
 }
 
@@ -1065,8 +1063,8 @@ ListOfI64::Write(Atom* patm)
     // write all the full blocks
     for (UINT i = 0; i < m_Blocks.size() -1; i++)
     {
-        BytePtr p = m_Blocks[i];
-        HRESULT hr = patm->Append(p, EntriesPerBlock*8);
+        auto& p = m_Blocks[i];
+        HRESULT hr = patm->Append(p.data(), EntriesPerBlock*8);
         if (FAILED(hr))
         {
             return hr;
@@ -1076,8 +1074,8 @@ ListOfI64::Write(Atom* patm)
     // partial last block
     if (m_nEntriesInLast > 0)
     {
-        BytePtr p = m_Blocks[m_Blocks.size() - 1];
-        HRESULT hr = patm->Append(p, m_nEntriesInLast * 8);
+        auto& p = m_Blocks.back();
+        HRESULT hr = patm->Append(p.data(), m_nEntriesInLast * 8);
         if (FAILED(hr))
         {
             return hr;

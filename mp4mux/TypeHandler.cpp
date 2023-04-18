@@ -63,8 +63,7 @@ public:
 
 private:
     CMediaType m_mt;
-	smart_array<BYTE> m_pConfig;
-	long m_cConfig;
+	std::vector<uint8_t> m_pConfig;
 };
 
 class H264Handler : public TypeHandler
@@ -1002,31 +1001,24 @@ TypeHandler::WriteData(Atom* patm, const BYTE* pData, size_t cBytes, size_t* pcA
 
 // -------------------------------------------
 DivxHandler::DivxHandler(const CMediaType* pmt)
-: m_mt(*pmt),
-  m_cConfig(0)
+: m_mt(*pmt)
 {
-	if ((*m_mt.FormatType() == FORMAT_VideoInfo) && 
-		(m_mt.FormatLength() > sizeof(VIDEOINFOHEADER)))
-	{
-		m_cConfig = m_mt.FormatLength() - sizeof(VIDEOINFOHEADER);
-		m_pConfig = new BYTE[m_cConfig];
-		const BYTE* pExtra = m_mt.Format() + sizeof(VIDEOINFOHEADER);
-		CopyMemory(m_pConfig, pExtra, m_cConfig);
-	}
+	if((*m_mt.FormatType() == FORMAT_VideoInfo) && m_mt.FormatLength() > sizeof(VIDEOINFOHEADER))
+		m_pConfig = std::vector(m_mt.Format() + sizeof(VIDEOINFOHEADER), m_mt.Format() + m_mt.FormatLength());
 }
 
 long 
 DivxHandler::Width()
 {
-    VIDEOINFOHEADER* pvi = (VIDEOINFOHEADER*)m_mt.Format();
+    auto const pvi = reinterpret_cast<VIDEOINFOHEADER const*>(m_mt.Format());
 	return pvi->bmiHeader.biWidth;
 }
 
 long 
 DivxHandler::Height()
 {
-    VIDEOINFOHEADER* pvi = (VIDEOINFOHEADER*)m_mt.Format();
-	return abs(pvi->bmiHeader.biHeight);
+    auto const pvi = reinterpret_cast<VIDEOINFOHEADER const*>(m_mt.Format());
+	return std::abs(pvi->bmiHeader.biHeight);
 }
 
 void 
@@ -1076,7 +1068,7 @@ DivxHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
     dcfg.Append(b, 13);
     Descriptor dsi(Descriptor::Decoder_Specific_Info);
 
-	dsi.Append(m_pConfig, m_cConfig);
+	dsi.Append(m_pConfig.data(), m_pConfig.size());
     dcfg.Append(&dsi);
     es.Append(&dcfg);
 	Descriptor sl(Descriptor::SL_Config); // ISO 14496-1 8.3.6, 10.2.3
@@ -1103,7 +1095,7 @@ inline bool NextStartCode(const BYTE*&pBuffer, size_t& cBytes)
 HRESULT 
 DivxHandler::WriteData(Atom* patm, const BYTE* pData, size_t cBytes, size_t* pcActual)
 {
-	if (m_cConfig == 0)
+	if (m_pConfig.empty())
 	{
 		const BYTE* p = pData;
 		size_t c = cBytes;
@@ -1119,9 +1111,7 @@ DivxHandler::WriteData(Atom* patm, const BYTE* pData, size_t cBytes, size_t* pcA
 			}
 			else
 			{
-				m_cConfig = long(p - pVOL);
-				m_pConfig = new BYTE[m_cConfig];
-				CopyMemory(m_pConfig, pVOL, m_cConfig);
+				std::copy(pVOL, p, std::back_inserter(m_pConfig));
 				break;
 			}
 			p += 4;
@@ -3002,101 +2992,13 @@ void DolbyDigitalPlusHandler::WriteDescriptor(Atom* patm, int id, int dataref, l
 	pdec3->Close();
     psd->Close();
 }
-	
 
-///////////////////////////////////////////////////////////////////////////////
-
-
-// ---- descriptor ------------------------
-
-Descriptor::Descriptor(TagType type)
-: m_type(type),
-  m_cBytes(0),
-  m_cValid(0)
+HRESULT Descriptor::Write(Atom* patm) const
 {
-}
-
-void
-Descriptor::Append(uint8_t const* pBuffer, size_t cBytes)
-{
-    Reserve(cBytes);
-    CopyMemory(m_pBuffer+m_cValid, pBuffer, cBytes);
-    m_cValid += cBytes;
-}
-
-void
-Descriptor::Reserve(size_t cBytes)
-{
-    if ((m_cValid + cBytes) > m_cBytes)
-    {
-        // increment memory in 128 byte chunks
-        size_t inc = ((cBytes+127)/128) * 128;
-        smart_array<BYTE> pNew = new BYTE[m_cBytes + inc];
-        if (m_cValid > 0)
-        {
-            CopyMemory(pNew, m_pBuffer, m_cValid);
-        }
-        m_pBuffer = pNew;
-        m_cBytes += inc;
-    }
-}
-
-void
-Descriptor::Append(Descriptor* pdesc)
-{
-    long cBytes = pdesc->Length();
-    Reserve(cBytes);
-    pdesc->Write(m_pBuffer + m_cValid);
-    m_cValid += cBytes;
-}
-
-long 
-Descriptor::Length()
-{
-    long cHdr = 2;
-    size_t cBody = m_cValid;
-    while (cBody > 0x7f)
-    {
-        cHdr++;
-        cBody >>= 7;
-    }
-    return static_cast<long>(cHdr + m_cValid);
-
-}
-
-void 
-Descriptor::Write(BYTE* pBuffer)
-{
-    int idx = 0;
-    pBuffer[idx++] = (BYTE) m_type;
-	if (m_cValid == 0)
-	{
-		pBuffer[idx++] = 0;
-	}
-	else
-	{
-		size_t cBody = m_cValid;
-		while (cBody)
-		{
-			BYTE b = BYTE(cBody & 0x7f);
-			if (cBody > 0x7f)
-			{
-				b |= 0x80;
-			}
-			pBuffer[idx++] = b;
-			cBody >>= 7;
-		}
-	}
-	CopyMemory(pBuffer + idx, m_pBuffer, m_cValid);
-}
-
-HRESULT 
-Descriptor::Write(Atom* patm)
-{
-    long cBytes = Length();
-    smart_array<BYTE> ptemp = new BYTE[cBytes];
-    Write(ptemp);
-    return patm->Append(ptemp, cBytes);
+    auto const cBytes = Length();
+	std::vector<uint8_t> Buffer(cBytes);
+    Write(Buffer.data());
+    return patm->Append(Buffer.data(), cBytes);
 }
 
 void 

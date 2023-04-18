@@ -11,6 +11,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 #include <list>
 
 // tracks are normally interleaved by the second. Define this
@@ -156,8 +157,6 @@ typedef smart_ptr<MediaChunk> MediaChunkPtr;
 
 // --- indexing ---
 
-typedef smart_array<BYTE> BytePtr;
-
 // a growable list of 32-bit values maintained in
 // file byte order for writing directly to one of the
 // index atoms
@@ -177,8 +176,8 @@ public:
     long Entry(long nEntry);
 
 private:
-    vector<BytePtr> m_Blocks;
-    long m_nEntriesInLast;
+    std::vector<std::vector<uint8_t>> m_Blocks;
+    long m_nEntriesInLast = 0;
 };
 
 // growable list of 64-bit values
@@ -196,8 +195,8 @@ public:
         return (long) (((m_Blocks.size() - 1) * EntriesPerBlock) + m_nEntriesInLast);
     }
 private:
-    vector<BytePtr> m_Blocks;
-    long m_nEntriesInLast;
+    std::vector<std::vector<uint8_t>> m_Blocks;
+    long m_nEntriesInLast = 0;
 };
 
 // pairs of <count, value> longs -- this is essentially an RLE compression
