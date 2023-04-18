@@ -955,114 +955,12 @@ MediaChunk::GetDuration() const
 
 // ---- index classes --------------------
 
-ListOfLongs::ListOfLongs()
+template <typename T, typename ValueType> 
+HRESULT ListOf<T, ValueType>::Write(std::shared_ptr<Atom> const& Atom)
 {
-    m_Blocks.emplace_back(std::vector<uint8_t>(EntriesPerBlock * 4));
-}
-
-void 
-ListOfLongs::Append(long l)
-{
-    if (m_nEntriesInLast >= EntriesPerBlock)
-    {
-        m_Blocks.emplace_back(std::vector<uint8_t>(EntriesPerBlock * 4));
-		m_nEntriesInLast = 0;
-    }
-    auto& p = m_Blocks.back();
-    Write32(l, p.data() + m_nEntriesInLast * 4);
-    m_nEntriesInLast++;
-}
-
-HRESULT 
-ListOfLongs::Write(std::shared_ptr<Atom> const& Atom)
-{
-    // write all the full blocks
-    for (UINT i = 0; i < m_Blocks.size() -1; i++)
-    {
-        auto& p = m_Blocks[i];
-        HRESULT hr = Atom->Append(p.data(), EntriesPerBlock*4);
-        if (FAILED(hr))
-        {
-            return hr;
-        }
-    }
-
-    // partial last block
-    if (m_nEntriesInLast > 0)
-    {
-        auto& p = m_Blocks.back();
-        HRESULT hr = Atom->Append(p.data(), m_nEntriesInLast * 4);
-        if (FAILED(hr))
-        {
-            return hr;
-        }
-    }
+    for(auto&& Block: m_Blocks)
+        RETURN_IF_FAILED(Atom->Append(reinterpret_cast<uint8_t const*>(Block.data()), Block.size() * sizeof (ValueType)));
     return S_OK;
-}
-
-long 
-ListOfLongs::Entry(long nEntry)
-{
-    // read back a value (for 32 to 64 conversion)
-    long nValue = 0;
-    if (nEntry < Entries())
-    {
-        auto& p = m_Blocks[nEntry/EntriesPerBlock];
-        nValue = Read32(p.data() + (nEntry % EntriesPerBlock)*4);
-    }
-    return nValue;
-}
-
-
-ListOfI64::ListOfI64()
-{
-    m_Blocks.emplace_back(std::vector<uint8_t>(EntriesPerBlock * 8));
-}
-
-void 
-ListOfI64::Append(LONGLONG ll)
-{
-    if (m_nEntriesInLast >= EntriesPerBlock)
-    {
-        m_Blocks.emplace_back(std::vector<uint8_t>(EntriesPerBlock * 8));
-		m_nEntriesInLast = 0;
-    }
-    auto& p = m_Blocks.back();
-    Write64(ll, p.data() + m_nEntriesInLast*8);
-    m_nEntriesInLast++;
-}
-
-HRESULT 
-ListOfI64::Write(std::shared_ptr<Atom> const& Atom)
-{
-    // write all the full blocks
-    for (UINT i = 0; i < m_Blocks.size() -1; i++)
-    {
-        auto& p = m_Blocks[i];
-        HRESULT hr = Atom->Append(p.data(), EntriesPerBlock*8);
-        if (FAILED(hr))
-        {
-            return hr;
-        }
-    }
-
-    // partial last block
-    if (m_nEntriesInLast > 0)
-    {
-        auto& p = m_Blocks.back();
-        HRESULT hr = Atom->Append(p.data(), m_nEntriesInLast * 8);
-        if (FAILED(hr))
-        {
-            return hr;
-        }
-    }
-    return S_OK;
-}
-
-ListOfPairs::ListOfPairs()
-: m_cEntries(0),
-  m_lCount(0)
-{
 }
 
 void 
@@ -1098,28 +996,14 @@ ListOfPairs::Write(std::shared_ptr<Atom> const& Atom)
     // nEntries
     // pairs of <count, value>
 
-    BYTE b[8];
-    ZeroMemory(b, 8);
+    BYTE b[8] { };
     // entry count is count of pairs
     Write32(m_Table.Entries() / 2, b+4);
-
-    HRESULT hr = Atom->Append(b, 8);
-
-	if (SUCCEEDED(hr))
-    {
-        hr = m_Table.Write(Atom);
-    }
-	return hr;
+    RETURN_IF_FAILED(Atom->Append(b, 8));
+	return m_Table.Write(Atom);
 }
 
 // -----
-
-SizeIndex::SizeIndex()
-: m_cBytesCurrent(0),
-  m_nCurrent(0),
-  m_nSamples(0)
-{
-}
 
 void 
 SizeIndex::AddMultiple(long cBytes, long count)
@@ -1585,10 +1469,8 @@ ChunkOffsetIndex::Write(std::shared_ptr<Atom> const& Atom)
     {
         // convert 32-bit entries to 64-bit
         ListOfI64 converted;
-        for (long idx = 0; idx < m_Table32.Entries(); idx++)
-        {
+        for (size_t idx = 0; idx < m_Table32.Entries(); idx++)
             converted.Append(m_Table32.Entry(idx));
-        }
 
         // create 64-bit atom co64
         auto const pCO = Atom->CreateAtom('co64');

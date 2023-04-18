@@ -160,46 +160,66 @@ private:
 
 // --- indexing ---
 
-// a growable list of 32-bit values maintained in
-// file byte order for writing directly to one of the
-// index atoms
-class ListOfLongs
+template <typename T, typename ValueType> 
+class ListOf
 {
 public:
-    ListOfLongs();
+    static size_t constexpr const EntriesPerBlock = 4096;
 
-    void Append(long l);
-    HRESULT Write(std::shared_ptr<Atom> const& Atom);
-    enum {
-        EntriesPerBlock = 4096/4,
-    };
-    long Entries() {
-        return (long)(((m_Blocks.size() - 1) * EntriesPerBlock) + m_nEntriesInLast);
+    ListOf()
+    {
+        std::vector<ValueType> Vector;
+        Vector.reserve(EntriesPerBlock);
+        m_Blocks.emplace_back(std::move(Vector));
     }
-    long Entry(long nEntry);
+
+    void Append(ValueType Value)
+    {
+        WI_ASSERT(!m_Blocks.empty());
+        if (m_Blocks.back().size() >= EntriesPerBlock)
+        {
+            std::vector<ValueType> Vector;
+            Vector.reserve(EntriesPerBlock);
+            m_Blocks.emplace_back(std::move(Vector));
+        }
+        auto& Block = m_Blocks.back();
+        Block.emplace_back(static_cast<T*>(this)->Transform(Value));
+    }
+    HRESULT Write(std::shared_ptr<Atom> const& Atom);
+    size_t Entries() const
+    {
+        return ((m_Blocks.size() - 1) * EntriesPerBlock) + m_Blocks.back().size();
+    }
+    ValueType Entry(size_t Index) const
+    {
+        if(Index >= Entries())
+            return 0;
+        auto Iterator = m_Blocks.cbegin();
+        std::advance(Iterator, Index / EntriesPerBlock);
+        auto const& Block = *Iterator;
+        return static_cast<T const*>(this)->Transform(Block[Index % EntriesPerBlock]);
+    }
 
 private:
-    std::vector<std::vector<uint8_t>> m_Blocks;
-    long m_nEntriesInLast = 0;
+    std::list<std::vector<ValueType>> m_Blocks;
 };
 
-// growable list of 64-bit values
-class ListOfI64
+class ListOfLongs : public ListOf<ListOfLongs, uint32_t>
 {
 public:
-    ListOfI64();
-
-    void Append(LONGLONG ll);
-    HRESULT Write(std::shared_ptr<Atom> const& Atom);
-    enum {
-        EntriesPerBlock = 4096/8,
-    };
-    long Entries() {
-        return (long) (((m_Blocks.size() - 1) * EntriesPerBlock) + m_nEntriesInLast);
+    static uint32_t Transform(uint32_t Value)
+    {
+        return _byteswap_ulong(Value);
     }
-private:
-    std::vector<std::vector<uint8_t>> m_Blocks;
-    long m_nEntriesInLast = 0;
+};
+
+class ListOfI64 : public ListOf<ListOfI64, uint64_t>
+{
+public:
+    static uint64_t Transform(uint64_t Value)
+    {
+        return _byteswap_uint64(Value);
+    }
 };
 
 // pairs of <count, value> longs -- this is essentially an RLE compression
@@ -209,10 +229,9 @@ private:
 class ListOfPairs
 {
 public:
-    ListOfPairs();
     void Append(long l);
     HRESULT Write(std::shared_ptr<Atom> const& Atom);
-    long Entries() { return m_cEntries; }
+    long Entries() const { return m_cEntries; }
 private:
     ListOfLongs m_Table;
 
@@ -220,8 +239,8 @@ private:
     long m_cEntries;
 
     // current pair not in table
-    long m_lValue;
-    long m_lCount;
+    long m_lValue = 0;
+    long m_lCount = 0;
 };
 
 // sample size index -- table of <count, size> pairs
@@ -229,8 +248,6 @@ private:
 class SizeIndex
 {
 public:
-    SizeIndex();
-
     void Add(long cBytes);
     void AddMultiple(long cBytes, long count);
     HRESULT Write(std::shared_ptr<Atom> const& Atom);
@@ -238,11 +255,11 @@ private:
     ListOfLongs m_Table;
 
     // current pair not in table
-    long m_cBytesCurrent;
-    long m_nCurrent;
+    long m_cBytesCurrent = 0;
+    long m_nCurrent = 0;
 
     // total samples
-    long m_nSamples;
+    long m_nSamples = 0;
 };
 
 // sample duration table -- table of <count, duration> pairs
