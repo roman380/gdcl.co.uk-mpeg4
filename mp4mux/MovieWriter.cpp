@@ -14,44 +14,8 @@
 #include "TypeHandler.h"
 #include "logger.h"
 
-Atom::Atom(AtomWriter* pContainer, LONGLONG llOffset, DWORD type)
-: m_pContainer(pContainer),
-  m_llOffset(llOffset)
-{
-    // write the initial length and type dwords
-    BYTE b[8];
-    Write32(8, b);
-    Write32(type, b+4);
-    Append(b, 8);
-}
-
-HRESULT 
-Atom::Close()
-{
-    m_bClosed = true;
-    // we only support 32-bit lengths for atoms
-    // (otherwise you would have to either decide in the constructor
-    // or shift the whole atom down).
-    if (m_cBytes > 0xffffffff)
-    {
-        return E_INVALIDARG;
-    }
-
-    BYTE b[4];
-    Write32(static_cast<uint32_t>(m_cBytes), b);
-    return Replace(0, b, 4);
-}
-
-std::shared_ptr<Atom> 
-Atom::CreateAtom(DWORD type)
-{
-    return std::make_shared<Atom>(this, Length(), type);
-}
-
-// --------------------------------------------------------------------
-
 MovieWriter::MovieWriter(AtomWriter* pContainer)
-: m_pContainer(pContainer),
+: m_Container(pContainer),
   m_bAlignTrackStartTimeDisabled(FALSE),
   m_nMinimalMovieDuration(0),
   m_bStopped(false),
@@ -63,12 +27,12 @@ MovieWriter::MovieWriter(AtomWriter* pContainer)
 std::shared_ptr<TrackWriter> 
 MovieWriter::MakeTrack(const CMediaType* pmt, bool NotifyMediaSampleWrite)
 {
-	auto ph = TypeHandler::Make(pmt);
-	if (!ph)
-		return NULL;
-    auto const pTrack = std::make_shared<TrackWriter>(this, static_cast<int>(m_Tracks.size()), std::move(ph), NotifyMediaSampleWrite);
-    m_Tracks.push_back(pTrack);
-    return pTrack;
+	auto Handler = TypeHandler::Make(pmt);
+	if (!Handler)
+		return nullptr;
+    auto const Track = std::make_shared<TrackWriter>(this, static_cast<int>(m_Tracks.size()), std::move(Handler), NotifyMediaSampleWrite);
+    m_Tracks.push_back(Track);
+    return Track;
 }
 
 HRESULT 
@@ -113,7 +77,7 @@ MovieWriter::Close(REFERENCE_TIME* pDuration)
 
     // create moov atom
     HRESULT hr = S_OK;
-    auto const pmoov = std::make_shared<Atom>(m_pContainer, m_pContainer->Length(), DWORD('moov'));
+    auto const pmoov = std::make_shared<Atom>(m_Container, m_Container->Length(), DWORD('moov'));
 
     // movie header
     // we are using 90khz as the movie timescale, so
@@ -347,9 +311,9 @@ MovieWriter::WriteTrack(int indexReady)
     {
         if (!m_bFTYPInserted)
         {
-            InsertFTYP(m_pContainer);
+            InsertFTYP(m_Container);
         }
-        m_patmMDAT = std::make_shared<Atom>(m_pContainer, m_pContainer->Length(), DWORD('mdat'));
+        m_patmMDAT = std::make_shared<Atom>(m_Container, m_Container->Length(), DWORD('mdat'));
     }
 
 	// write earliest block
@@ -470,16 +434,16 @@ void MovieWriter::RecordBitrate(size_t index, long bitrate)
 
 void MovieWriter::NotifyMediaSampleWrite(INT TrackIndex, wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize)
 {
-	if(m_pContainer)
-		m_pContainer->NotifyMediaSampleWrite(TrackIndex, MediaSample, DataSize);
+	if(m_Container)
+		m_Container->NotifyMediaSampleWrite(TrackIndex, MediaSample, DataSize);
 }
 
 // -------- Track -------------------------------------------------------
 
 TrackWriter::TrackWriter(MovieWriter* pMovie, int index, std::unique_ptr<TypeHandler>&& TypeHandler, bool NotifyMediaSampleWrite)
-: m_index(index),
+: m_pMovie(pMovie),
+  m_index(index),
   m_pType(std::move(TypeHandler)),
-  m_pMovie(pMovie),
   m_NotifyMediaSampleWrite(NotifyMediaSampleWrite),
   m_Durations(DEFAULT_TIMESCALE),
   m_SC(1)                // dataref 1

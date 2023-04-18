@@ -61,10 +61,10 @@ class AtomWriter
 public:
     virtual ~AtomWriter() = default;
 
-    virtual LONGLONG Length() = 0;
-    virtual LONGLONG Position() = 0;
-    virtual HRESULT Replace(LONGLONG pos, uint8_t const* pBuffer, size_t cBytes) = 0;
-    virtual HRESULT Append(uint8_t const* pBuffer, size_t cBytes) = 0;
+    virtual uint64_t Length() const = 0;
+    virtual int64_t Position() const = 0;
+    virtual HRESULT Replace(int64_t Position, uint8_t const* Data, size_t DataSize) = 0;
+    virtual HRESULT Append(uint8_t const* Data, size_t DataSize) = 0;
 
     virtual void NotifyMediaSampleWrite(int TrackIndex, wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize)
     { 
@@ -78,41 +78,63 @@ public:
 class Atom : public AtomWriter
 {
 public:
-    Atom(AtomWriter* pContainer, LONGLONG llOffset, DWORD type);
+    Atom(AtomWriter* Container, int64_t Offset, uint32_t Type) : 
+        m_Container(Container),
+        m_Offset(Offset)
+    {
+        // write the initial length and type dwords
+        BYTE b[8];
+        Write32(8, b);
+        Write32(Type, b + 4);
+        Append(b, 8);
+    }
     ~Atom()
     {
-        if (!m_bClosed)
-        {
+        if(!m_Closed)
             Close();
-        }
     }
 
-    LONGLONG Position()
+    std::shared_ptr<Atom> CreateAtom(DWORD type)
     {
-        return m_pContainer->Position() + m_llOffset;
+        // SUGG: Rather unique_ptr?
+        return std::make_shared<Atom>(this, Length(), type);
     }
-    HRESULT Replace(LONGLONG pos, const BYTE* pBuffer, size_t cBytes) 
+    HRESULT Close()
     {
-        return m_pContainer->Replace(m_llOffset + pos, pBuffer, cBytes);
-    }
-    HRESULT Append(const BYTE* pBuffer, size_t cBytes)
-    {
-        m_cBytes += cBytes;
-        return m_pContainer->Append(pBuffer, cBytes);
-    }
-    LONGLONG Length()
-    {
-        return m_cBytes;
+        m_Closed = true;
+        // we only support 32-bit lengths for atoms
+        // (otherwise you would have to either decide in the constructor
+        // or shift the whole atom down).
+        RETURN_HR_IF(E_INVALIDARG, m_DataSize > std::numeric_limits<uint32_t>::max());
+        BYTE b[4];
+        Write32(static_cast<uint32_t>(m_DataSize), b);
+        return Replace(0, b, 4);
     }
 
-    HRESULT Close();
-    std::shared_ptr<Atom> CreateAtom(DWORD type); // TODO: Should be rather unique_ptr?
+// Atom
+    uint64_t Length() const override
+    {
+        return m_DataSize;
+    }
+    int64_t Position() const override
+    {
+        return m_Container->Position() + m_Offset;
+    }
+    HRESULT Replace(int64_t Position, uint8_t const* Data, size_t DataSize) override
+    {
+        return m_Container->Replace(m_Offset + Position, Data, DataSize);
+    }
+    HRESULT Append(uint8_t const* Data, size_t DataSize) override
+    {
+        m_DataSize += DataSize;
+        return m_Container->Append(Data, DataSize);
+    }
 
 private:
-    AtomWriter* m_pContainer;
-    bool m_bClosed = false;
-    LONGLONG m_llOffset;
-    LONGLONG m_cBytes = 0;
+    AtomWriter* m_Container;
+    bool m_Closed = false;
+    int64_t m_Offset;
+    uint64_t m_DataSize = 0;
 };
 
 // a collection of samples, to be written as one contiguous 
@@ -481,7 +503,7 @@ public:
     {
         return m_pType->IsAudio();
     }
-    std::shared_ptr<TypeHandler> const& Handler() const
+    std::unique_ptr<TypeHandler> const& Handler() const
     {
         return m_pType;
     }
@@ -518,7 +540,7 @@ public:
 private:
     MovieWriter* m_pMovie;
     int m_index;
-    std::shared_ptr<TypeHandler> m_pType;
+    std::unique_ptr<TypeHandler> m_pType;
     bool m_NotifyMediaSampleWrite;
 
     mutable CCritSec m_csQueue;
@@ -603,7 +625,7 @@ private:
     void WriteTrack(int indexReady);
 
 private:
-    AtomWriter* m_pContainer;
+    AtomWriter* m_Container;
 
     BOOL m_bAlignTrackStartTimeDisabled;
     REFERENCE_TIME m_nMinimalMovieDuration;

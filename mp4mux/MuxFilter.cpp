@@ -912,30 +912,8 @@ MuxOutput::UseIStream()
     m_bUseIStream = true;
 }
 
-LONGLONG 
-MuxOutput::Position()
-{
-    // start of this container in absolute byte position
-    return 0;
-}
-
-LONGLONG
-MuxOutput::Length()
-{
-    // length of this atom container (ie location of next atom)
-    return m_llBytes;
-}
-
 HRESULT 
-MuxOutput::Append(const BYTE* pBuffer, size_t cBytes)
-{
-    HRESULT hr = Replace(m_llBytes, pBuffer, cBytes);
-    m_llBytes += cBytes;
-    return hr;
-}
-
-HRESULT 
-MuxOutput::Replace(LONGLONG pos, const BYTE* pBuffer, size_t cBytes)
+MuxOutput::Replace(int64_t Position, uint8_t const* Data, size_t DataSize)
 {
     // all media content is written when the graph is running,
     // using IMemInputPin. On stop (during our stop, but after the
@@ -952,16 +930,16 @@ MuxOutput::Replace(LONGLONG pos, const BYTE* pBuffer, size_t cBytes)
         {
             hr = E_NOINTERFACE;
         } else {
-            DbgLog((LOG_TRACE, 4, TEXT("pos %llu, cBytes %zu"), pos, cBytes));
+            DbgLog((LOG_TRACE, 4, TEXT("Position %llu, cBytes %zu"), Position, DataSize));
             LARGE_INTEGER liTo;
-            liTo.QuadPart = pos;
+            liTo.QuadPart = Position;
             ULARGE_INTEGER uliUnused;
             hr = pStream->Seek(liTo, STREAM_SEEK_SET, &uliUnused);
             if (SUCCEEDED(hr))
             {
                 ULONG cActual;
-                hr = pStream->Write(pBuffer, static_cast<ULONG>(cBytes), &cActual);
-                if (SUCCEEDED(hr) && (cActual != cBytes))
+                hr = pStream->Write(Data, static_cast<ULONG>(DataSize), &cActual);
+                if (SUCCEEDED(hr) && (cActual != DataSize))
                 {
                     hr = E_FAIL;
                 }
@@ -970,28 +948,28 @@ MuxOutput::Replace(LONGLONG pos, const BYTE* pBuffer, size_t cBytes)
     } else {
         // where the buffer boundaries lie is not important in this 
         // case, so break writes up into the buffers.
-        while (cBytes && (hr == S_OK))
+        while (DataSize && (hr == S_OK))
         {
             IMediaSamplePtr pSample;
             hr = GetDeliveryBuffer(&pSample, NULL, NULL, 0);
             if (SUCCEEDED(hr))
             {
-                size_t cThis = std::min<size_t>(pSample->GetSize(), cBytes);
+                size_t cThis = std::min<size_t>(pSample->GetSize(), DataSize);
                 BYTE* pDest;
                 pSample->GetPointer(&pDest);
-                CopyMemory(pDest, pBuffer,  cThis);
+                std::memcpy(pDest, Data, cThis);
                 pSample->SetActualDataLength(static_cast<long>(cThis));
     
                 // time stamps indicate file position in bytes
-                LONGLONG tStart = pos;
-                LONGLONG tEnd = pos + cThis;
+                LONGLONG tStart = Position;
+                LONGLONG tEnd = Position + cThis;
                 pSample->SetTime(&tStart, &tEnd);
                 hr = Deliver(pSample);
                 if (SUCCEEDED(hr))
                 {
-                    pBuffer += cThis;
-                    cBytes -= cThis;
-                    pos += cThis;
+                    Data += cThis;
+                    DataSize -= cThis;
+                    Position += cThis;
                 }
             }
         }

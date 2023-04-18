@@ -217,17 +217,30 @@ public:
     void FillSpace();
 
     // AtomWriter methods
-    LONGLONG Length();
-    LONGLONG Position();
-    HRESULT Replace(LONGLONG pos, const BYTE* pBuffer, size_t cBytes);
-    HRESULT Append(const BYTE* pBuffer, size_t cBytes);
+    uint64_t Length() const override
+    {
+        // length of this atom container (ie location of next atom)
+        return m_llBytes;
+    }
+    int64_t Position() const override
+    {
+        // start of this container in absolute byte position
+        return 0;
+    }
+    HRESULT Replace(int64_t Position, uint8_t const* Data, size_t DataSize) override;
+    HRESULT Append(uint8_t const* Data, size_t DataSize) override
+    {
+        RETURN_IF_FAILED(Replace(m_llBytes, Data, DataSize));
+        m_llBytes += DataSize;
+        return S_OK;
+    }
     void NotifyMediaSampleWrite(int TrackIndex, wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize) override;
 
 private:
     Mpeg4Mux* m_pMux;
-    CCritSec m_csWrite;
+    mutable CCritSec m_csWrite;
     bool m_bUseIStream;
-    LONGLONG m_llBytes;
+    uint64_t m_llBytes;
 };
 
 // To pass seeking calls upstream we must try all connected input pins.
