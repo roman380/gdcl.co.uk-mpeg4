@@ -162,14 +162,14 @@ public:
         seq.Parse(&sps);
 
 		BYTE b[78] { };
-        WriteShort(static_cast<uint16_t>(dataref), b + 6);
-        WriteShort(static_cast<uint16_t>(m_FrameSize.first), b + 24);
-        WriteShort(static_cast<uint16_t>(m_FrameSize.second), b + 26);
+        Write16(static_cast<uint16_t>(dataref), b + 6);
+        Write16(static_cast<uint16_t>(m_FrameSize.first), b + 24);
+        Write16(static_cast<uint16_t>(m_FrameSize.second), b + 26);
         b[29] = 0x48;
         b[33] = 0x48;
         b[41] = 1;
         b[75] = 24;
-        WriteShort(0xFFFF, b + 76);
+        Write16(0xFFFF, b + 76);
         psd->Append(b, 78);
 
         auto const pesd = psd->CreateAtom('avcC');
@@ -348,14 +348,14 @@ public:
 		auto const psd = Atom->CreateAtom('mp4a');
 
 		BYTE b[28] { };
-		WriteShort(static_cast<uint16_t>(dataref), b + 6);
-		WriteShort(2, b + 16);
-		WriteShort(16, b + 18);
-		WriteShort(unsigned short(scale), b + 24);    // this is what forces us to use short audio scales
+		Write16(static_cast<uint16_t>(dataref), b + 6);
+		Write16(2, b + 16);
+		Write16(16, b + 18);
+		Write16(unsigned short(scale), b + 24);    // this is what forces us to use short audio scales
 		psd->Append(b, 28);
 
 		auto const pesd = psd->CreateAtom('esds');
-		WriteLong(0, b);        // ver/flags
+		Write32(0, b);        // ver/flags
 		pesd->Append(b, 4);
 		// es descr
 		//      decoder config
@@ -363,7 +363,7 @@ public:
 		//          decoder specific info desc
 		//      sl descriptor
 		Descriptor es(Descriptor::ES_Desc);
-		WriteShort(static_cast<uint16_t>(id), b);
+		Write16(static_cast<uint16_t>(id), b);
 		b[2] = 0;
 		es.Append(b, 3);
 		Descriptor dcfg(Descriptor::Decoder_Config);
@@ -374,8 +374,8 @@ public:
 		b[2] = 0;
 		b[3] = 0x3a;
 		b[4] = 0x98;
-		WriteLong(1500000, b + 5);    // max bitrate
-		WriteLong(0, b + 9);          // avg bitrate 0 = variable
+		Write32(1500000, b + 5);    // max bitrate
+		Write32(0, b + 9);          // avg bitrate 0 = variable
 		dcfg.Append(b, 13);
 		Descriptor dsi(Descriptor::Decoder_Specific_Info);
 		//BYTE* pExtra = m_mt.Format() + sizeof(WAVEFORMATEX);
@@ -1018,18 +1018,18 @@ DivxHandler::WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int data
     auto const height = static_cast<uint16_t>(std::abs(pvi->bmiHeader.biHeight));
 
 	BYTE b[78] { };
-    WriteShort(static_cast<uint16_t>(dataref), b+6);
-    WriteShort(width, b+24);
-    WriteShort(height, b+26);
+    Write16(static_cast<uint16_t>(dataref), b+6);
+    Write16(width, b+24);
+    Write16(height, b+26);
     b[29] = 0x48;
     b[33] = 0x48;
     b[41] = 1;
     b[75] = 24;
-    WriteShort(0xFFFF, b+76);
+    Write16(0xFFFF, b+76);
     psd->Append(b, 78);
 
     auto const pesd = psd->CreateAtom('esds');
-    WriteLong(0, b);        // ver/flags
+    Write32(0, b);        // ver/flags
     pesd->Append(b, 4);
 
     // es descr
@@ -1038,7 +1038,7 @@ DivxHandler::WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int data
     //          decoder specific info desc
     //      sl descriptor
     Descriptor es(Descriptor::ES_Desc);
-    WriteShort(static_cast<uint16_t>(id), b);
+    Write16(static_cast<uint16_t>(id), b);
     b[2] = 0;
     es.Append(b, 3);
     Descriptor dcfg(Descriptor::Decoder_Config);
@@ -1049,8 +1049,8 @@ DivxHandler::WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int data
     b[2] = 0;
     b[3] = 0x3a;
     b[4] = 0x98;
-    WriteLong(1500000, b+5);    // max bitrate
-    WriteLong(0, b+9);          // avg bitrate 0 = variable
+    Write32(1500000, b+5);    // max bitrate
+    Write32(0, b+9);          // avg bitrate 0 = variable
     dcfg.Append(b, 13);
     Descriptor dsi(Descriptor::Decoder_Specific_Info);
 
@@ -1188,14 +1188,14 @@ AACHandler::WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int datar
     auto const psd = Atom->CreateAtom('mp4a');
 
 	BYTE b[28] { };
-    WriteShort(static_cast<uint16_t>(dataref), b+6);
-    WriteShort(2, b+16);
-    WriteShort(16, b+18);
-    WriteShort(unsigned short(scale), b+24);    // this is what forces us to use short audio scales
+    Write16(static_cast<uint16_t>(dataref), b+6);
+    Write16(2, b+16);
+    Write16(16, b+18);
+    Write16(unsigned short(scale), b+24);    // this is what forces us to use short audio scales
     psd->Append(b, 28);
 
     auto const pesd = psd->CreateAtom('esds');
-    WriteLong(0, b);        // ver/flags
+    Write32(0, b);        // ver/flags
     pesd->Append(b, 4);
     // es descr
     //      decoder config
@@ -1203,7 +1203,7 @@ AACHandler::WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int datar
     //          decoder specific info desc
     //      sl descriptor
     Descriptor es(Descriptor::ES_Desc);
-    WriteShort(static_cast<uint16_t>(id), b);
+    Write16(static_cast<uint16_t>(id), b);
     b[2] = 0;
     es.Append(b, 3);
     Descriptor dcfg(Descriptor::Decoder_Config);
@@ -1214,8 +1214,8 @@ AACHandler::WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int datar
     b[2] = 0;
     b[3] = 0x3a;
     b[4] = 0x98;
-    WriteLong(1500000, b+5);    // max bitrate
-    WriteLong(0, b+9);          // avg bitrate 0 = variable
+    Write32(1500000, b+5);    // max bitrate
+    Write32(0, b+9);          // avg bitrate 0 = variable
     dcfg.Append(b, 13);
     Descriptor dsi(Descriptor::Decoder_Specific_Info);
     BYTE* pExtra = m_mt.Format() + sizeof(WAVEFORMATEX);
@@ -1301,14 +1301,14 @@ H264Handler::WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int data
     auto const height = static_cast<uint16_t>(std::abs(pvi->hdr.bmiHeader.biHeight));
 
 	BYTE b[78] { };
-    WriteShort(static_cast<uint16_t>(dataref), b+6);
-    WriteShort(width, b+24);
-    WriteShort(height, b+26);
+    Write16(static_cast<uint16_t>(dataref), b+6);
+    Write16(width, b+24);
+    Write16(height, b+26);
     b[29] = 0x48;
     b[33] = 0x48;
     b[41] = 1;
     b[75] = 24;
-    WriteShort(0xFFFF, b+76);
+    Write16(0xFFFF, b+76);
     psd->Append(b, 78);
 
     auto const pesd = psd->CreateAtom('avcC');
@@ -1946,19 +1946,19 @@ WaveHandler::WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int data
 	{
 	    auto const psd = Atom->CreateAtom(DWORD('sowt'));
 		BYTE b[44] { };
-		WriteShort(static_cast<uint16_t>(dataref), b+6);
-		WriteShort(1, b+8);		// ver 1 of sound sample desc
-		WriteShort(pwfx->nChannels, b+16);
+		Write16(static_cast<uint16_t>(dataref), b+6);
+		Write16(1, b+8);		// ver 1 of sound sample desc
+		Write16(pwfx->nChannels, b+16);
 		short bits = (pwfx->wBitsPerSample == 8) ? 8 : 16;
-		WriteShort(bits, b+18);
-		WriteShort(0xFFFF, b+20);
-		WriteShort(static_cast<uint16_t>(pwfx->nSamplesPerSec), b+24);    // this is what forces us to use short audio scales
+		Write16(bits, b+18);
+		Write16(0xFFFF, b+20);
+		Write16(static_cast<uint16_t>(pwfx->nSamplesPerSec), b+24);    // this is what forces us to use short audio scales
 
 		short bytesperchan = pwfx->wBitsPerSample / 8;
-		WriteLong(1, b+28);
-		WriteLong(bytesperchan, b+32);
-		WriteLong(bytesperchan * pwfx->nChannels, b+36);
-		WriteLong(2, b+40);
+		Write32(1, b+28);
+		Write32(bytesperchan, b+32);
+		Write32(bytesperchan * pwfx->nChannels, b+36);
+		Write32(2, b+40);
 
 		psd->Append(b, 44);
 	    psd->Close();
@@ -1978,14 +1978,14 @@ WaveHandler::WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int data
 		}
 	    auto const psd = Atom->CreateAtom(dwAtom);
 		BYTE b[28] { };
-		WriteShort(static_cast<uint16_t>(dataref), b+6);
-		WriteShort(2, b+16);
-		WriteShort(16, b+18);
-		WriteShort(unsigned short(scale), b+24);    // this is what forces us to use short audio scales
+		Write16(static_cast<uint16_t>(dataref), b+6);
+		Write16(2, b+16);
+		Write16(16, b+18);
+		Write16(unsigned short(scale), b+24);    // this is what forces us to use short audio scales
 		psd->Append(b, 28);
 
 		auto const pesd = psd->CreateAtom('esds');
-		WriteLong(0, b);        // ver/flags
+		Write32(0, b);        // ver/flags
 		pesd->Append(b, 4);
 		// es descr
 		//      decoder config
@@ -1993,7 +1993,7 @@ WaveHandler::WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int data
 		//          decoder specific info desc
 		//      sl descriptor
 		Descriptor es(Descriptor::ES_Desc);
-		WriteShort(static_cast<uint16_t>(id), b);
+		Write16(static_cast<uint16_t>(id), b);
 		b[2] = 0;
 		es.Append(b, 3);
 		Descriptor dcfg(Descriptor::Decoder_Config); // ISO 14496-1 8.3.4
@@ -2004,8 +2004,8 @@ WaveHandler::WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int data
 		b[2] = 0;
 		b[3] = 0x3a;
 		b[4] = 0x98;
-		WriteLong(1500000, b+5);    // max bitrate
-		WriteLong(0, b+9);          // avg bitrate 0 = variable
+		Write32(1500000, b+5);    // max bitrate
+		Write32(0, b+9);          // avg bitrate 0 = variable
 		dcfg.Append(b, 13);
 		Descriptor dsi(Descriptor::Decoder_Specific_Info); // ISO 14496-1 8.3.5
 

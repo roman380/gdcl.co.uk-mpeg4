@@ -26,23 +26,23 @@
 #include "TypeHandler.h"
 
 // byte ordering to buffer
-inline void WriteShort(uint16_t Value, uint8_t* Data)
+inline void Write16(uint16_t Value, uint8_t* Data)
 {
     *reinterpret_cast<uint16_t*>(Data) = _byteswap_ushort(Value);
 }
-inline void WriteLong(uint32_t Value, uint8_t* Data)
+inline void Write32(uint32_t Value, uint8_t* Data)
 {
     *reinterpret_cast<uint32_t*>(Data) = _byteswap_ulong(Value);
 }
-inline void WriteI64(uint64_t Value, uint8_t* Data)
+inline void Write64(uint64_t Value, uint8_t* Data)
 {
     *reinterpret_cast<uint64_t*>(Data) = _byteswap_uint64(Value);
 }
-inline uint32_t ReadLong(uint8_t const* Data)
+inline uint32_t Read32(uint8_t const* Data)
 {
     return _byteswap_ulong(*reinterpret_cast<uint32_t const*>(Data));
 }
-inline uint64_t ReadI64(uint8_t const* Data)
+inline uint64_t Read64(uint8_t const* Data)
 {
     return _byteswap_uint64(*reinterpret_cast<uint64_t const*>(Data));
 }
@@ -86,6 +86,7 @@ public:
             Close();
         }
     }
+
     LONGLONG Position()
     {
         return m_pContainer->Position() + m_llOffset;

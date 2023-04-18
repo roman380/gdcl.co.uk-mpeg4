@@ -20,8 +20,8 @@ Atom::Atom(AtomWriter* pContainer, LONGLONG llOffset, DWORD type)
 {
     // write the initial length and type dwords
     BYTE b[8];
-    WriteLong(8, b);
-    WriteLong(type, b+4);
+    Write32(8, b);
+    Write32(type, b+4);
     Append(b, 8);
 }
 
@@ -38,7 +38,7 @@ Atom::Close()
     }
 
     BYTE b[4];
-    WriteLong(static_cast<uint32_t>(m_cBytes), b);
+    Write32(static_cast<uint32_t>(m_cBytes), b);
     return Replace(0, b, 4);
 }
 
@@ -128,15 +128,15 @@ MovieWriter::Close(REFERENCE_TIME* pDuration)
         // modify time 64bit
         // timescale 32-bit
         // duration 64-bit
-        WriteLong(MovieScale(), b + (5*4));
-        WriteI64(tScaledDur, b + (6 * 4));
+        Write32(MovieScale(), b + (5*4));
+        Write64(tScaledDur, b + (6 * 4));
         cHdr = 8 * 4;
     }
     else
     {
         long lDur = long(tScaledDur);
-        WriteLong(MovieScale(), b + (3 * 4));
-        WriteLong(lDur, b + (4 * 4));
+        Write32(MovieScale(), b + (3 * 4));
+        Write32(lDur, b + (4 * 4));
         cHdr = 5 * 4;
     }
     b[cHdr + 1] = 0x01;
@@ -144,7 +144,7 @@ MovieWriter::Close(REFERENCE_TIME* pDuration)
     b[cHdr + 17] = 0x01;
     b[cHdr + 33] = 0x01;
     b[cHdr + 48] = 0x40;
-    WriteLong((long)m_Tracks.size() + 1, b + cHdr + 76); // one-based next-track-id
+    Write32((long)m_Tracks.size() + 1, b + cHdr + 76); // one-based next-track-id
     pmvhd->Append(b, cHdr + 80);
     pmvhd->Close();
 
@@ -164,15 +164,15 @@ MovieWriter::Close(REFERENCE_TIME* pDuration)
         {
             uint8_t MetaData[44];
             uint8_t* MetaDataPointer = MetaData;
-            WriteLong(0, MetaDataPointer); MetaDataPointer += 4;
-            WriteLong(32, MetaDataPointer); MetaDataPointer += 4;
-            WriteLong('hdlr', MetaDataPointer); MetaDataPointer += 4;
-            WriteLong(0, MetaDataPointer); MetaDataPointer += 4; // Version, Flags
-            WriteLong(0, MetaDataPointer); MetaDataPointer += 4; // Predefined
-            WriteLong('mdir', MetaDataPointer); MetaDataPointer += 4;
-            WriteLong(0, MetaDataPointer); MetaDataPointer += 4;
-            WriteLong(0, MetaDataPointer); MetaDataPointer += 4;
-            WriteLong(0, MetaDataPointer); MetaDataPointer += 4;
+            Write32(0, MetaDataPointer); MetaDataPointer += 4;
+            Write32(32, MetaDataPointer); MetaDataPointer += 4;
+            Write32('hdlr', MetaDataPointer); MetaDataPointer += 4;
+            Write32(0, MetaDataPointer); MetaDataPointer += 4; // Version, Flags
+            Write32(0, MetaDataPointer); MetaDataPointer += 4; // Predefined
+            Write32('mdir', MetaDataPointer); MetaDataPointer += 4;
+            Write32(0, MetaDataPointer); MetaDataPointer += 4;
+            Write32(0, MetaDataPointer); MetaDataPointer += 4;
+            Write32(0, MetaDataPointer); MetaDataPointer += 4;
             ASSERT(static_cast<size_t>(MetaDataPointer - MetaData) <= std::size(MetaData));
             meta->Append(MetaData, static_cast<long>(MetaDataPointer - MetaData));
             auto const ilst = meta->CreateAtom('ilst');
@@ -181,8 +181,8 @@ MovieWriter::Close(REFERENCE_TIME* pDuration)
                 auto const data = cmt->CreateAtom('data');
                 uint8_t Data[8];
                 uint8_t* DataPointer = Data;
-                WriteLong(0x00000001, DataPointer); DataPointer += 4; // Version, Flags
-                WriteLong(0, DataPointer); DataPointer += 4;
+                Write32(0x00000001, DataPointer); DataPointer += 4; // Version, Flags
+                Write32(0, DataPointer); DataPointer += 4;
                 ASSERT(static_cast<size_t>(DataPointer - Data) <= std::size(Data));
                 data->Append(Data, static_cast<long>(DataPointer - Data));
                 data->Append(reinterpret_cast<uint8_t const*>(m_Comment.data()), static_cast<long>(m_Comment.size()));
@@ -225,7 +225,7 @@ MovieWriter::InsertFTYP(AtomWriter* pFile)
         BYTE b[8];
 		if (bHasOld)
 		{
-			WriteLong(DWORD('qt  '), b);
+			Write32(DWORD('qt  '), b);
 			// minor version
 			b[4] = 0x20;
 			b[5] = 0x04;
@@ -234,15 +234,15 @@ MovieWriter::InsertFTYP(AtomWriter* pFile)
 		}
 		else
 		{
-			WriteLong(DWORD('mp42'), b);
+			Write32(DWORD('mp42'), b);
 			// minor version
-			WriteLong(0, b+4);
+			Write32(0, b+4);
 		}
 		pFTYP->Append(b, 8);
         // additional compatible specs
-        WriteLong(DWORD('mp42'), b);
+        Write32(DWORD('mp42'), b);
         pFTYP->Append(b, 4);
-        WriteLong(DWORD('isom'), b);
+        Write32(DWORD('isom'), b);
         pFTYP->Append(b, 4);
         pFTYP->Close();
         m_bFTYPInserted = true;
@@ -415,7 +415,7 @@ MovieWriter::MakeIODS(std::shared_ptr<Atom> const& pmoov)
 
     Descriptor iod(Descriptor::MP4_IOD);
     BYTE b[16];
-    WriteShort(0x004f, b);      // object id 1, no url, no inline profile + reserved bits
+    Write16(0x004f, b);      // object id 1, no url, no inline profile + reserved bits
     b[2] = 0xff;        // no od capability required
     b[3] = 0xff;        // no scene graph capability required
     b[4] = 0x0f;        // audio profile
@@ -430,12 +430,12 @@ MovieWriter::MakeIODS(std::shared_ptr<Atom> const& pmoov)
         {
             // use 32-bit track id in IODS
             Descriptor es(Descriptor::ES_ID_Inc);
-            WriteLong(m_Tracks[i]->ID(), b);
+            Write32(m_Tracks[i]->ID(), b);
             es.Append(b, 4);
             iod.Append(&es);
         }
     }
-    WriteLong(0, b);
+    Write32(0, b);
     piods->Append(b, 4);       // ver/flags
     iod.Write(piods);
     piods->Close();
@@ -650,13 +650,13 @@ TrackWriter::Close(std::shared_ptr<Atom> const& Atom)
         // use 64-bit version (64-bit create/modify and duration
         cHdr = 9*4;
         b[0] = 1;
-        WriteLong(ID(), b+(5*4));
-        WriteI64(scaledur, b+(7*4));
+        Write32(ID(), b+(5*4));
+        Write64(scaledur, b+(7*4));
     }
     else
     {
-        WriteLong(ID(), b+(3*4));     // 1-base track id
-        WriteLong(long(scaledur), b+(5*4));
+        Write32(ID(), b+(3*4));     // 1-base track id
+        Write32(long(scaledur), b+(5*4));
         cHdr = 6*4;
     }
     b[3] = 7;   // enabled, in movie and in preview
@@ -670,8 +670,8 @@ TrackWriter::Close(std::shared_ptr<Atom> const& Atom)
     b[cHdr + 48] = 0x40;
     if (IsVideo())
     {
-		WriteShort(static_cast<uint16_t>(m_pType->Width()), &b[cHdr + 52]);
-		WriteShort(static_cast<uint16_t>(m_pType->Height()), &b[cHdr + 56]);
+		Write16(static_cast<uint16_t>(m_pType->Width()), &b[cHdr + 52]);
+		Write16(static_cast<uint16_t>(m_pType->Height()), &b[cHdr + 56]);
     }
 
     ptkhd->Append(b, cHdr + 60);
@@ -695,14 +695,14 @@ TrackWriter::Close(std::shared_ptr<Atom> const& Atom)
     if (scaledur > 0x7fffffff)
     {
         b[0] = 1;       // 64-bit
-        WriteLong(m_Durations.Scale(), b+20);
-        WriteI64(scaledur, b+24);         
+        Write32(m_Durations.Scale(), b+20);
+        Write64(scaledur, b+24);         
         cHdr = 8*4;
     }
     else
     {
-        WriteLong(m_Durations.Scale(), b+12);
-        WriteLong(long(scaledur), b+16);         
+        Write32(m_Durations.Scale(), b+12);
+        Write32(long(scaledur), b+16);         
         cHdr = 5*4;
     }
     // 'eng' as offset from 0x60 in 0 pad bit plus 3x5-bit (05 0xe 07)
@@ -714,8 +714,8 @@ TrackWriter::Close(std::shared_ptr<Atom> const& Atom)
     // handler id hdlr
     auto const phdlr = pmdia->CreateAtom('hdlr');
     ZeroMemory(b, 25);
-	WriteLong(Handler()->DataType(), b+4);
-    WriteLong(Handler()->Handler(), b+8);
+	Write32(Handler()->DataType(), b+4);
+    Write32(Handler()->Handler(), b+8);
     phdlr->Append(b, 25);
     phdlr->Close();
     
@@ -743,8 +743,8 @@ TrackWriter::Close(std::shared_ptr<Atom> const& Atom)
     // dinf/dref -- data reference
     auto const pdinf = pminf->CreateAtom('dinf');
     auto const pdref = pdinf->CreateAtom('dref');
-    WriteLong(0, b);        // ver/flags
-    WriteLong(1, b+4);      // entries
+    Write32(0, b);        // ver/flags
+    Write32(1, b+4);      // entries
     pdref->Append(b, 8);
     auto const purl = pdref->CreateAtom('url ');
     // self-contained flag set, and no string required
@@ -760,8 +760,8 @@ TrackWriter::Close(std::shared_ptr<Atom> const& Atom)
     // Sample description
     // -- contains one descriptor atom mp4v/mp4a/... for each data reference.
     auto const pstsd = pstbl->CreateAtom('stsd');
-    WriteLong(0, b);    // ver/flags
-    WriteLong(1, b+4);    // count of entries
+    Write32(0, b);    // ver/flags
+    Write32(1, b+4);    // count of entries
     pstsd->Append(b, 8);
     Handler()->WriteDescriptor(pstsd, ID(), 1, m_Durations.Scale());   // dataref = 1
     pstsd->Close();
@@ -969,7 +969,7 @@ ListOfLongs::Append(long l)
 		m_nEntriesInLast = 0;
     }
     auto& p = m_Blocks.back();
-    WriteLong(l, p.data() + m_nEntriesInLast * 4);
+    Write32(l, p.data() + m_nEntriesInLast * 4);
     m_nEntriesInLast++;
 }
 
@@ -1008,7 +1008,7 @@ ListOfLongs::Entry(long nEntry)
     if (nEntry < Entries())
     {
         auto& p = m_Blocks[nEntry/EntriesPerBlock];
-        nValue = ReadLong(p.data() + (nEntry % EntriesPerBlock)*4);
+        nValue = Read32(p.data() + (nEntry % EntriesPerBlock)*4);
     }
     return nValue;
 }
@@ -1028,7 +1028,7 @@ ListOfI64::Append(LONGLONG ll)
 		m_nEntriesInLast = 0;
     }
     auto& p = m_Blocks.back();
-    WriteI64(ll, p.data() + m_nEntriesInLast*8);
+    Write64(ll, p.data() + m_nEntriesInLast*8);
     m_nEntriesInLast++;
 }
 
@@ -1101,7 +1101,7 @@ ListOfPairs::Write(std::shared_ptr<Atom> const& Atom)
     BYTE b[8];
     ZeroMemory(b, 8);
     // entry count is count of pairs
-    WriteLong(m_Table.Entries() / 2, b+4);
+    Write32(m_Table.Entries() / 2, b+4);
 
     HRESULT hr = Atom->Append(b, 8);
 
@@ -1199,9 +1199,9 @@ SizeIndex::Write(std::shared_ptr<Atom> const& Atom)
     {
         // this size field is left 0 if we are
         // creating a size entry for each sample
-        WriteLong(m_cBytesCurrent, b+4);
+        Write32(m_cBytesCurrent, b+4);
     }
-    WriteLong(m_nSamples, b+8);
+    Write32(m_nSamples, b+8);
     psz->Append(b, 12);
     if (m_Table.Entries() > 0)
         m_Table.Write(psz);
@@ -1447,14 +1447,14 @@ DurationIndex::WriteEDTS(std::shared_ptr<Atom> const& Atom, long scale)
 
             // create an offset for the first sample
             // using an "empty" edit
-            WriteLong(2, b+4);
-            WriteI64(offset, b+8);
-            WriteI64(0xFFFF, b+16);        // no media used
+            Write32(2, b+4);
+            Write64(offset, b+8);
+            Write64(0xFFFF, b+16);        // no media used
             b[25] = 1;
 
             // whole track as next edit
-            WriteI64(dur, b+28);
-            WriteI64(0, b+36);
+            Write64(dur, b+28);
+            Write64(0, b+36);
             b[45] = 1;
             cSz = 48;
         }
@@ -1462,14 +1462,14 @@ DurationIndex::WriteEDTS(std::shared_ptr<Atom> const& Atom, long scale)
         {
             // create an offset for the first sample
             // using an "empty" edit
-            WriteLong(2, b+4);
-            WriteLong(long(offset), b+8);
-            WriteLong(0xFFFF, b+12);        // no media used
+            Write32(2, b+4);
+            Write32(long(offset), b+8);
+            Write32(0xFFFF, b+12);        // no media used
             b[17] = 1;
 
             // whole track as next edit
-            WriteLong(long(dur), b+20);
-            WriteLong(0, b+24);
+            Write32(long(dur), b+20);
+            Write32(0, b+24);
             b[29] = 1;
             cSz = 32;
         }
@@ -1554,8 +1554,8 @@ SamplesPerChunkIndex::Write(std::shared_ptr<Atom> const& Atom)
     //    triple <first chunk, samples per chunk, dataref>
 
     BYTE b[8];
-    WriteLong(0, b);
-    WriteLong(m_Table.Entries() / 3, b+4);
+    Write32(0, b);
+    Write32(m_Table.Entries() / 3, b+4);
     HRESULT hr = pSC->Append(b, 8);
     if (SUCCEEDED(hr))
         hr = m_Table.Write(pSC);
@@ -1593,9 +1593,9 @@ ChunkOffsetIndex::Write(std::shared_ptr<Atom> const& Atom)
         // create 64-bit atom co64
         auto const pCO = Atom->CreateAtom('co64');
         BYTE b[8];
-        WriteLong(0, b);        // ver/flags
+        Write32(0, b);        // ver/flags
         long nEntries = converted.Entries() + m_Table64.Entries();
-        WriteLong(nEntries, b+4);
+        Write32(nEntries, b+4);
         hr = pCO->Append(b, 8);
         if (SUCCEEDED(hr))
         {
@@ -1611,8 +1611,8 @@ ChunkOffsetIndex::Write(std::shared_ptr<Atom> const& Atom)
         // 32-bit atom
         auto const pCO = Atom->CreateAtom('stco');
         BYTE b[8];
-        WriteLong(0, b);        // ver/flags
-        WriteLong(m_Table32.Entries(), b+4);
+        Write32(0, b);        // ver/flags
+        Write32(m_Table32.Entries(), b+4);
         hr = pCO->Append(b, 8);
         if (SUCCEEDED(hr))
         {
@@ -1667,8 +1667,8 @@ SyncIndex::Write(std::shared_ptr<Atom> const& Atom)
         auto const pss = Atom->CreateAtom('stss');
 
         BYTE b[8];
-        WriteLong(0, b);    // ver/flags
-        WriteLong(m_Syncs.Entries(), b+4);
+        Write32(0, b);    // ver/flags
+        Write32(m_Syncs.Entries(), b+4);
         hr = pss->Append(b, 8);
         if (SUCCEEDED(hr))
         {

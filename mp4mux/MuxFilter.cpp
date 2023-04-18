@@ -1018,8 +1018,8 @@ MuxOutput::FillSpace()
                 {
                     // create a free chunk
                     BYTE b[8];
-                    WriteLong(long(free), b);
-                    WriteLong(DWORD('free'), b+4);
+                    Write32(long(free), b);
+                    Write32(DWORD('free'), b+4);
                     Append(b, 8);
                 }
             }
