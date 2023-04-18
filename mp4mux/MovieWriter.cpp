@@ -955,14 +955,6 @@ MediaChunk::GetDuration() const
 
 // ---- index classes --------------------
 
-template <typename T, typename ValueType> 
-HRESULT ListOf<T, ValueType>::Write(std::shared_ptr<Atom> const& Atom)
-{
-    for(auto&& Block: m_Blocks)
-        RETURN_IF_FAILED(Atom->Append(reinterpret_cast<uint8_t const*>(Block.data()), Block.size() * sizeof (ValueType)));
-    return S_OK;
-}
-
 void 
 ListOfPairs::Append(long val)
 {
@@ -1404,13 +1396,6 @@ DurationIndex::WriteTable(std::shared_ptr<Atom> const& Atom)
     return hr;
 }
 
-SamplesPerChunkIndex::SamplesPerChunkIndex(long dataref)
-: m_dataref(dataref),
-  m_nTotalChunks(0),
-  m_nSamples(0)
-{
-}
-
 void 
 SamplesPerChunkIndex::Add(long nSamples)
 {
@@ -1503,12 +1488,6 @@ ChunkOffsetIndex::Write(std::shared_ptr<Atom> const& Atom)
         pCO->Close();
     }
     return hr;
-}
-
-SyncIndex::SyncIndex()
-: m_bAllSync(true),
-  m_nSamples(0)
-{
 }
 
 void 

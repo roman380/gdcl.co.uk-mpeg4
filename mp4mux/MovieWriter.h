@@ -185,7 +185,12 @@ public:
         auto& Block = m_Blocks.back();
         Block.emplace_back(static_cast<T*>(this)->Transform(Value));
     }
-    HRESULT Write(std::shared_ptr<Atom> const& Atom);
+    HRESULT Write(std::shared_ptr<Atom> const& Atom)
+    {
+        for(auto&& Block: m_Blocks)
+            RETURN_IF_FAILED(Atom->Append(reinterpret_cast<uint8_t const*>(Block.data()), Block.size() * sizeof (ValueType)));
+        return S_OK;
+    }
     size_t Entries() const
     {
         return ((m_Blocks.size() - 1) * EntriesPerBlock) + m_Blocks.back().size();
@@ -282,11 +287,11 @@ public:
     void SetOldIndexStart(REFERENCE_TIME tStart);
     HRESULT WriteEDTS(std::shared_ptr<Atom> const& Atom, long scale);
     HRESULT WriteTable(std::shared_ptr<Atom> const& Atom);
-    REFERENCE_TIME Duration()
+    REFERENCE_TIME Duration() const
     {
         return m_tStopLast;
     }
-    long Scale()
+    long Scale() const
     {
         return m_scale;
     }
@@ -318,8 +323,8 @@ public:
         m_TotalDuration += ToScale(tAdjust);
         m_refDuration += tAdjust;
     }
-    int SampleCount()						{ return m_nSamples; }
-    REFERENCE_TIME AverageDuration()		{ return m_refDuration / m_nSamples; }
+    int SampleCount() const { return m_nSamples; }
+    REFERENCE_TIME AverageDuration() const { return m_refDuration / m_nSamples; }
 
 private:
     void AddDuration(long cThis);
@@ -369,15 +374,18 @@ private:
 class SamplesPerChunkIndex
 {
 public:
-    SamplesPerChunkIndex(long dataref);
+    SamplesPerChunkIndex(long dataref) : 
+        m_dataref(dataref)
+    {
+    }
 
     void Add(long nSamples);
     HRESULT Write(std::shared_ptr<Atom> const& Atom);
 private:
     long m_dataref;
     ListOfLongs m_Table;
-    long m_nTotalChunks;
-    long m_nSamples;    //last entry
+    long m_nTotalChunks = 0;
+    long m_nSamples = 0;    //last entry
 };
 
 // index of chunk offsets
@@ -403,13 +411,12 @@ private:
 class SyncIndex
 {
 public:
-    SyncIndex();
-
     void Add(bool bSync);
     HRESULT Write(std::shared_ptr<Atom> const& Atom);
+
 private:
-    long m_nSamples;
-    bool m_bAllSync;
+    long m_nSamples = 0;
+    bool m_bAllSync = true;
     ListOfLongs m_Syncs;
 };
 
@@ -424,7 +431,7 @@ public:
     // returns true if all tracks now at end
     bool OnEOS();
 
-    bool IsAtEOS()
+    bool IsAtEOS() const
     {
         CAutoLock lock(&m_csQueue);
         return m_bEOS;
@@ -450,7 +457,7 @@ public:
     }
     HRESULT Close(std::shared_ptr<Atom> const& Atom);
 
-    REFERENCE_TIME SampleDuration()
+    REFERENCE_TIME SampleDuration() const
     {
         if (m_Durations.SampleCount() > 3)
         {
@@ -462,17 +469,15 @@ public:
         }
         return UNITS / m_pType->SampleRate();
     }
-    REFERENCE_TIME Duration()
+    REFERENCE_TIME Duration() const
     {
-        REFERENCE_TIME tDur = m_Durations.Duration();
-        
-        return tDur;
+        return m_Durations.Duration();
     }
-    bool IsVideo()
+    bool IsVideo() const
     {
         return m_pType->IsVideo();
     }
-    bool IsAudio()
+    bool IsAudio() const
     {
         return m_pType->IsAudio();
     }
@@ -480,9 +485,9 @@ public:
     {
         return m_pType;
     }
-    long ID() 
+    long ID() const
     {
-        return m_index+1;
+        return m_index + 1;
     }
     REFERENCE_TIME Earliest()
     {
@@ -503,13 +508,9 @@ public:
             m_StartAt = tStart;
         }
     }
-    bool IsNonMP4()
+    bool IsNonMP4() const
     {
-        if (m_pType)
-        {
-            return m_pType->IsNonMP4();
-        }
-        return false;
+        return m_pType && m_pType->IsNonMP4();
     }
 
     void NotifyMediaSampleWrite(wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize);
@@ -577,17 +578,17 @@ public:
         return DEFAULT_TIMESCALE;
     }
 
-    long TrackCount()
+    size_t TrackCount() const
     {
-        return (long)m_Tracks.size();
+        return m_Tracks.size();
     }
-    std::shared_ptr<TrackWriter> const& Track(long nTrack) const
+    std::shared_ptr<TrackWriter> const& Track(size_t TrackIndex) const
     {
-        return m_Tracks[nTrack];
+        return m_Tracks[TrackIndex];
     }
     REFERENCE_TIME CurrentPosition();
 
-    REFERENCE_TIME MaxInterleaveDuration()
+    REFERENCE_TIME MaxInterleaveDuration() const
     {
         CAutoLock lock(&m_csBitrate);
         return m_tInterleave;
@@ -607,13 +608,13 @@ private:
     BOOL m_bAlignTrackStartTimeDisabled;
     REFERENCE_TIME m_nMinimalMovieDuration;
 
-    CCritSec m_csWrite;
+    mutable CCritSec m_csWrite;
     bool m_bStopped;
     bool m_bFTYPInserted;
     std::shared_ptr<Atom> m_patmMDAT;
     std::vector<std::shared_ptr<TrackWriter>> m_Tracks;
 
-    CCritSec m_csBitrate;
+    mutable CCritSec m_csBitrate;
     vector<int> m_Bitrates;
     REFERENCE_TIME m_tInterleave;
 
