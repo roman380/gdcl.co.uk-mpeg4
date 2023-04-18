@@ -219,7 +219,7 @@ public:
     LONGLONG Position();
     HRESULT Replace(LONGLONG pos, const BYTE* pBuffer, size_t cBytes);
     HRESULT Append(const BYTE* pBuffer, size_t cBytes);
-    void NotifyMediaSampleWrite(int TrackIndex, IMediaSample* MediaSample, size_t DataSize) override;
+    void NotifyMediaSampleWrite(int TrackIndex, wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize) override;
 
 private:
     Mpeg4Mux* m_pMux;
@@ -302,7 +302,7 @@ public:
     void OnEOS();
     REFERENCE_TIME Start() { return m_tStart;}
 
-    void NotifyMediaSampleWrite(int TrackIndex, uint64_t DataPosition, size_t DataSize, IMediaSample* MediaSample);
+    void NotifyMediaSampleWrite(int TrackIndex, uint64_t DataPosition, size_t DataSize, wil::com_ptr<IMediaSample> const& MediaSample);
 
     // we implement IMediaSeeking to allow encoding
     // of specific portions of an input clip, and

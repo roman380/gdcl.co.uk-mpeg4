@@ -11,6 +11,7 @@
 #pragma once
 
 #include <string>
+#include <list>
 
 // tracks are normally interleaved by the second. Define this
 // to set the maximum size of a single interleave piece.
@@ -21,34 +22,25 @@
 #include "TypeHandler.h"
 
 // byte ordering to buffer
-inline void WriteShort(int x, BYTE* pBuffer)
+inline void WriteShort(uint16_t Value, uint8_t* Data)
 {
-    pBuffer[0] = (BYTE)((x >> 8) & 0xff);
-    pBuffer[1] = (BYTE)(x & 0xff);
+    *reinterpret_cast<uint16_t*>(Data) = _byteswap_ushort(Value);
 }
-
-inline void WriteLong(long l, BYTE* pBuffer)
+inline void WriteLong(uint32_t Value, uint8_t* Data)
 {
-    pBuffer[0] = BYTE(l >> 24);
-    pBuffer[1] = BYTE((l >> 16) & 0xff);
-    pBuffer[2] = BYTE((l >> 8) & 0xff);
-    pBuffer[3] = BYTE(l & 0xff);
+    *reinterpret_cast<uint32_t*>(Data) = _byteswap_ulong(Value);
 }
-inline void WriteI64(LONGLONG l, BYTE* pBuffer)
+inline void WriteI64(uint64_t Value, uint8_t* Data)
 {
-    WriteLong(long(l >> 32), pBuffer);
-    WriteLong(long(l & 0xffffffff), pBuffer + 4);
+    *reinterpret_cast<uint64_t*>(Data) = _byteswap_uint64(Value);
 }
-inline long ReadLong(const BYTE* pByte)
+inline uint32_t ReadLong(uint8_t const* Data)
 {
-    return (pByte[0] << 24) |
-            (pByte[1] << 16) |
-            (pByte[2] << 8)  |
-            pByte[3];
+    return _byteswap_ulong(*reinterpret_cast<uint32_t const*>(Data));
 }
-inline LONGLONG ReadI64(BYTE* pBuffer)
+inline uint64_t ReadI64(uint8_t const* Data)
 {
-    return (LONGLONG(ReadLong(pBuffer)) << 32) + ReadLong(pBuffer + 4);
+    return _byteswap_uint64(*reinterpret_cast<uint64_t const*>(Data));
 }
 
 // forward references
@@ -58,21 +50,19 @@ class MovieWriter;
 class TrackWriter;
 // do you feel at this point there should be a class ScriptWriter?
 
-
-
 // abstract interface to atom, supported by parent
 // atom or by external container (eg output pin)
 class AtomWriter
 {
 public:
-    virtual ~AtomWriter() {}
+    virtual ~AtomWriter() = default;
 
     virtual LONGLONG Length() = 0;
     virtual LONGLONG Position() = 0;
     virtual HRESULT Replace(LONGLONG pos, uint8_t const* pBuffer, size_t cBytes) = 0;
     virtual HRESULT Append(uint8_t const* pBuffer, size_t cBytes) = 0;
 
-    virtual void NotifyMediaSampleWrite(int TrackIndex, IMediaSample* MediaSample, size_t DataSize)
+    virtual void NotifyMediaSampleWrite(int TrackIndex, wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize)
     { 
         TrackIndex; MediaSample; DataSize;
     }
@@ -119,7 +109,6 @@ private:
     LONGLONG m_cBytes;
 };
 
-
 // a collection of samples, to be written as one contiguous 
 // chunk in the mdat atom. The properties will
 // be indexed once the data is written.
@@ -127,12 +116,14 @@ private:
 class MediaChunk
 {
 public:
-    MediaChunk(TrackWriter* pTrack);
-    ~MediaChunk();
+    MediaChunk(TrackWriter* Track) :
+        m_pTrack(Track)
+    {
+    }
 
     HRESULT AddSample(IMediaSample* pSample);
     HRESULT Write(Atom* patm);
-    long Length()
+    long Length() const
     {
         return m_cBytes;
     }
@@ -141,25 +132,27 @@ public:
         *ptStart = m_tStart;
         *ptEnd = m_tEnd;
     }
-    long Samples()
+    size_t MediaSampleCount() const
     {
-        return (long)m_Samples.size();
+        return m_MediaSampleList.size();
     }
-    bool IsFull(REFERENCE_TIME tMaxDur);
-    REFERENCE_TIME GetDuration();
-    void SetOldIndexFormat()	{ m_bOldIndexFormat = true; }
+    bool IsFull(REFERENCE_TIME tMaxDur) const;
+    REFERENCE_TIME GetDuration() const;
+    void SetOldIndexFormat()
+    {
+        m_bOldIndexFormat = true;
+    }
 
 private:
     TrackWriter* m_pTrack;
-    REFERENCE_TIME m_tStart;
-    REFERENCE_TIME m_tEnd;
-    bool m_bOldIndexFormat;
-    long m_cBytes;
-    list<IMediaSample*> m_Samples;
+    REFERENCE_TIME m_tStart = 0;
+    REFERENCE_TIME m_tEnd = 0;
+    bool m_bOldIndexFormat = false;
+    size_t m_cBytes = 0;
+    std::list<wil::com_ptr<IMediaSample>> m_MediaSampleList;
 };
+
 typedef smart_ptr<MediaChunk> MediaChunkPtr;
-
-
 
 // --- indexing ---
 
@@ -405,7 +398,7 @@ private:
 class TrackWriter
 {
 public:
-    TrackWriter(MovieWriter* pMovie, int index, TypeHandler* ptype, BOOL bNotifyMediaSampleWrite = FALSE);
+    TrackWriter(MovieWriter* pMovie, int index, TypeHandler* ptype, bool NotifyMediaSampleWrite = false);
 
     HRESULT Add(IMediaSample* pSample);
 
@@ -423,7 +416,11 @@ public:
 
     bool GetHeadTime(LONGLONG* ptHead);
     HRESULT WriteHead(Atom* patm);
-    REFERENCE_TIME LastWrite();
+    REFERENCE_TIME LastWrite() const
+    {
+        CAutoLock lock(&m_csQueue);
+        return m_tLast;
+    }
 
     void IndexChunk(LONGLONG posChunk, size_t nSamples);
     void IndexSample(bool bSync, REFERENCE_TIME tStart, REFERENCE_TIME tStop, size_t cBytes);
@@ -496,18 +493,18 @@ public:
         return false;
     }
 
-    VOID NotifyMediaSampleWrite(IMediaSample* pMediaSample, SIZE_T nDataSize);
+    void NotifyMediaSampleWrite(wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize);
 
 private:
     MovieWriter* m_pMovie;
     int m_index;
     smart_ptr<TypeHandler> m_pType;
-    BOOL m_bNotifyMediaSampleWrite;
+    bool m_NotifyMediaSampleWrite;
 
-    CCritSec m_csQueue;
-    bool m_bEOS;
-    bool m_bStopped;
-    REFERENCE_TIME m_tLast;
+    mutable CCritSec m_csQueue;
+    bool m_bEOS = false;
+    bool m_bStopped = false;
+    REFERENCE_TIME m_tLast = 0;
     MediaChunkPtr m_pCurrent;
     list<MediaChunkPtr> m_Queue;
 
@@ -521,8 +518,9 @@ private:
     // -- set to first StartAt time, if explicit,
     // which is used instead of Earliest to zero-base the
     // timestamps
-    REFERENCE_TIME m_StartAt;
+    REFERENCE_TIME m_StartAt = 0;
 };
+
 typedef smart_ptr<TrackWriter> TrackWriterPtr;
 
 
@@ -580,7 +578,7 @@ public:
     }
     void RecordBitrate(size_t index, long bitrate);
 
-    VOID NotifyMediaSampleWrite(INT nTrackIndex, IMediaSample* pMediaSample, SIZE_T nDataSize);
+    void NotifyMediaSampleWrite(INT TrackIndex, wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize);
 
 private:
     void MakeIODS(Atom* pmoov);

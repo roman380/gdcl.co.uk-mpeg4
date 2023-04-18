@@ -307,7 +307,7 @@ Mpeg4Mux::Pause()
     return CBaseFilter::Pause();
 }
 
-void Mpeg4Mux::NotifyMediaSampleWrite(int TrackIndex, uint64_t DataPosition, size_t DataSize, IMediaSample* MediaSample)
+void Mpeg4Mux::NotifyMediaSampleWrite(int TrackIndex, uint64_t DataPosition, size_t DataSize, wil::com_ptr<IMediaSample> const& MediaSample)
 { 
     WI_ASSERT(MediaSample);
     if(!MediaSample)
@@ -955,6 +955,7 @@ MuxOutput::Replace(LONGLONG pos, const BYTE* pBuffer, size_t cBytes)
         {
             hr = E_NOINTERFACE;
         } else {
+            DbgLog((LOG_TRACE, 4, TEXT("pos %llu, cBytes %zu"), pos, cBytes));
             LARGE_INTEGER liTo;
             liTo.QuadPart = pos;
             ULARGE_INTEGER uliUnused;
@@ -1029,7 +1030,7 @@ MuxOutput::FillSpace()
     }
 }
 
-void MuxOutput::NotifyMediaSampleWrite(int TrackIndex, IMediaSample* MediaSample, size_t DataSize)
+void MuxOutput::NotifyMediaSampleWrite(int TrackIndex, wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize)
 { 
     WI_ASSERT(MediaSample);
     // NOTE: nDataSize is effectively written number of bytes, which might be different from media sample data in case respective handler added certain formatting

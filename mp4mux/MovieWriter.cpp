@@ -487,23 +487,19 @@ void MovieWriter::RecordBitrate(size_t index, long bitrate)
 	}
 }
 
-VOID MovieWriter::NotifyMediaSampleWrite(INT nTrackIndex, IMediaSample* pMediaSample, SIZE_T nDataSize)
+void MovieWriter::NotifyMediaSampleWrite(INT TrackIndex, wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize)
 {
 	if(m_pContainer)
-		m_pContainer->NotifyMediaSampleWrite(nTrackIndex, pMediaSample, nDataSize);
+		m_pContainer->NotifyMediaSampleWrite(TrackIndex, MediaSample, DataSize);
 }
 
 // -------- Track -------------------------------------------------------
 
-TrackWriter::TrackWriter(MovieWriter* pMovie, int index, TypeHandler* pType, BOOL bNotifyMediaSampleWrite)
-: m_bEOS(false),
-  m_bStopped(false),
-  m_index(index),
+TrackWriter::TrackWriter(MovieWriter* pMovie, int index, TypeHandler* pType, bool NotifyMediaSampleWrite)
+: m_index(index),
   m_pType(pType),
-  m_tLast(0),
-  m_StartAt(0),
   m_pMovie(pMovie),
-  m_bNotifyMediaSampleWrite(bNotifyMediaSampleWrite),
+  m_NotifyMediaSampleWrite(NotifyMediaSampleWrite),
   m_Durations(DEFAULT_TIMESCALE),
   m_SC(1)                // dataref 1
 {
@@ -562,7 +558,7 @@ TrackWriter::OnEOS()
         CAutoLock lock(&m_csQueue);
         m_bEOS = true;
         // queue final partial chunk
-        if (m_pCurrent && (m_pCurrent->Samples() > 0))
+        if (m_pCurrent && (m_pCurrent->MediaSampleCount() > 0))
         {
             m_Queue.push_back(m_pCurrent);
             m_pCurrent = NULL;
@@ -589,7 +585,7 @@ TrackWriter::Stop(bool bFlush)
 	else
 	{
 		// queue current partial block 
-        if (m_pCurrent && (m_pCurrent->Samples() > 0))
+        if (m_pCurrent && (m_pCurrent->MediaSampleCount() > 0))
         {
             m_Queue.push_back(m_pCurrent);
             m_pCurrent = NULL;
@@ -602,10 +598,8 @@ bool
 TrackWriter::GetHeadTime(LONGLONG* ptHead)
 {
     CAutoLock lock(&m_csQueue);
-    if (m_Queue.size() == 0)
-    {
+    if(m_Queue.empty())
         return false;
-    }
     MediaChunkPtr pChunk = *m_Queue.begin();
     REFERENCE_TIME tLast;
     pChunk->GetTime(ptHead, &tLast);
@@ -616,10 +610,8 @@ HRESULT
 TrackWriter::WriteHead(Atom* patm)
 {
     CAutoLock lock(&m_csQueue);
-    if (m_Queue.size() == 0)
-    {
+    if(m_Queue.empty())
         return E_FAIL;
-    }
     MediaChunkPtr pChunk = *m_Queue.begin();
     m_Queue.pop_front();
 
@@ -630,18 +622,10 @@ TrackWriter::WriteHead(Atom* patm)
     // the samples during this call, once
     // the media data is successfully written
     HRESULT hr = pChunk->Write(patm);
-    if (SUCCEEDED(hr))
-    {
-        m_tLast = tEnd;
-    }
+    if (FAILED(hr))
+        return hr;
+    m_tLast = tEnd;
     return hr;
-}
-
-REFERENCE_TIME 
-TrackWriter::LastWrite()
-{
-    CAutoLock lock(&m_csQueue);
-    return m_tLast;
 }
 
 void 
@@ -681,8 +665,7 @@ TrackWriter::Close(Atom* patm)
 
     // track header tkhd
     smart_ptr<Atom> ptkhd = ptrak->CreateAtom('tkhd');
-    BYTE b[24*4];
-    ZeroMemory(b, (24*4));
+    BYTE b[24*4] { };
 
     // duration in movie timescale
     LONGLONG scaledur = long(Duration() * m_pMovie->MovieScale() / UNITS);
@@ -712,8 +695,8 @@ TrackWriter::Close(Atom* patm)
     b[cHdr + 48] = 0x40;
     if (IsVideo())
     {
-		WriteShort(m_pType->Width(), &b[cHdr + 52]);
-		WriteShort(m_pType->Height(), &b[cHdr + 56]);
+		WriteShort(static_cast<uint16_t>(m_pType->Width()), &b[cHdr + 52]);
+		WriteShort(static_cast<uint16_t>(m_pType->Height()), &b[cHdr + 56]);
     }
 
     ptkhd->Append(b, cHdr + 60);
@@ -833,71 +816,42 @@ TrackWriter::Close(Atom* patm)
     return hr;
 }
 
-VOID TrackWriter::NotifyMediaSampleWrite(IMediaSample* pMediaSample, SIZE_T nDataSize)
+void TrackWriter::NotifyMediaSampleWrite(wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize)
 {
-	if(m_bNotifyMediaSampleWrite && m_pMovie)
-		m_pMovie->NotifyMediaSampleWrite(m_index, pMediaSample, nDataSize);
+	if(m_NotifyMediaSampleWrite && m_pMovie)
+		m_pMovie->NotifyMediaSampleWrite(m_index, MediaSample, DataSize);
 }
 
 // -- Media Chunk ----------------------
 
-MediaChunk::MediaChunk(TrackWriter* pTrack)
-: m_cBytes(0),
-  m_pTrack(pTrack),
-  m_tStart(0),
-  m_tEnd(0),
-  m_bOldIndexFormat(false)
-{
-}
-MediaChunk::~MediaChunk()
-{
-    // I wanted to use list<IMediaSamplePtr> but the
-    // compiler could not handle the deep nesting of templates
-    while(m_Samples.size() > 0)
-    {
-        IMediaSample* pSample = m_Samples.front();
-        pSample->Release();
-        m_Samples.pop_front();
-    }
-}
-
 HRESULT 
-MediaChunk::AddSample(IMediaSample* pSample)
+MediaChunk::AddSample(IMediaSample* MediaSample)
 {
     REFERENCE_TIME tStart, tEnd;
-    HRESULT hr = pSample->GetTime(&tStart, &tEnd);
+    auto const hr = MediaSample->GetTime(&tStart, &tEnd);
 	if(hr == VFW_S_NO_STOP_TIME)
 		tEnd = tStart + 1;
     if(SUCCEEDED(hr))
     {
-        // H264 samples from large frames
-        // may be broken across several buffers, with the
-        // time set on the last sample
+        // NOTE: H264 samples from large frames may be broken across several buffers, with the time set on the last sample
 
-        // record overall time
-        if (m_cBytes == 0)
+        if (!m_cBytes)
         {
-            // first sample
             m_tStart = tStart;
             m_tEnd = tEnd;
-        } else {
+        } else 
+        {
             if (tStart < m_tStart)
-            {
                 m_tStart = tStart;
-            }
             if (tEnd > m_tEnd)
-            {
                 m_tEnd = tEnd;
-            }
         }
     }
 
-    m_cBytes += pSample->GetActualDataLength();
-    pSample->AddRef();
-    m_Samples.push_back(pSample);
+    m_cBytes += static_cast<size_t>(MediaSample->GetActualDataLength());
+    m_MediaSampleList.push_back(MediaSample);
     return S_OK;
 }
-
 
 HRESULT
 MediaChunk::Write(Atom* patm)
@@ -913,19 +867,18 @@ MediaChunk::Write(Atom* patm)
 		const size_t MAX_PCM_SIZE = 22050;
 		size_t max_bytes = MAX_PCM_SIZE - (MAX_PCM_SIZE % m_pTrack->Handler()->BlockAlign());
 
-		list<IMediaSample*>::iterator it = m_Samples.begin();
 		size_t cAvail = 0;
 		BYTE* pBuffer = NULL;
 
-		for (;;)
+		for (auto it = m_MediaSampleList.begin(); ; )
 		{
 			if (!cAvail)
 			{
-				if (it == m_Samples.end())
+				if (it == m_MediaSampleList.end())
 				{
 					break;
 				}
-				IMediaSample* pSample = *it++;
+				auto const& pSample = *it++;
 				pSample->GetPointer(&pBuffer);
 				cAvail = pSample->GetActualDataLength();
 				REFERENCE_TIME tStart, tStop;
@@ -934,11 +887,7 @@ MediaChunk::Write(Atom* patm)
 					m_pTrack->SetOldIndexStart(tStart);
 				}
 			}
-			size_t cThis = max_bytes - cBytes;
-			if (cThis > cAvail)
-			{
-				cThis = cAvail;
-			}
+			auto const cThis = std::min<size_t>(max_bytes - cBytes, cAvail);
 
 			size_t cActual = 0;
 			m_pTrack->Handler()->WriteData(patm, pBuffer, cThis, &cActual);
@@ -968,10 +917,9 @@ MediaChunk::Write(Atom* patm)
 	size_t nSamples = 0;
 
 	// loop once through the samples writing the data
-	list<IMediaSample*>::iterator it;
-	for (it = m_Samples.begin(); it != m_Samples.end(); it++)
+	for (auto it = m_MediaSampleList.begin(); it != m_MediaSampleList.end(); it++)
 	{
-		IMediaSample* pSample = *it;
+		auto const& pSample = *it;
 
 		// record positive sync flag, but for
 		// multiple-buffer samples, only one sync flag will be present
@@ -1001,7 +949,7 @@ MediaChunk::Write(Atom* patm)
 			nSamples++;
 		}
 
-		m_pTrack->NotifyMediaSampleWrite(pSample, (SIZE_T) cActual);
+		m_pTrack->NotifyMediaSampleWrite(pSample, cActual);
 	}
 
 	// add chunk position to index
@@ -1013,32 +961,22 @@ MediaChunk::Write(Atom* patm)
 }
 
 bool 
-MediaChunk::IsFull(REFERENCE_TIME tMaxDur)
+MediaChunk::IsFull(REFERENCE_TIME tMaxDur) const
 {
-	if (Length() > MAX_INTERLEAVE_SIZE)
-	{
+	if(Length() > MAX_INTERLEAVE_SIZE)
 		return true;
-	}
-
-	if (GetDuration() > tMaxDur)
-	{
+	if(GetDuration() > tMaxDur)
 		return true;
-	}
 	return false;
 }
 
-REFERENCE_TIME MediaChunk::GetDuration()
+REFERENCE_TIME 
+MediaChunk::GetDuration() const
 {
-	if (m_pTrack->IsAudio())
-	{
-		return (m_tEnd - m_tStart);
-	}
-	else
-	{
-		return Samples() * m_pTrack->SampleDuration();
-	}
+    if(m_pTrack->IsAudio())
+        return m_tEnd - m_tStart;
+    return m_MediaSampleList.size() * m_pTrack->SampleDuration();
 }
-
 
 // ---- index classes --------------------
 
@@ -1526,8 +1464,7 @@ DurationIndex::WriteEDTS(Atom* patm, long scale)
         smart_ptr<Atom> pedts = patm->CreateAtom('edts');
         smart_ptr<Atom> pelst = pedts->CreateAtom('elst');
 
-        BYTE b[48];
-        ZeroMemory(b, sizeof(b));
+        BYTE b[48] { };
 
         // values are in movie scale
         LONGLONG offset = long(m_tStartFirst * scale / UNITS);
@@ -1542,7 +1479,7 @@ DurationIndex::WriteEDTS(Atom* patm, long scale)
             // using an "empty" edit
             WriteLong(2, b+4);
             WriteI64(offset, b+8);
-            WriteI64(-1, b+16);        // no media used
+            WriteI64(0xFFFF, b+16);        // no media used
             b[25] = 1;
 
             // whole track as next edit
@@ -1557,7 +1494,7 @@ DurationIndex::WriteEDTS(Atom* patm, long scale)
             // using an "empty" edit
             WriteLong(2, b+4);
             WriteLong(long(offset), b+8);
-            WriteLong(-1, b+12);        // no media used
+            WriteLong(0xFFFF, b+12);        // no media used
             b[17] = 1;
 
             // whole track as next edit

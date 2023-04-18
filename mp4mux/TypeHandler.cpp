@@ -164,16 +164,15 @@ public:
         SeqParamSet seq;
         seq.Parse(&sps);
 
-        BYTE b[78];
-        ZeroMemory(b, 78);
-        WriteShort(dataref, b + 6);
-        WriteShort(m_FrameSize.first, b + 24);
-        WriteShort(m_FrameSize.second, b + 26);
+		BYTE b[78] { };
+        WriteShort(static_cast<uint16_t>(dataref), b + 6);
+        WriteShort(static_cast<uint16_t>(m_FrameSize.first), b + 24);
+        WriteShort(static_cast<uint16_t>(m_FrameSize.second), b + 26);
         b[29] = 0x48;
         b[33] = 0x48;
         b[41] = 1;
         b[75] = 24;
-        WriteShort(-1, b + 76);
+        WriteShort(0xFFFF, b + 76);
         psd->Append(b, 78);
 
         smart_ptr<Atom> pesd = psd->CreateAtom('avcC');
@@ -356,9 +355,8 @@ public:
 
 		smart_ptr<Atom> psd = patm->CreateAtom('mp4a');
 
-		BYTE b[28];
-		ZeroMemory(b, 28);
-		WriteShort(dataref, b + 6);
+		BYTE b[28] { };
+		WriteShort(static_cast<uint16_t>(dataref), b + 6);
 		WriteShort(2, b + 16);
 		WriteShort(16, b + 18);
 		WriteShort(unsigned short(scale), b + 24);    // this is what forces us to use short audio scales
@@ -373,7 +371,7 @@ public:
 		//          decoder specific info desc
 		//      sl descriptor
 		Descriptor es(Descriptor::ES_Desc);
-		WriteShort(id, b);
+		WriteShort(static_cast<uint16_t>(id), b);
 		b[2] = 0;
 		es.Append(b, 3);
 		Descriptor dcfg(Descriptor::Decoder_Config);
@@ -1037,20 +1035,19 @@ DivxHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
     UNREFERENCED_PARAMETER(scale);
     smart_ptr<Atom> psd = patm->CreateAtom('mp4v');
 
-    VIDEOINFOHEADER* pvi = (VIDEOINFOHEADER*)m_mt.Format();
-    int width = pvi->bmiHeader.biWidth;
-    int height = abs(pvi->bmiHeader.biHeight);
+    auto const pvi = reinterpret_cast<VIDEOINFOHEADER const*>(m_mt.Format());
+    auto const width = static_cast<uint16_t>(pvi->bmiHeader.biWidth);
+    auto const height = static_cast<uint16_t>(std::abs(pvi->bmiHeader.biHeight));
 
-    BYTE b[78];
-    ZeroMemory(b, 78);
-    WriteShort(dataref, b+6);
+	BYTE b[78] { };
+    WriteShort(static_cast<uint16_t>(dataref), b+6);
     WriteShort(width, b+24);
     WriteShort(height, b+26);
     b[29] = 0x48;
     b[33] = 0x48;
     b[41] = 1;
     b[75] = 24;
-    WriteShort(-1, b+76);
+    WriteShort(0xFFFF, b+76);
     psd->Append(b, 78);
 
     smart_ptr<Atom> pesd = psd->CreateAtom('esds');
@@ -1063,7 +1060,7 @@ DivxHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
     //          decoder specific info desc
     //      sl descriptor
     Descriptor es(Descriptor::ES_Desc);
-    WriteShort(id, b);
+    WriteShort(static_cast<uint16_t>(id), b);
     b[2] = 0;
     es.Append(b, 3);
     Descriptor dcfg(Descriptor::Decoder_Config);
@@ -1214,9 +1211,8 @@ AACHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
 {
     smart_ptr<Atom> psd = patm->CreateAtom('mp4a');
 
-    BYTE b[28];
-    ZeroMemory(b, 28);
-    WriteShort(dataref, b+6);
+	BYTE b[28] { };
+    WriteShort(static_cast<uint16_t>(dataref), b+6);
     WriteShort(2, b+16);
     WriteShort(16, b+18);
     WriteShort(unsigned short(scale), b+24);    // this is what forces us to use short audio scales
@@ -1231,7 +1227,7 @@ AACHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
     //          decoder specific info desc
     //      sl descriptor
     Descriptor es(Descriptor::ES_Desc);
-    WriteShort(id, b);
+    WriteShort(static_cast<uint16_t>(id), b);
     b[2] = 0;
     es.Append(b, 3);
     Descriptor dcfg(Descriptor::Decoder_Config);
@@ -1324,21 +1320,19 @@ H264Handler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
     UNREFERENCED_PARAMETER(id);
     smart_ptr<Atom> psd = patm->CreateAtom('avc1');
 
-	MPEG2VIDEOINFO* pvi = (MPEG2VIDEOINFO*)m_mt.Format();
-    int width = pvi->hdr.bmiHeader.biWidth;
-    int height = abs(pvi->hdr.bmiHeader.biHeight);
+	auto const pvi = reinterpret_cast<MPEG2VIDEOINFO const*>(m_mt.Format());
+    auto const width = static_cast<uint16_t>(pvi->hdr.bmiHeader.biWidth);
+    auto const height = static_cast<uint16_t>(std::abs(pvi->hdr.bmiHeader.biHeight));
 
-
-    BYTE b[78];
-    ZeroMemory(b, 78);
-    WriteShort(dataref, b+6);
+	BYTE b[78] { };
+    WriteShort(static_cast<uint16_t>(dataref), b+6);
     WriteShort(width, b+24);
     WriteShort(height, b+26);
     b[29] = 0x48;
     b[33] = 0x48;
     b[41] = 1;
     b[75] = 24;
-    WriteShort(-1, b+76);
+    WriteShort(0xFFFF, b+76);
     psd->Append(b, 78);
 
     smart_ptr<Atom> pesd = psd->CreateAtom('avcC');
@@ -1975,15 +1969,14 @@ WaveHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
 	if (IsOldIndexFormat())
 	{
 	    smart_ptr<Atom> psd = patm->CreateAtom(DWORD('sowt'));
-		BYTE b[44];
-		ZeroMemory(b, 44);
-		WriteShort(dataref, b+6);
+		BYTE b[44] { };
+		WriteShort(static_cast<uint16_t>(dataref), b+6);
 		WriteShort(1, b+8);		// ver 1 of sound sample desc
 		WriteShort(pwfx->nChannels, b+16);
 		short bits = (pwfx->wBitsPerSample == 8) ? 8 : 16;
 		WriteShort(bits, b+18);
-		WriteShort(0xffff, b+20);
-		WriteShort(pwfx->nSamplesPerSec, b+24);    // this is what forces us to use short audio scales
+		WriteShort(0xFFFF, b+20);
+		WriteShort(static_cast<uint16_t>(pwfx->nSamplesPerSec), b+24);    // this is what forces us to use short audio scales
 
 		short bytesperchan = pwfx->wBitsPerSample / 8;
 		WriteLong(1, b+28);
@@ -2008,9 +2001,8 @@ WaveHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
 			dwAtom = 'alaw';
 		}
 	    smart_ptr<Atom> psd = patm->CreateAtom(dwAtom);
-		BYTE b[28];
-		ZeroMemory(b, 28);
-		WriteShort(dataref, b+6);
+		BYTE b[28] { };
+		WriteShort(static_cast<uint16_t>(dataref), b+6);
 		WriteShort(2, b+16);
 		WriteShort(16, b+18);
 		WriteShort(unsigned short(scale), b+24);    // this is what forces us to use short audio scales
@@ -2025,7 +2017,7 @@ WaveHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
 		//          decoder specific info desc
 		//      sl descriptor
 		Descriptor es(Descriptor::ES_Desc);
-		WriteShort(id, b);
+		WriteShort(static_cast<uint16_t>(id), b);
 		b[2] = 0;
 		es.Append(b, 3);
 		Descriptor dcfg(Descriptor::Decoder_Config); // ISO 14496-1 8.3.4
