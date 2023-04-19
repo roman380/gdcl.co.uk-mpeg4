@@ -954,7 +954,7 @@ ListOfPairs::Write(std::shared_ptr<Atom> const& Atom)
 
     BYTE b[8] { };
     // entry count is count of pairs
-    Write32(m_Table.Entries() / 2, b+4);
+    Write32(static_cast<uint32_t>(m_Table.Entries() / 2), b+4);
     RETURN_IF_FAILED(Atom->Append(b, 8));
 	return m_Table.Write(Atom);
 }
@@ -1388,7 +1388,7 @@ SamplesPerChunkIndex::Write(std::shared_ptr<Atom> const& Atom)
 
     BYTE b[8];
     Write32(0, b);
-    Write32(m_Table.Entries() / 3, b+4);
+    Write32(static_cast<uint32_t>(m_Table.Entries() / 3), b+4);
     HRESULT hr = pSC->Append(b, 8);
     if (SUCCEEDED(hr))
         hr = m_Table.Write(pSC);
@@ -1425,17 +1425,12 @@ ChunkOffsetIndex::Write(std::shared_ptr<Atom> const& Atom)
         auto const pCO = Atom->CreateAtom('co64');
         BYTE b[8];
         Write32(0, b);        // ver/flags
-        long nEntries = converted.Entries() + m_Table64.Entries();
-        Write32(nEntries, b+4);
+        Write32(static_cast<uint32_t>(converted.Entries() + m_Table64.Entries()), b+4);
         hr = pCO->Append(b, 8);
         if (SUCCEEDED(hr))
-        {
             hr = converted.Write(pCO);
-        }
         if (SUCCEEDED(hr))
-        {
             hr = m_Table64.Write(pCO);
-        }
 
         pCO->Close();
     } else if (m_Table32.Entries() > 0) {
@@ -1443,7 +1438,7 @@ ChunkOffsetIndex::Write(std::shared_ptr<Atom> const& Atom)
         auto const pCO = Atom->CreateAtom('stco');
         BYTE b[8];
         Write32(0, b);        // ver/flags
-        Write32(m_Table32.Entries(), b+4);
+        Write32(static_cast<uint32_t>(m_Table32.Entries()), b+4);
         hr = pCO->Append(b, 8);
         if (SUCCEEDED(hr))
         {
@@ -1493,7 +1488,7 @@ SyncIndex::Write(std::shared_ptr<Atom> const& Atom)
 
         BYTE b[8];
         Write32(0, b);    // ver/flags
-        Write32(m_Syncs.Entries(), b+4);
+        Write32(static_cast<uint32_t>(m_Syncs.Entries()), b+4);
         hr = pss->Append(b, 8);
         if (SUCCEEDED(hr))
         {

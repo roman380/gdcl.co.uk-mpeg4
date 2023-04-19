@@ -156,7 +156,7 @@ public:
 
     HRESULT AddSample(IMediaSample* pSample);
     HRESULT Write(std::shared_ptr<Atom> const& Atom);
-    long Length() const
+    size_t Length() const
     {
         return m_cBytes;
     }
