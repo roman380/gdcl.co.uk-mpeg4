@@ -1,5 +1,8 @@
 #pragma once
 
+#include <mutex>
+#include <condition_variable>
+#include <thread>
 #include <filesystem>
 #include <fstream>
 
@@ -12,7 +15,28 @@
 class MediaSample : public winrt::implements<MediaSample, IMediaSample, IMediaSample2>
 {
 public:
-    MediaSample() = default;
+    struct Context
+    {
+        bool CanCreateInstance() const
+        {
+            return InstanceCount.load() < g_MaximalInstanceCount;
+        }
+
+        static unsigned int constexpr const g_MaximalInstanceCount = 1024;
+        std::atomic_uint InstanceCount = 0;
+        std::condition_variable CanCreateInstanceCondition;
+    };
+
+    MediaSample(Context& Context) :
+        m_Context(Context)
+    {
+        m_Context.InstanceCount++;
+    }
+    ~MediaSample() 
+    {
+        if(--m_Context.InstanceCount < m_Context.g_MaximalInstanceCount)
+            m_Context.CanCreateInstanceCondition.notify_all();
+    }
 
 // IMediaSample
     IFACEMETHOD(GetPointer)(BYTE** ppBuffer) override
@@ -111,6 +135,7 @@ public:
         return E_NOTIMPL;
     }
 
+    Context& m_Context;
     AM_SAMPLE2_PROPERTIES m_Properties;
     std::vector<uint8_t> m_Data;
 };
@@ -199,7 +224,7 @@ public:
         {
             m_MediaType = std::move(MediaType);
         }
-        void AddMediaSample(wil::com_ptr<IMediaSample> const& MediaSample)
+        void AddMediaSample(winrt::com_ptr<MediaSample> const& MediaSample)
         {
             WI_ASSERT(MediaSample);
             [[maybe_unused]] auto&& MediaSampleLock = m_MediaSampleMutex.lock_exclusive();
@@ -208,8 +233,8 @@ public:
             {
                 // NOTE: H264ByteStreamHandler converts byte stream format to length prefixed NAL units written into resulting file, hence
                 //       byte stream media type corresponds to length prefixed content in the incomplete file.
-                auto const MediaSampleA = static_cast<::MediaSample*>(MediaSample.query<IMediaSample2>().get());
-                auto const MediaSampleB = winrt::make_self<::MediaSample>();
+                auto const& MediaSampleA = MediaSample;
+                auto const MediaSampleB = winrt::make_self<::MediaSample>(MediaSample->m_Context);
                 MediaSampleB->m_Properties = MediaSampleA->m_Properties;
                 MediaSampleB->m_Data.reserve(MediaSampleA->m_Data.size());
                 uint8_t const* I = MediaSampleA->m_Data.data();
@@ -218,7 +243,7 @@ public:
                 {
                     if(IB - I < 4)
                         break;
-                    auto const S = _byteswap_ulong(*reinterpret_cast<unsigned long const*>(I));
+                    auto const S = _byteswap_ulong(*reinterpret_cast<uint32_t const*>(I));
                     I += 4;
                     if(IB - I < static_cast<ptrdiff_t>(S))
                         break;
@@ -239,7 +264,7 @@ public:
                 m_MediaSampleList.emplace_back(static_cast<IMediaSample2*>(MediaSampleB.get()));
                 return;
             }
-            m_MediaSampleList.emplace_back(MediaSample);
+            m_MediaSampleList.emplace_back(MediaSample.as<IMediaSample>().get());
         }
         void AddEndOfStream()
         {
@@ -284,7 +309,7 @@ public:
         THROW_IF_FAILED(Result);
         Pin->SetMediaType(std::move(MediaType));
     }
-    void AddMediaSample(uint16_t Index, wil::com_ptr<IMediaSample> const& MediaSample)
+    void AddMediaSample(uint16_t Index, winrt::com_ptr<MediaSample> const& MediaSample)
     {
         WI_ASSERT(MediaSample);
         WI_ASSERT(Index < m_PinVector.size());
@@ -474,6 +499,8 @@ public:
                 #pragma endregion
                 THROW_IF_FAILED(FilterGraph2.query<IMediaFilter>()->SetSyncSource(nullptr));
             };
+            ::MediaSample::Context MediaSampleContext;
+            std::mutex MediaSampleInstanceMutex;
             bool ThreadAbort = false;
             std::thread Thread([&]
             {
@@ -499,7 +526,7 @@ public:
                             break;
                         if(m_ThreadTermination)
                             break;
-                        if(!(RecordIndex % 256))
+                        if(!(RecordIndex % 2048))
                         {
                             auto const Time = std::chrono::system_clock::now();
                             if(Time - ReportTime >= g_ReportPeriodTime)
@@ -566,7 +593,11 @@ public:
                                 IndexStream.read(reinterpret_cast<char*>(&MediaSample), sizeof MediaSample);
                                 THROW_HR_IF(E_FAIL, IndexStream.fail());
                                 Stream.seekg(MediaSample.Position, std::ios_base::beg);
-                                auto FilterSample = winrt::make_self<::MediaSample>();
+                                {
+                                    std::unique_lock MediaSampleInstanceLock(MediaSampleInstanceMutex);
+                                    MediaSampleContext.CanCreateInstanceCondition.wait_for(MediaSampleInstanceLock, 1s, [&] { return m_ThreadTermination.load() || MediaSampleContext.CanCreateInstance(); });
+                                }
+                                auto FilterSample = winrt::make_self<::MediaSample>(MediaSampleContext);
                                 auto& Properties = FilterSample->m_Properties;
                                 FilterSample->m_Data.resize(MediaSample.Size);
                                 Stream.read(reinterpret_cast<char*>(FilterSample->m_Data.data()), MediaSample.Size);
@@ -582,7 +613,7 @@ public:
                                 Properties.pbBuffer = FilterSample->m_Data.data();
                                 Properties.cbBuffer = static_cast<LONG>(FilterSample->m_Data.size());
                                 //TRACE(L"Position %llu, Signature %hs, MediaSample.Index %u, .Position %llu, .Size %u\n", static_cast<uint64_t>(Position), FormatFourCharacterCode(Signature).c_str(), MediaSample.Index, MediaSample.Position, MediaSample.Size);
-                                Source->AddMediaSample(MediaSample.Index, FilterSample.as<IMediaSample>().get());
+                                Source->AddMediaSample(MediaSample.Index, FilterSample);
                                 if(!std::exchange(Running, true))
                                 {
                                     CreateFilters();
