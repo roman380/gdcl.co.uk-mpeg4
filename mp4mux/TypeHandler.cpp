@@ -2981,10 +2981,7 @@ void DolbyDigitalPlusHandler::WriteDescriptor(std::shared_ptr<Atom> const& Atom,
 
 HRESULT Descriptor::Write(std::shared_ptr<Atom> const& Atom) const
 {
-    auto const cBytes = Length();
-	std::vector<uint8_t> Buffer(cBytes);
-    Write(Buffer.data());
-    return Atom->Append(Buffer.data(), cBytes);
+    return Atom->Append(Compose());
 }
 
 void 

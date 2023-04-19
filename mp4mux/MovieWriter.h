@@ -110,6 +110,11 @@ public:
         Write32(static_cast<uint32_t>(m_DataSize), b);
         return Replace(0, b, 4);
     }
+    HRESULT Append(std::vector<uint8_t> const& Data)
+    {
+        m_DataSize += Data.size();
+        return m_Container->Append(Data.data(), Data.size());
+    }
 
 // Atom
     uint64_t Length() const override

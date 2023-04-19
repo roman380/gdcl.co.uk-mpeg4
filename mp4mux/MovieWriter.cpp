@@ -388,13 +388,13 @@ MovieWriter::MakeIODS(std::shared_ptr<Atom> const& pmoov)
     iod.Append(b, 7);
 
     // append the id of each media track
-    for (UINT i = 0; i < m_Tracks.size(); i++)
+    for(auto&& Track: m_Tracks)
     {
-        if (m_Tracks[i]->IsVideo() || m_Tracks[i]->IsAudio())
+        if (Track->IsVideo() || Track->IsAudio())
         {
             // use 32-bit track id in IODS
             Descriptor es(Descriptor::ES_ID_Inc);
-            Write32(m_Tracks[i]->ID(), b);
+            Write32(Track->ID(), b);
             es.Append(b, 4);
             iod.Append(&es);
         }
