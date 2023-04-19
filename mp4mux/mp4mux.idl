@@ -59,7 +59,7 @@ library GdclMp4Mux
 		HRESULT SetComment([in] BSTR Comment);
 		HRESULT SetTemporaryIndexFileDirectory([in] BSTR TemporaryIndexFileDirectory);
 		HRESULT SetCombineOutputCapacity([in] ULONG CombineOutputCapacity);
-		#if !defined(NDEBUG)
+		#if !defined(NDEBUG) || defined(DEVELOPMENT)
 			HRESULT SetSkipClose([in] BOOL SkipClose);
 		#endif
 	};

@@ -243,7 +243,7 @@ namespace Test
 		OAEVENT FilterGraphEventAvailabilityEvent;
 		THROW_IF_FAILED(MediaEventEx->GetEventHandle(&FilterGraphEventAvailabilityEvent));
 		// WARN: IMediaEventEx::WaitForCompletion returns E_NOTIMPL in CLSID_FilterGraphNoThread version
-		#if defined(DEVELOPMENT)
+		#if defined(DEVELOPMENT) && 0
 			if(IsDebuggerPresent())
 			{
 				auto const BaseTime = std::chrono::system_clock::now() + TimeoutTime;

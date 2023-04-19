@@ -531,7 +531,7 @@ public:
         CATCH_RETURN();
         return S_OK;
     }
-    #if !defined(NDEBUG)
+    #if !defined(NDEBUG) || defined(DEVELOPMENT)
         STDMETHOD(SetSkipClose)(BOOL SkipClose) override
         {
             //TRACE(L"this 0x%p, SkipClose %d\n", this, SkipClose);
@@ -570,7 +570,7 @@ private:
     mutable CCritSec m_TemporaryIndexFileCriticalSection;
     CTemporaryIndexFile m_TemporaryIndexFile;
 
-    #if !defined(NDEBUG)
+    #if !defined(NDEBUG) || defined(DEVELOPMENT)
         bool m_SkipClose = false;
     #endif
 };

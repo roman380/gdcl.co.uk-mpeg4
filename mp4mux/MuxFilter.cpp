@@ -225,7 +225,7 @@ Mpeg4Mux::Stop()
         // stop all input pins
         hr = CBaseFilter::Stop();
 
-        #if !defined(NDEBUG)
+        #if !defined(NDEBUG) || defined(DEVELOPMENT)
             if(m_SkipClose)
             {
                 // WARN: Leak m_pMovie but intentionally

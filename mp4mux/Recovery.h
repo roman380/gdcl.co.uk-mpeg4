@@ -19,10 +19,17 @@ public:
     {
         bool CanCreateInstance() const
         {
+            // TODO: With a really long files the recovery process might get stuck in the middle in the case of -
+            //       presumably - video and audio sample times sliding away one from the other: this needs to be
+            //       checked separately. This would typically be multi-hour recording. Letting source run 
+            //       without a limit we are under risk of excessive RAM consumption by excessive pre-load data and
+            //       also incorrect progress reporting. I'd still leave instance cap here, while increasing the 
+            //       threshold beyond reasonable, in order to reasonably reduce risk of recovery deadlock and in 
+            //       the same time RAM overuse.
             return InstanceCount.load() < g_MaximalInstanceCount;
         }
 
-        static unsigned int constexpr const g_MaximalInstanceCount = 1024;
+        static unsigned int constexpr const g_MaximalInstanceCount = 16384; //1024;
         std::atomic_uint InstanceCount = 0;
         std::condition_variable CanCreateInstanceCondition;
     };
@@ -180,29 +187,32 @@ public:
                 Command com;
                 while(!CheckRequest(&com)) 
                 {
-                    wil::com_ptr<IMediaSample> MediaSample;
+                    std::list<wil::com_ptr<IMediaSample>> MediaSampleList;
                     {
                         [[maybe_unused]] auto&& MediaSampleLock = m_MediaSampleMutex.lock_exclusive();
-                        if(m_MediaSampleList.empty())
-                        {
-                            std::this_thread::yield();
-                            continue;
-                        }
-                        MediaSample = m_MediaSampleList.front();
-                        m_MediaSampleList.pop_front();
+                        using namespace std::chrono;
+                        using namespace std::chrono_literals;
+                        m_MediaSampleListUpdateCondition.wait_for(MediaSampleLock, static_cast<DWORD>(duration_cast<milliseconds>(30ms).count()));
+                        MediaSampleList.swap(m_MediaSampleList);
                     }
 
-                    //TRACE(L"MediaSample 0x%p\n", MediaSample.get());
-                    if(!MediaSample) 
+                    for(; !MediaSampleList.empty(); )
                     {
-                        DeliverEndOfStream();
-                        return S_OK;
-                    }
-                    auto const Result = Deliver(MediaSample.get());
-                    if(Result != S_OK)
-                    {
-                        // NotifyErrorAbort?
-                        return S_OK;
+                        auto const MediaSample = MediaSampleList.front();
+                        MediaSampleList.pop_front();
+                        //TRACE(L"MediaSample 0x%p\n", MediaSample.get());
+                        if(!MediaSample) 
+                        {
+                            DeliverEndOfStream();
+                            WI_ASSERT(MediaSampleList.empty());
+                            return S_OK;
+                        }
+                        auto const Result = Deliver(MediaSample.get());
+                        if(Result != S_OK)
+                        {
+                            // NotifyErrorAbort?
+                            return S_OK;
+                        }
                     }
                 }
                 if(com == CMD_RUN || com == CMD_PAUSE)
@@ -227,55 +237,66 @@ public:
         void AddMediaSample(winrt::com_ptr<MediaSample> const& MediaSample)
         {
             WI_ASSERT(MediaSample);
-            [[maybe_unused]] auto&& MediaSampleLock = m_MediaSampleMutex.lock_exclusive();
-            WI_ASSERT(m_MediaType.IsValid());
-            if(m_MediaType.subtype == MEDIASUBTYPE_H264)
             {
-                // NOTE: H264ByteStreamHandler converts byte stream format to length prefixed NAL units written into resulting file, hence
-                //       byte stream media type corresponds to length prefixed content in the incomplete file.
-                auto const& MediaSampleA = MediaSample;
-                auto const MediaSampleB = winrt::make_self<::MediaSample>(MediaSample->m_Context);
-                MediaSampleB->m_Properties = MediaSampleA->m_Properties;
-                MediaSampleB->m_Data.reserve(MediaSampleA->m_Data.size());
-                uint8_t const* I = MediaSampleA->m_Data.data();
-                uint8_t const* IB = I + MediaSampleA->m_Properties.lActual;
+                [[maybe_unused]] auto&& MediaSampleLock = m_MediaSampleMutex.lock_exclusive();
+                WI_ASSERT(m_MediaType.IsValid());
                 for(; ; )
                 {
-                    if(IB - I < 4)
+                    if(m_MediaType.subtype == MEDIASUBTYPE_H264)
+                    {
+                        // NOTE: H264ByteStreamHandler converts byte stream format to length prefixed NAL units written into resulting file, hence
+                        //       byte stream media type corresponds to length prefixed content in the incomplete file.
+                        auto const& MediaSampleA = MediaSample;
+                        auto const MediaSampleB = winrt::make_self<::MediaSample>(MediaSample->m_Context);
+                        MediaSampleB->m_Properties = MediaSampleA->m_Properties;
+                        MediaSampleB->m_Data.reserve(MediaSampleA->m_Data.size());
+                        uint8_t const* I = MediaSampleA->m_Data.data();
+                        uint8_t const* IB = I + MediaSampleA->m_Properties.lActual;
+                        for(; ; )
+                        {
+                            if(IB - I < 4)
+                                break;
+                            auto const S = _byteswap_ulong(*reinterpret_cast<uint32_t const*>(I));
+                            I += 4;
+                            if(IB - I < static_cast<ptrdiff_t>(S))
+                                break;
+                            static uint8_t constexpr const g_LongStartCodePrefix[] { 0x00, 0x00, 0x00, 0x01 };
+                            static uint8_t constexpr const g_ShortStartCodePrefix[] { 0x00, 0x00, 0x01 };
+                            auto const T = *I & 0x1F;
+                            if(T == 7 || T == 8)
+                                std::copy(std::cbegin(g_LongStartCodePrefix), std::cend(g_LongStartCodePrefix), std::back_inserter(MediaSampleB->m_Data));
+                            else
+                                std::copy(std::cbegin(g_ShortStartCodePrefix), std::cend(g_ShortStartCodePrefix), std::back_inserter(MediaSampleB->m_Data));
+                            std::copy(I, I + S, std::back_inserter(MediaSampleB->m_Data));
+                            I += S;
+                        }
+                        WI_ASSERT(I == IB);
+                        MediaSampleB->m_Properties.pbBuffer = MediaSampleB->m_Data.data();
+                        MediaSampleB->m_Properties.cbBuffer = static_cast<long>(MediaSampleB->m_Data.size());
+                        MediaSampleB->m_Properties.lActual = MediaSampleB->m_Properties.cbBuffer;
+                        m_MediaSampleList.emplace_back(static_cast<IMediaSample2*>(MediaSampleB.get()));
                         break;
-                    auto const S = _byteswap_ulong(*reinterpret_cast<uint32_t const*>(I));
-                    I += 4;
-                    if(IB - I < static_cast<ptrdiff_t>(S))
-                        break;
-                    static uint8_t constexpr const g_LongStartCodePrefix[] { 0x00, 0x00, 0x00, 0x01 };
-                    static uint8_t constexpr const g_ShortStartCodePrefix[] { 0x00, 0x00, 0x01 };
-                    auto const T = *I & 0x1F;
-                    if(T == 7 || T == 8)
-                        std::copy(std::cbegin(g_LongStartCodePrefix), std::cend(g_LongStartCodePrefix), std::back_inserter(MediaSampleB->m_Data));
-                    else
-                        std::copy(std::cbegin(g_ShortStartCodePrefix), std::cend(g_ShortStartCodePrefix), std::back_inserter(MediaSampleB->m_Data));
-                    std::copy(I, I + S, std::back_inserter(MediaSampleB->m_Data));
-                    I += S;
+                    }
+                    m_MediaSampleList.emplace_back(MediaSample.as<IMediaSample>().get());
+                    break;
                 }
-                WI_ASSERT(I == IB);
-                MediaSampleB->m_Properties.pbBuffer = MediaSampleB->m_Data.data();
-                MediaSampleB->m_Properties.cbBuffer = static_cast<long>(MediaSampleB->m_Data.size());
-                MediaSampleB->m_Properties.lActual = MediaSampleB->m_Properties.cbBuffer;
-                m_MediaSampleList.emplace_back(static_cast<IMediaSample2*>(MediaSampleB.get()));
-                return;
             }
-            m_MediaSampleList.emplace_back(MediaSample.as<IMediaSample>().get());
+            m_MediaSampleListUpdateCondition.notify_all();
         }
         void AddEndOfStream()
         {
-            [[maybe_unused]] auto&& MediaSampleLock = m_MediaSampleMutex.lock_exclusive();
-            m_MediaSampleList.emplace_back(nullptr);
+            {
+                [[maybe_unused]] auto&& MediaSampleLock = m_MediaSampleMutex.lock_exclusive();
+                m_MediaSampleList.emplace_back(nullptr);
+            }
+            m_MediaSampleListUpdateCondition.notify_all();
         }
 
     private:
         CMediaType m_MediaType;
         mutable wil::srwlock m_MediaSampleMutex;
         std::list<wil::com_ptr<IMediaSample>> m_MediaSampleList;
+        wil::condition_variable m_MediaSampleListUpdateCondition;
     };
 
     SampleSource(IUnknown* Unknown, HRESULT*) :

@@ -53,7 +53,7 @@ namespace Test
 			ULONG StartTickCount;
 		};
 
-		#if defined(WITH_DIRECTSHOWREFERENCESOURCE) && !defined(NDEBUG)
+		#if defined(WITH_DIRECTSHOWREFERENCESOURCE) && (!defined(NDEBUG) || defined(DEVELOPMENT))
 
 		// WARN: Release builds don't offer SetSkipClose and friends
 
@@ -62,7 +62,9 @@ namespace Test
 			auto const Path = OutputPath(Format(L"Recovery.%ls.mp4", BaseName.c_str()));
 			Library Library(L"mp4mux.dll"), DemultiplexerLibrary(L"mp4demux.dll");
 			auto const TemporaryIndexFileDirectory = OutputPath(L"TemporaryIndex");
-			#if 0//1
+			// NOTE: Disable this and use PowerShell script at the bottom of the file on order to apply the test to fixing
+			//       externally obtained broken recording.
+			#if 1
 				if(PathFileExistsW(Path.c_str()))
 					WI_VERIFY(DeleteFileW(Path.c_str()));
 				CreateDirectoryW(TemporaryIndexFileDirectory.c_str(), nullptr);
@@ -272,3 +274,21 @@ namespace Test
 		#endif
 	};
 }
+
+/*
+
+#$Configuration = "Debug"
+$Configuration = "Release"
+$InputDir = "D:\Media\TempVideo\~B" # Directory with broken file
+$OutputDir = "C:\Project\github.com\gdcl.co.uk-mpeg4\bin\Win32\$Configuration" # Directory with test files
+#$BaseName = "A,A-02022002-v-04-09-23-19190672.mp4" # Broken file name
+$BaseName = "A,A-02022002-v-04-09-23-19525930.mp4"
+Copy-Item "$InputDir\$BaseName.temporary" -Destination "$OutputDir\Recovery.DualTrackRecovery.mp4" -Force
+$File = Get-ChildItem "$OutputDir\Recovery.DualTrackRecovery.mp4"
+$File.Attributes = 'Archive'
+New-Item "$OutputDir\TemporaryIndex" -ItemType Directory -ErrorAction Ignore
+Copy-Item "$InputDir\TemporaryIndex\$BaseName.temporary-Index.tmp" -Destination "$OutputDir\TemporaryIndex\Recovery.DualTrackRecovery.mp4-Index.tmp" -Force
+$File = Get-ChildItem "$OutputDir\TemporaryIndex\Recovery.DualTrackRecovery.mp4-Index.tmp"
+$File.Attributes = 'Archive'
+
+*/
