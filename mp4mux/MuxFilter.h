@@ -209,6 +209,13 @@ public:
     {
     }
 
+    void CombineDataCapacity(size_t CombineDataCapacity)
+    {
+        CAutoLock lock(&m_csWrite);
+        WI_ASSERT(m_CombineData.empty());
+        m_CombineDataCapacity = CombineDataCapacity;
+    }
+
     // CBaseOutputPin overrides
     HRESULT CheckMediaType(const CMediaType* pmt);
     HRESULT GetMediaType(int iPosition, CMediaType* pmt);
@@ -228,7 +235,31 @@ public:
         CAutoLock lock(&m_csWrite);
         m_bUseIStream = true;
     }
-    void FillSpace();
+    void CompleteOutput()
+    {
+        IStreamPtr Stream = GetConnected();
+        if(!Stream)
+            return;
+        LOG_IF_FAILED(WriteCombineData());
+        LARGE_INTEGER SeekPosition;
+        SeekPosition.QuadPart = 0;
+        ULARGE_INTEGER EndPosition;
+        auto const SeekResult = Stream->Seek(SeekPosition, STREAM_SEEK_END, &EndPosition);
+        LOG_IF_FAILED(SeekResult);
+        if(FAILED(SeekResult))
+            return;
+        if(EndPosition.QuadPart <= m_DataSize)
+            return;
+        uint64_t const FreeDataSize = EndPosition.QuadPart - m_DataSize;
+        if(FreeDataSize < std::numeric_limits<int32_t>::max() && FreeDataSize >= 8)
+        {
+            // create a free chunk
+            BYTE b[8];
+            Write32(static_cast<uint32_t>(FreeDataSize), b);
+            Write32('free', b + 4);
+            Append(b, 8);
+        }
+    }
 
 // AtomWriter
     uint64_t Length() const override
@@ -251,10 +282,32 @@ public:
     void NotifyMediaSampleWrite(int TrackIndex, wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize) override;
 
 private:
+    HRESULT WriteCombineData()
+    {
+        CAutoLock lock(&m_csWrite);
+        WI_ASSERT(m_bUseIStream); // Assumed code path in Replace
+        if(m_CombineData.empty())
+            return S_OK;
+        DbgLog((LOG_TRACE, 4, TEXT("m_DataSize %llu, m_CombineData.size() %zu"), m_DataSize, m_CombineData.size()));
+        IStreamPtr Stream = GetConnected();
+        RETURN_HR_IF_NULL(E_NOINTERFACE, Stream);
+        LARGE_INTEGER StreamPosition;
+        StreamPosition.QuadPart = m_DataSize - m_CombineData.size();
+        ULARGE_INTEGER ResultStreamPosition;
+        RETURN_IF_FAILED(Stream->Seek(StreamPosition, STREAM_SEEK_SET, &ResultStreamPosition));
+        ULONG WriteDataSize;
+        RETURN_IF_FAILED(Stream->Write(m_CombineData.data(), static_cast<ULONG>(m_CombineData.size()), &WriteDataSize));
+        RETURN_HR_IF(E_FAIL, WriteDataSize != m_CombineData.size());
+        m_CombineData.clear();
+        return S_OK;
+    }
+
     Mpeg4Mux* m_pMux;
     mutable CCritSec m_csWrite;
     bool m_bUseIStream = true; // use IStream always
     uint64_t m_DataSize = 0;
+    size_t m_CombineDataCapacity = 0;
+    std::vector<uint8_t> m_CombineData;
 };
 
 // To pass seeking calls upstream we must try all connected input pins.
@@ -356,7 +409,7 @@ public:
     STDMETHODIMP GetPreroll(LONGLONG * pllPreroll);
 
 // IMuxFilter
-    STDMETHOD(IsTemporaryIndexFileEnabled)() override
+    IFACEMETHOD(IsTemporaryIndexFileEnabled)() override
     {
         //TRACE(L"this 0x%p\n", this);
         try
@@ -368,7 +421,7 @@ public:
         CATCH_RETURN();
         return S_OK;
     }
-    STDMETHOD(SetTemporaryIndexFileEnabled)(BOOL TemporaryIndexFileEnabled) override
+    IFACEMETHOD(SetTemporaryIndexFileEnabled)(BOOL TemporaryIndexFileEnabled) override
     {
         //TRACE(L"this 0x%p, TemporaryIndexFileEnabled %d\n", this, TemporaryIndexFileEnabled);
         try
@@ -382,7 +435,7 @@ public:
         CATCH_RETURN();
         return S_OK;
     }
-    STDMETHOD(GetAlignTrackStartTimeDisabled)() override
+    IFACEMETHOD(GetAlignTrackStartTimeDisabled)() override
     {
         //TRACE(atlTraceCOM, 4, _T("this 0x%p\n"), this);
         try
@@ -394,7 +447,7 @@ public:
         CATCH_RETURN();
         return S_OK;
     }
-    STDMETHOD(SetAlignTrackStartTimeDisabled)(BOOL bAlignTrackStartTimeDisabled) override
+    IFACEMETHOD(SetAlignTrackStartTimeDisabled)(BOOL bAlignTrackStartTimeDisabled) override
     {
         //TRACE(atlTraceCOM, 4, _T("this 0x%p, bAlignTrackStartTimeDisabled %d\n"), this, bAlignTrackStartTimeDisabled);
         try
@@ -408,7 +461,7 @@ public:
         CATCH_RETURN();
         return S_OK;
     }
-    STDMETHOD(GetMinimalMovieDuration)(LONGLONG* pnMinimalMovieDuration) override
+    IFACEMETHOD(GetMinimalMovieDuration)(LONGLONG* pnMinimalMovieDuration) override
     {
         //TRACE(atlTraceCOM, 4, _T("this 0x%p\n"), this);
         try
@@ -420,7 +473,7 @@ public:
         CATCH_RETURN();
         return S_OK;
     }
-    STDMETHOD(SetMinimalMovieDuration)(LONGLONG nMinimalMovieDuration) override
+    IFACEMETHOD(SetMinimalMovieDuration)(LONGLONG nMinimalMovieDuration) override
     {
         //TRACE(atlTraceCOM, 4, _T("this 0x%p, nMinimalMovieDuration %I64d\n"), this, nMinimalMovieDuration);
         try
@@ -434,7 +487,7 @@ public:
         CATCH_RETURN();
         return S_OK;
     }
-    STDMETHOD(SetComment)(BSTR Comment) override
+    IFACEMETHOD(SetComment)(BSTR Comment) override
     {
         //TRACE(atlTraceCOM, 4, _T("this 0x%p, Comment 0x%p \"%ls\"\n"), this, Comment, Comment ? Comment : L"");
         try
@@ -454,7 +507,7 @@ public:
         CATCH_RETURN();
         return S_OK;
     }
-    STDMETHOD(SetTemporaryIndexFileDirectory)(BSTR TemporaryIndexFileDirectory) override
+    IFACEMETHOD(SetTemporaryIndexFileDirectory)(BSTR TemporaryIndexFileDirectory) override
     {
         //TRACE(L"this 0x%p, TemporaryIndexFileDirectory %ls\n", this, TemporaryIndexFileDirectory ? TemporaryIndexFileDirectory : L"(null)");
         try
@@ -462,6 +515,18 @@ public:
             CAutoLock lock(&m_csFilter);
             //THROW_HR_IF(VFW_E_WRONG_STATE, IsActive());
             m_TemporaryIndexFileDirectory = TemporaryIndexFileDirectory;
+        }
+        CATCH_RETURN();
+        return S_OK;
+    }
+    IFACEMETHOD(SetCombineOutputCapacity)(ULONG CombineOutputCapacity) override
+    {
+        //TRACE(L"this 0x%p, CombineOutputCapacity %u\n", this, CombineOutputCapacity);
+        try
+        {
+            CAutoLock lock(&m_csFilter);
+            THROW_HR_IF(VFW_E_WRONG_STATE, IsActive());
+            m_pOutput->CombineDataCapacity(static_cast<size_t>(CombineOutputCapacity));
         }
         CATCH_RETURN();
         return S_OK;

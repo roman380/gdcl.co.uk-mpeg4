@@ -448,6 +448,8 @@ public:
                         THROW_IF_FAILED(DllGetClassObject(__uuidof(MuxFilter), IID_PPV_ARGS(ClassFactory.put())));
                         ClassFactory->CreateInstance(nullptr, IID_PPV_ARGS(BaseFilter.put()));
                     }
+                    auto const MuxFilter = BaseFilter.query<IMuxFilter>(); 
+                    THROW_IF_FAILED(MuxFilter->SetCombineOutputCapacity(32 << 20));
                     THROW_IF_FAILED(FilterGraph2->AddFilter(BaseFilter.get(), L"Multiplexer"));
                     unsigned int Index = 0;
                     EnumeratePins(SourceBaseFilter, [&] (auto const& OutputPin) 
@@ -579,7 +581,7 @@ public:
                                 Properties.pMediaType = nullptr;
                                 Properties.pbBuffer = FilterSample->m_Data.data();
                                 Properties.cbBuffer = static_cast<LONG>(FilterSample->m_Data.size());
-                                TRACE(L"Position %llu, Signature %hs, MediaSample.Index %u, .Position %llu, .Size %u\n", static_cast<uint64_t>(Position), FormatFourCharacterCode(Signature).c_str(), MediaSample.Index, MediaSample.Position, MediaSample.Size);
+                                //TRACE(L"Position %llu, Signature %hs, MediaSample.Index %u, .Position %llu, .Size %u\n", static_cast<uint64_t>(Position), FormatFourCharacterCode(Signature).c_str(), MediaSample.Index, MediaSample.Position, MediaSample.Size);
                                 Source->AddMediaSample(MediaSample.Index, FilterSample.as<IMediaSample>().get());
                                 if(!std::exchange(Running, true))
                                 {

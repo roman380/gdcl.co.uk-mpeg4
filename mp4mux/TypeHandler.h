@@ -45,9 +45,9 @@ public:
     {
 	    std::copy(Data, Data + DataSize, std::back_inserter(m_Data));
     }
-    void Append(Descriptor* Descriptor)
+    void Append(Descriptor const* Descriptor)
     {
-        auto Data = Descriptor->Compose();
+        auto const Data = Descriptor->Compose();
 	    std::copy(Data.cbegin(), Data.cend(), std::back_inserter(m_Data));
     }
     std::vector<uint8_t> Compose() const

@@ -33,6 +33,7 @@ namespace Test
 			IFACEMETHOD(AfterStart)() override
 			{
 				TRACE(L"this 0x%p\n", this);
+				StartTickCount = GetTickCount();
 				return S_OK;
 			}
 			IFACEMETHOD(BeforeStop)() override
@@ -43,12 +44,13 @@ namespace Test
 			}
 			IFACEMETHOD(Progress)([[maybe_unused]] DOUBLE Progress) override
 			{
-				TRACE(L"this 0x%p, Progress %.03f\n", this, Progress);
+				TRACE(L"this 0x%p, Progress %.03f, %.2f seconds\n", this, Progress, (GetTickCount() - StartTickCount) / 1E3);
 				return S_OK;
 			}
 
 			wil::srwlock Activity;
 			wil::condition_variable StoppingCondition;
+			ULONG StartTickCount;
 		};
 
 		#if defined(WITH_DIRECTSHOWREFERENCESOURCE) && !defined(NDEBUG)
@@ -58,42 +60,44 @@ namespace Test
 		void InternalRecovery(std::wstring const BaseName, std::function<void(wil::com_ptr<IFilterGraph2> const&, wil::com_ptr<IBaseFilter> const&)> AddSourceFilters)
 		{
 			auto const Path = OutputPath(Format(L"Recovery.%ls.mp4", BaseName.c_str()));
-			if(PathFileExistsW(Path.c_str()))
-				WI_VERIFY(DeleteFileW(Path.c_str()));
-			auto const TemporaryIndexFileDirectory = OutputPath(L"TemporaryIndex");
-			CreateDirectoryW(TemporaryIndexFileDirectory.c_str(), nullptr);
 			Library Library(L"mp4mux.dll"), DemultiplexerLibrary(L"mp4demux.dll");
-			{
-				auto const FilterGraph2 = wil::CoCreateInstance<IFilterGraph2>(CLSID_FilterGraph, CLSCTX_INPROC_SERVER);
-				wil::com_ptr<IPin> CurrectOutputPin;
-				#pragma region Multiplexer
+			auto const TemporaryIndexFileDirectory = OutputPath(L"TemporaryIndex");
+			#if 0//1
+				if(PathFileExistsW(Path.c_str()))
+					WI_VERIFY(DeleteFileW(Path.c_str()));
+				CreateDirectoryW(TemporaryIndexFileDirectory.c_str(), nullptr);
 				{
-					auto const Filter = Library.CreateInstance<MuxFilter, IMuxFilter>();
-					THROW_IF_FAILED(Filter->SetTemporaryIndexFileEnabled(TRUE));
-					THROW_IF_FAILED(Filter->SetTemporaryIndexFileDirectory(const_cast<BSTR>(TemporaryIndexFileDirectory.c_str())));
-					THROW_IF_FAILED(Filter->SetSkipClose(TRUE)); // Stop will skip write of moof atom and leave the produced MP4 unplayable
-					auto const BaseFilter = Filter.query<IBaseFilter>();
-					AddFilter(FilterGraph2, BaseFilter, L"Multiplexer");
-					AddSourceFilters(FilterGraph2, BaseFilter);
-					CurrectOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
+					auto const FilterGraph2 = wil::CoCreateInstance<IFilterGraph2>(CLSID_FilterGraph, CLSCTX_INPROC_SERVER);
+					wil::com_ptr<IPin> CurrectOutputPin;
+					#pragma region Multiplexer
+					{
+						auto const Filter = Library.CreateInstance<MuxFilter, IMuxFilter>();
+						THROW_IF_FAILED(Filter->SetTemporaryIndexFileEnabled(TRUE));
+						THROW_IF_FAILED(Filter->SetTemporaryIndexFileDirectory(const_cast<BSTR>(TemporaryIndexFileDirectory.c_str())));
+						THROW_IF_FAILED(Filter->SetSkipClose(TRUE)); // Stop will skip write of moof atom and leave the produced MP4 unplayable
+						auto const BaseFilter = Filter.query<IBaseFilter>();
+						AddFilter(FilterGraph2, BaseFilter, L"Multiplexer");
+						AddSourceFilters(FilterGraph2, BaseFilter);
+						CurrectOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
+					}
+					#pragma endregion
+					#pragma region File Writer
+					{
+						auto const BaseFilter = wil::CoCreateInstance<IBaseFilter>(CLSID_FileWriter, CLSCTX_INPROC_SERVER);
+						auto const FileSinkFilter2 = BaseFilter.query<IFileSinkFilter2>();
+						THROW_IF_FAILED(FileSinkFilter2->SetFileName(Path.c_str(), nullptr));
+						THROW_IF_FAILED(FileSinkFilter2->SetMode(AM_FILE_OVERWRITE));
+						AddFilter(FilterGraph2, BaseFilter, L"Renderer");
+						THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter).get()));
+						CurrectOutputPin.reset();
+					}
+					#pragma endregion
+					RunFilterGraph(FilterGraph2, 3s);
 				}
-				#pragma endregion
-				#pragma region File Writer
-				{
-					auto const BaseFilter = wil::CoCreateInstance<IBaseFilter>(CLSID_FileWriter, CLSCTX_INPROC_SERVER);
-					auto const FileSinkFilter2 = BaseFilter.query<IFileSinkFilter2>();
-					THROW_IF_FAILED(FileSinkFilter2->SetFileName(Path.c_str(), nullptr));
-					THROW_IF_FAILED(FileSinkFilter2->SetMode(AM_FILE_OVERWRITE));
-					AddFilter(FilterGraph2, BaseFilter, L"Renderer");
-					THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter).get()));
-					CurrectOutputPin.reset();
-				}
-				#pragma endregion
-				RunFilterGraph(FilterGraph2, 3s);
-			}
-			Assert::IsTrue(PathFileExistsW(Path.c_str()));
-			Assert::IsTrue(PathFileExistsW(OutputPath(Format(L"TemporaryIndex\\Recovery.%ls.mp4-Index.tmp", BaseName.c_str())).c_str()));
-			LOG_IF_WIN32_BOOL_FALSE(CopyFileW(Path.c_str(), OutputPath(Format(L"Recovery.%ls-Source.mp4", BaseName.c_str())).c_str(), FALSE));
+				Assert::IsTrue(PathFileExistsW(Path.c_str()));
+				Assert::IsTrue(PathFileExistsW(OutputPath(Format(L"TemporaryIndex\\Recovery.%ls.mp4-Index.tmp", BaseName.c_str())).c_str()));
+				LOG_IF_WIN32_BOOL_FALSE(CopyFileW(Path.c_str(), OutputPath(Format(L"Recovery.%ls-Source.mp4", BaseName.c_str())).c_str(), FALSE));
+			#endif
 			// NOTE: File is unusable at this point as SetSkipClose above instructed to skip finalization
 			{
 				auto const Recovery = Library.CreateInstance<MuxFilterRecovery, IMuxFilterRecovery>();

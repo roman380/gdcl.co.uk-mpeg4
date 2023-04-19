@@ -245,7 +245,7 @@ Mpeg4Mux::Stop()
             m_pMovie = NULL;
 
             // fill remaining file space
-            m_pOutput->FillSpace();
+            m_pOutput->CompleteOutput();
         }
 
         m_TemporaryIndexFile.Terminate();
@@ -898,11 +898,24 @@ MuxOutput::Replace(int64_t Position, uint8_t const* Data, size_t DataSize)
     // any data not written on completion of Stop will not be in the index.
     CAutoLock lock(&m_csWrite);
 
+    WI_ASSERT(m_bUseIStream || m_CombineData.empty());
     if (m_bUseIStream)
     {
+        DbgLog((LOG_TRACE, 4, TEXT("Position %llu, DataSize %zu, m_CombineDataCapacity %zu, m_CombineData.size() %zu"), Position, DataSize, m_CombineDataCapacity, m_CombineData.size()));
+        if(static_cast<uint64_t>(Position) == m_DataSize && m_CombineDataCapacity)
+        {
+            if(m_CombineData.size() + DataSize > m_CombineDataCapacity)
+                RETURN_IF_FAILED(WriteCombineData());
+            if(m_CombineData.empty())
+                m_CombineData.reserve(m_CombineDataCapacity);
+            std::copy(Data, Data + DataSize, std::back_inserter(m_CombineData));
+            return S_OK;
+        }
+        RETURN_IF_FAILED(WriteCombineData());
+
+        DbgLog((LOG_TRACE, 4, TEXT("Position %llu, DataSize %zu"), Position, DataSize));
         IStreamPtr Stream = GetConnected();
         RETURN_HR_IF_NULL(E_NOINTERFACE, Stream);
-        DbgLog((LOG_TRACE, 4, TEXT("Position %llu, cBytes %zu"), Position, DataSize));
         LARGE_INTEGER StreamPosition;
         StreamPosition.QuadPart = Position;
         ULARGE_INTEGER ResultStreamPosition;
@@ -936,32 +949,6 @@ MuxOutput::Replace(int64_t Position, uint8_t const* Data, size_t DataSize)
     return S_OK;
 }
     
-void 
-MuxOutput::FillSpace()
-{
-    IStreamPtr Stream = GetConnected();
-    if(!Stream)
-        return;
-    LARGE_INTEGER SeekPosition;
-    SeekPosition.QuadPart = 0;
-    ULARGE_INTEGER EndPosition;
-    auto const SeekResult = Stream->Seek(SeekPosition, STREAM_SEEK_END, &EndPosition);
-    LOG_IF_FAILED(SeekResult);
-    if(FAILED(SeekResult))
-        return;
-    if(EndPosition.QuadPart <= m_DataSize)
-        return;
-    uint64_t const FreeDataSize = EndPosition.QuadPart - m_DataSize;
-    if(FreeDataSize < std::numeric_limits<int32_t>::max() && FreeDataSize >= 8)
-    {
-        // create a free chunk
-        BYTE b[8];
-        Write32(static_cast<uint32_t>(FreeDataSize), b);
-        Write32('free', b + 4);
-        Append(b, 8);
-    }
-}
-
 void MuxOutput::NotifyMediaSampleWrite(int TrackIndex, wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize)
 { 
     WI_ASSERT(MediaSample);
