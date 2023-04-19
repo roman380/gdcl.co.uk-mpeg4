@@ -796,7 +796,6 @@ MuxInput::ShouldDiscard(IMediaSample* pSample)
 
 // ----------------------
 
-
 MuxAllocator::MuxAllocator(LPUNKNOWN pUnk, HRESULT* phr, long cMaxBuffer, const CMediaType* pmt)
 : CMemAllocator(NAME("MuxAllocator"), pUnk, phr),
   m_cMaxBuffer(cMaxBuffer),
@@ -832,14 +831,6 @@ MuxAllocator::SetProperties(
 }
 
 // --- output --------------------------------------------------------
-
-MuxOutput::MuxOutput(Mpeg4Mux* pFilter, CCritSec* pLock, HRESULT* phr)
-: m_pMux(pFilter),
-  m_llBytes(0),
-  m_bUseIStream(true),		// use IStream always
-  CBaseOutputPin(NAME("MuxOutput"), pFilter, pLock, phr, L"Output")
-{
-}
 
 // CBaseOutputPin overrides
 HRESULT 
@@ -897,21 +888,6 @@ MuxOutput::BreakConnect()
     return __super::BreakConnect();
 }
 
-void 
-MuxOutput::Reset()
-{
-    CAutoLock lock(&m_csWrite);
-    m_llBytes = 0;
-    m_bUseIStream = true;		// always use IStream, so we don't fail when downstream filter is stopped first
-}
-
-void
-MuxOutput::UseIStream()
-{
-    CAutoLock lock(&m_csWrite);
-    m_bUseIStream = true;
-}
-
 HRESULT 
 MuxOutput::Replace(int64_t Position, uint8_t const* Data, size_t DataSize)
 {
@@ -922,86 +898,67 @@ MuxOutput::Replace(int64_t Position, uint8_t const* Data, size_t DataSize)
     // any data not written on completion of Stop will not be in the index.
     CAutoLock lock(&m_csWrite);
 
-    HRESULT hr = S_OK;
     if (m_bUseIStream)
     {
-        IStreamPtr pStream = GetConnected();
-        if (pStream == NULL)
-        {
-            hr = E_NOINTERFACE;
-        } else {
-            DbgLog((LOG_TRACE, 4, TEXT("Position %llu, cBytes %zu"), Position, DataSize));
-            LARGE_INTEGER liTo;
-            liTo.QuadPart = Position;
-            ULARGE_INTEGER uliUnused;
-            hr = pStream->Seek(liTo, STREAM_SEEK_SET, &uliUnused);
-            if (SUCCEEDED(hr))
-            {
-                ULONG cActual;
-                hr = pStream->Write(Data, static_cast<ULONG>(DataSize), &cActual);
-                if (SUCCEEDED(hr) && (cActual != DataSize))
-                {
-                    hr = E_FAIL;
-                }
-            }
-        }
+        IStreamPtr Stream = GetConnected();
+        RETURN_HR_IF_NULL(E_NOINTERFACE, Stream);
+        DbgLog((LOG_TRACE, 4, TEXT("Position %llu, cBytes %zu"), Position, DataSize));
+        LARGE_INTEGER StreamPosition;
+        StreamPosition.QuadPart = Position;
+        ULARGE_INTEGER ResultStreamPosition;
+        RETURN_IF_FAILED(Stream->Seek(StreamPosition, STREAM_SEEK_SET, &ResultStreamPosition));
+        ULONG WriteDataSize;
+        RETURN_IF_FAILED(Stream->Write(Data, static_cast<ULONG>(DataSize), &WriteDataSize));
+        RETURN_HR_IF(E_FAIL, WriteDataSize != DataSize);
     } else {
         // where the buffer boundaries lie is not important in this 
         // case, so break writes up into the buffers.
-        while (DataSize && (hr == S_OK))
+        while(DataSize)
         {
-            IMediaSamplePtr pSample;
-            hr = GetDeliveryBuffer(&pSample, NULL, NULL, 0);
-            if (SUCCEEDED(hr))
-            {
-                size_t cThis = std::min<size_t>(pSample->GetSize(), DataSize);
-                BYTE* pDest;
-                pSample->GetPointer(&pDest);
-                std::memcpy(pDest, Data, cThis);
-                pSample->SetActualDataLength(static_cast<long>(cThis));
+            IMediaSamplePtr MediaSample;
+            RETURN_IF_FAILED(GetDeliveryBuffer(&MediaSample, nullptr, nullptr, 0));
+            size_t MediaSampleDataCapacity = std::min<size_t>(MediaSample->GetSize(), DataSize);
+            BYTE* MediaSampleData;
+            WI_VERIFY_SUCCEEDED(MediaSample->GetPointer(&MediaSampleData));
+            std::memcpy(MediaSampleData, Data, MediaSampleDataCapacity);
+            WI_VERIFY_SUCCEEDED(MediaSample->SetActualDataLength(static_cast<long>(MediaSampleDataCapacity)));
     
-                // time stamps indicate file position in bytes
-                LONGLONG tStart = Position;
-                LONGLONG tEnd = Position + cThis;
-                pSample->SetTime(&tStart, &tEnd);
-                hr = Deliver(pSample);
-                if (SUCCEEDED(hr))
-                {
-                    Data += cThis;
-                    DataSize -= cThis;
-                    Position += cThis;
-                }
-            }
+            // time stamps indicate file position in bytes
+            LONGLONG StartTime = Position;
+            LONGLONG StopTime = Position + MediaSampleDataCapacity;
+            WI_VERIFY_SUCCEEDED(MediaSample->SetTime(&StartTime, &StopTime));
+            RETURN_IF_FAILED(Deliver(MediaSample));
+            Data += MediaSampleDataCapacity;
+            DataSize -= MediaSampleDataCapacity;
+            Position += MediaSampleDataCapacity;
         }
     }
-    return hr;
+    return S_OK;
 }
     
 void 
 MuxOutput::FillSpace()
 {
-    IStreamPtr pStream = GetConnected();
-    if (pStream != NULL)
+    IStreamPtr Stream = GetConnected();
+    if(!Stream)
+        return;
+    LARGE_INTEGER SeekPosition;
+    SeekPosition.QuadPart = 0;
+    ULARGE_INTEGER EndPosition;
+    auto const SeekResult = Stream->Seek(SeekPosition, STREAM_SEEK_END, &EndPosition);
+    LOG_IF_FAILED(SeekResult);
+    if(FAILED(SeekResult))
+        return;
+    if(EndPosition.QuadPart <= m_DataSize)
+        return;
+    uint64_t const FreeDataSize = EndPosition.QuadPart - m_DataSize;
+    if(FreeDataSize < std::numeric_limits<int32_t>::max() && FreeDataSize >= 8)
     {
-        LARGE_INTEGER li0;
-        li0.QuadPart = 0;
-        ULARGE_INTEGER uliEnd;
-        HRESULT hr = pStream->Seek(li0, STREAM_SEEK_END, &uliEnd);
-        if (SUCCEEDED(hr))
-        {
-            if (uliEnd.QuadPart > (ULONGLONG) m_llBytes)
-            {
-                LONGLONG free = uliEnd.QuadPart - m_llBytes;
-                if ((free < 0x7fffffff) && (free >= 8))
-                {
-                    // create a free chunk
-                    BYTE b[8];
-                    Write32(long(free), b);
-                    Write32(DWORD('free'), b+4);
-                    Append(b, 8);
-                }
-            }
-        }
+        // create a free chunk
+        BYTE b[8];
+        Write32(static_cast<uint32_t>(FreeDataSize), b);
+        Write32('free', b + 4);
+        Append(b, 8);
     }
 }
 
@@ -1009,8 +966,8 @@ void MuxOutput::NotifyMediaSampleWrite(int TrackIndex, wil::com_ptr<IMediaSample
 { 
     WI_ASSERT(MediaSample);
     // NOTE: nDataSize is effectively written number of bytes, which might be different from media sample data in case respective handler added certain formatting
-    auto const DataPosition = static_cast<uint64_t>(m_llBytes - DataSize);
-    ASSERT(m_pMux);
+    auto const DataPosition = static_cast<uint64_t>(m_DataSize - DataSize);
+    WI_ASSERT(m_pMux);
     m_pMux->NotifyMediaSampleWrite(TrackIndex, DataPosition, DataSize, MediaSample);
 }
 
