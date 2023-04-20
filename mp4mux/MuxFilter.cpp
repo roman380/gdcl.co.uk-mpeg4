@@ -869,26 +869,6 @@ MuxOutput::DecideBufferSize(IMemAllocator * pAlloc, ALLOCATOR_PROPERTIES * pprop
 }
 
 HRESULT 
-MuxOutput::CompleteConnect(IPin *pReceivePin)
-{
-    // make sure that this is the file writer, supporting
-    // IStream, or we will not be able to write out the metadata
-    // at stop time
-    IStreamPtr pIStream = pReceivePin;
-    if (pIStream == NULL)
-    {
-        return E_NOINTERFACE;
-    }
-    return CBaseOutputPin::CompleteConnect(pReceivePin);
-}
-    
-HRESULT 
-MuxOutput::BreakConnect()
-{
-    return __super::BreakConnect();
-}
-
-HRESULT 
 MuxOutput::Replace(int64_t Position, uint8_t const* Data, size_t DataSize)
 {
     // all media content is written when the graph is running,
@@ -914,14 +894,13 @@ MuxOutput::Replace(int64_t Position, uint8_t const* Data, size_t DataSize)
         RETURN_IF_FAILED(WriteCombineData());
 
         DbgLog((LOG_TRACE, 4, TEXT("Position %llu, DataSize %zu"), Position, DataSize));
-        IStreamPtr Stream = GetConnected();
-        RETURN_HR_IF_NULL(E_NOINTERFACE, Stream);
+        RETURN_HR_IF_NULL(E_NOINTERFACE, m_Stream);
         LARGE_INTEGER StreamPosition;
         StreamPosition.QuadPart = Position;
         ULARGE_INTEGER ResultStreamPosition;
-        RETURN_IF_FAILED(Stream->Seek(StreamPosition, STREAM_SEEK_SET, &ResultStreamPosition));
+        RETURN_IF_FAILED(m_Stream->Seek(StreamPosition, STREAM_SEEK_SET, &ResultStreamPosition));
         ULONG WriteDataSize;
-        RETURN_IF_FAILED(Stream->Write(Data, static_cast<ULONG>(DataSize), &WriteDataSize));
+        RETURN_IF_FAILED(m_Stream->Write(Data, static_cast<ULONG>(DataSize), &WriteDataSize));
         RETURN_HR_IF(E_FAIL, WriteDataSize != DataSize);
     } else {
         // where the buffer boundaries lie is not important in this 

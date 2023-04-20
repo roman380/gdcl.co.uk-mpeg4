@@ -220,8 +220,20 @@ public:
     HRESULT CheckMediaType(const CMediaType* pmt);
     HRESULT GetMediaType(int iPosition, CMediaType* pmt);
     HRESULT DecideBufferSize(IMemAllocator * pAlloc, ALLOCATOR_PROPERTIES * pprop);
-    HRESULT CompleteConnect(IPin *pReceivePin);
-    HRESULT BreakConnect();
+    HRESULT CompleteConnect(IPin* ReceivePin)
+    {
+        // NOTE: make sure that this is the file writer, supporting IStream, or we will not be able to write out the metadata at stop time
+        auto Stream = wil::try_com_query<IStream>(ReceivePin);
+        RETURN_HR_IF_NULL(E_NOINTERFACE, Stream);
+        RETURN_IF_FAILED(CBaseOutputPin::CompleteConnect(ReceivePin));
+        m_Stream = std::move(Stream);
+        return S_OK;
+    }
+    HRESULT BreakConnect()
+    {
+        m_Stream.reset();
+        return __super::BreakConnect();
+    }
 
     // called from filter
     void Reset()
@@ -303,6 +315,7 @@ private:
     }
 
     Mpeg4Mux* m_pMux;
+    wil::com_ptr<IStream> m_Stream;
     mutable CCritSec m_csWrite;
     bool m_bUseIStream = true; // use IStream always
     uint64_t m_DataSize = 0;
