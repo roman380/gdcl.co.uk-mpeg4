@@ -58,7 +58,8 @@ library GdclMp4Mux
 		HRESULT SetMinimalMovieDuration([in] LONGLONG nMinimalMovieDuration);
 		HRESULT SetComment([in] BSTR Comment);
 		HRESULT SetTemporaryIndexFileDirectory([in] BSTR TemporaryIndexFileDirectory);
-		#if !defined(NDEBUG)
+		HRESULT SetCombineOutputCapacity([in] ULONG CombineOutputCapacity);
+		#if !defined(NDEBUG) || defined(DEVELOPMENT)
 			HRESULT SetSkipClose([in] BOOL SkipClose);
 		#endif
 	};

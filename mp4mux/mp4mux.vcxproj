@@ -57,11 +57,13 @@
       <Culture>0x0809</Culture>
       <PreprocessorDefinitions Condition="'$(Configuration)' == 'Debug'">%(PreprocessorDefinitions);_DEBUG</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)' != 'Debug'">%(PreprocessorDefinitions);NDEBUG</PreprocessorDefinitions>
+      <!-- <PreprocessorDefinitions Condition="'$(Configuration)' != 'Debug'">%(PreprocessorDefinitions);DEVELOPMENT</PreprocessorDefinitions> -->
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(IntDir)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Midl>
       <PreprocessorDefinitions Condition="'$(Configuration)' == 'Debug'">%(PreprocessorDefinitions);_DEBUG</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)' != 'Debug'">%(PreprocessorDefinitions);NDEBUG</PreprocessorDefinitions>
+      <!-- <PreprocessorDefinitions Condition="'$(Configuration)' != 'Debug'">%(PreprocessorDefinitions);DEVELOPMENT</PreprocessorDefinitions> -->
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(IntDir)</AdditionalIncludeDirectories>
       <OutputDirectory>$(IntDir)</OutputDirectory>
     </Midl>
@@ -69,6 +71,7 @@
       <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;_USRDLL;mp4demux_EXPORTS</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)' == 'Debug'">%(PreprocessorDefinitions);_DEBUG</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)' != 'Debug'">%(PreprocessorDefinitions);NDEBUG</PreprocessorDefinitions>
+      <!-- <PreprocessorDefinitions Condition="'$(Configuration)' != 'Debug'">%(PreprocessorDefinitions);DEVELOPMENT</PreprocessorDefinitions> -->
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)submodule\wil\include</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(IntDir)</AdditionalIncludeDirectories>
       <WarningLevel>Level4</WarningLevel>
@@ -119,7 +122,6 @@
     <ClInclude Include="NALUnit.h" />
     <ClInclude Include="Recovery.h" />
     <ClInclude Include="resource.h" />
-    <ClInclude Include="smartptr.h" />
     <ClInclude Include="StdAfx.h" />
     <ClInclude Include="TemporaryIndexFile.h" />
     <ClInclude Include="TypeHandler.h" />

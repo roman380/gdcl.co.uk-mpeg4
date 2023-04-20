@@ -105,7 +105,7 @@ private:
 
     // bitstream access
     size_t m_idx;
-    size_t m_nBits;
+    unsigned int m_nBits;
     BYTE m_byte;
     size_t m_cZeros;
 };

@@ -355,6 +355,9 @@ EXTERN_C const IID IID_IMuxFilter;
         virtual HRESULT STDMETHODCALLTYPE SetTemporaryIndexFileDirectory( 
             /* [in] */ BSTR TemporaryIndexFileDirectory) = 0;
         
+        virtual HRESULT STDMETHODCALLTYPE SetCombineOutputCapacity( 
+            /* [in] */ ULONG CombineOutputCapacity) = 0;
+        
     };
     
     
@@ -417,6 +420,11 @@ EXTERN_C const IID IID_IMuxFilter;
             IMuxFilter * This,
             /* [in] */ BSTR TemporaryIndexFileDirectory);
         
+        DECLSPEC_XFGVIRT(IMuxFilter, SetCombineOutputCapacity)
+        HRESULT ( STDMETHODCALLTYPE *SetCombineOutputCapacity )( 
+            IMuxFilter * This,
+            /* [in] */ ULONG CombineOutputCapacity);
+        
         END_INTERFACE
     } IMuxFilterVtbl;
 
@@ -463,6 +471,9 @@ EXTERN_C const IID IID_IMuxFilter;
 
 #define IMuxFilter_SetTemporaryIndexFileDirectory(This,TemporaryIndexFileDirectory)	\
     ( (This)->lpVtbl -> SetTemporaryIndexFileDirectory(This,TemporaryIndexFileDirectory) ) 
+
+#define IMuxFilter_SetCombineOutputCapacity(This,CombineOutputCapacity)	\
+    ( (This)->lpVtbl -> SetCombineOutputCapacity(This,CombineOutputCapacity) ) 
 
 #endif /* COBJMACROS */
 

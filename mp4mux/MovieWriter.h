@@ -10,7 +10,12 @@
 
 #pragma once
 
+#include <memory>
+#include <algorithm>
+#include <utility>
 #include <string>
+#include <vector>
+#include <list>
 
 // tracks are normally interleaved by the second. Define this
 // to set the maximum size of a single interleave piece.
@@ -21,34 +26,25 @@
 #include "TypeHandler.h"
 
 // byte ordering to buffer
-inline void WriteShort(int x, BYTE* pBuffer)
+inline void Write16(uint16_t Value, uint8_t* Data)
 {
-    pBuffer[0] = (BYTE)((x >> 8) & 0xff);
-    pBuffer[1] = (BYTE)(x & 0xff);
+    *reinterpret_cast<uint16_t*>(Data) = _byteswap_ushort(Value);
 }
-
-inline void WriteLong(long l, BYTE* pBuffer)
+inline void Write32(uint32_t Value, uint8_t* Data)
 {
-    pBuffer[0] = BYTE(l >> 24);
-    pBuffer[1] = BYTE((l >> 16) & 0xff);
-    pBuffer[2] = BYTE((l >> 8) & 0xff);
-    pBuffer[3] = BYTE(l & 0xff);
+    *reinterpret_cast<uint32_t*>(Data) = _byteswap_ulong(Value);
 }
-inline void WriteI64(LONGLONG l, BYTE* pBuffer)
+inline void Write64(uint64_t Value, uint8_t* Data)
 {
-    WriteLong(long(l >> 32), pBuffer);
-    WriteLong(long(l & 0xffffffff), pBuffer + 4);
+    *reinterpret_cast<uint64_t*>(Data) = _byteswap_uint64(Value);
 }
-inline long ReadLong(const BYTE* pByte)
+inline uint32_t Read32(uint8_t const* Data)
 {
-    return (pByte[0] << 24) |
-            (pByte[1] << 16) |
-            (pByte[2] << 8)  |
-            pByte[3];
+    return _byteswap_ulong(*reinterpret_cast<uint32_t const*>(Data));
 }
-inline LONGLONG ReadI64(BYTE* pBuffer)
+inline uint64_t Read64(uint8_t const* Data)
 {
-    return (LONGLONG(ReadLong(pBuffer)) << 32) + ReadLong(pBuffer + 4);
+    return _byteswap_uint64(*reinterpret_cast<uint64_t const*>(Data));
 }
 
 // forward references
@@ -58,21 +54,19 @@ class MovieWriter;
 class TrackWriter;
 // do you feel at this point there should be a class ScriptWriter?
 
-
-
 // abstract interface to atom, supported by parent
 // atom or by external container (eg output pin)
 class AtomWriter
 {
 public:
-    virtual ~AtomWriter() {}
+    virtual ~AtomWriter() = default;
 
-    virtual LONGLONG Length() = 0;
-    virtual LONGLONG Position() = 0;
-    virtual HRESULT Replace(LONGLONG pos, uint8_t const* pBuffer, size_t cBytes) = 0;
-    virtual HRESULT Append(uint8_t const* pBuffer, size_t cBytes) = 0;
+    virtual uint64_t Length() const = 0;
+    virtual int64_t Position() const = 0;
+    virtual HRESULT Replace(int64_t Position, uint8_t const* Data, size_t DataSize) = 0;
+    virtual HRESULT Append(uint8_t const* Data, size_t DataSize) = 0;
 
-    virtual void NotifyMediaSampleWrite(int TrackIndex, IMediaSample* MediaSample, size_t DataSize)
+    virtual void NotifyMediaSampleWrite(int TrackIndex, wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize)
     { 
         TrackIndex; MediaSample; DataSize;
     }
@@ -84,41 +78,69 @@ public:
 class Atom : public AtomWriter
 {
 public:
-    Atom(AtomWriter* pContainer, LONGLONG llOffset, DWORD type);
+    Atom(AtomWriter* Container, int64_t Offset, uint32_t Type) : 
+        m_Container(Container),
+        m_Offset(Offset)
+    {
+        // write the initial length and type dwords
+        BYTE b[8];
+        Write32(8, b);
+        Write32(Type, b + 4);
+        Append(b, 8);
+    }
     ~Atom()
     {
-        if (!m_bClosed)
-        {
+        if(!m_Closed)
             Close();
-        }
-    }
-    LONGLONG Position()
-    {
-        return m_pContainer->Position() + m_llOffset;
-    }
-    HRESULT Replace(LONGLONG pos, const BYTE* pBuffer, size_t cBytes) 
-    {
-        return m_pContainer->Replace(m_llOffset + pos, pBuffer, cBytes);
-    }
-    HRESULT Append(const BYTE* pBuffer, size_t cBytes)
-    {
-        m_cBytes += cBytes;
-        return m_pContainer->Append(pBuffer, cBytes);
-    }
-    LONGLONG Length()
-    {
-        return m_cBytes;
     }
 
-    HRESULT Close();
-    Atom* CreateAtom(DWORD type);
+    std::shared_ptr<Atom> CreateAtom(DWORD type)
+    {
+        // SUGG: Rather unique_ptr?
+        return std::make_shared<Atom>(this, Length(), type);
+    }
+    HRESULT Close()
+    {
+        m_Closed = true;
+        // we only support 32-bit lengths for atoms
+        // (otherwise you would have to either decide in the constructor
+        // or shift the whole atom down).
+        RETURN_HR_IF(E_INVALIDARG, m_DataSize > std::numeric_limits<uint32_t>::max());
+        BYTE b[4];
+        Write32(static_cast<uint32_t>(m_DataSize), b);
+        return Replace(0, b, 4);
+    }
+    HRESULT Append(std::vector<uint8_t> const& Data)
+    {
+        m_DataSize += Data.size();
+        return m_Container->Append(Data.data(), Data.size());
+    }
+
+// Atom
+    uint64_t Length() const override
+    {
+        return m_DataSize;
+    }
+    int64_t Position() const override
+    {
+        return m_Container->Position() + m_Offset;
+    }
+    HRESULT Replace(int64_t Position, uint8_t const* Data, size_t DataSize) override
+    {
+        return m_Container->Replace(m_Offset + Position, Data, DataSize);
+    }
+    HRESULT Append(uint8_t const* Data, size_t DataSize) override
+    {
+        m_DataSize += DataSize;
+        return m_Container->Append(Data, DataSize);
+    }
+
 private:
-    AtomWriter* m_pContainer;
-    bool m_bClosed;
-    LONGLONG m_llOffset;
-    LONGLONG m_cBytes;
+    AtomWriter* m_Container;
+    bool m_Closed = false;
+    int64_t m_Offset;
+    uint64_t m_DataSize = 0;
 };
-
 
 // a collection of samples, to be written as one contiguous 
 // chunk in the mdat atom. The properties will
@@ -127,12 +149,14 @@ private:
 class MediaChunk
 {
 public:
-    MediaChunk(TrackWriter* pTrack);
-    ~MediaChunk();
+    MediaChunk(TrackWriter* Track) :
+        m_pTrack(Track)
+    {
+    }
 
     HRESULT AddSample(IMediaSample* pSample);
-    HRESULT Write(Atom* patm);
-    long Length()
+    HRESULT Write(std::shared_ptr<Atom> const& Atom);
+    size_t Length() const
     {
         return m_cBytes;
     }
@@ -141,70 +165,93 @@ public:
         *ptStart = m_tStart;
         *ptEnd = m_tEnd;
     }
-    long Samples()
+    size_t MediaSampleCount() const
     {
-        return (long)m_Samples.size();
+        return m_MediaSampleList.size();
     }
-    bool IsFull(REFERENCE_TIME tMaxDur);
-    REFERENCE_TIME GetDuration();
-    void SetOldIndexFormat()	{ m_bOldIndexFormat = true; }
+    bool IsFull(REFERENCE_TIME tMaxDur) const;
+    REFERENCE_TIME GetDuration() const;
+    void SetOldIndexFormat()
+    {
+        m_bOldIndexFormat = true;
+    }
 
 private:
     TrackWriter* m_pTrack;
-    REFERENCE_TIME m_tStart;
-    REFERENCE_TIME m_tEnd;
-    bool m_bOldIndexFormat;
-    long m_cBytes;
-    list<IMediaSample*> m_Samples;
+    REFERENCE_TIME m_tStart = 0;
+    REFERENCE_TIME m_tEnd = 0;
+    bool m_bOldIndexFormat = false;
+    size_t m_cBytes = 0;
+    std::list<wil::com_ptr<IMediaSample>> m_MediaSampleList;
 };
-typedef smart_ptr<MediaChunk> MediaChunkPtr;
-
-
 
 // --- indexing ---
 
-typedef smart_array<BYTE> BytePtr;
-
-// a growable list of 32-bit values maintained in
-// file byte order for writing directly to one of the
-// index atoms
-class ListOfLongs
+template <typename T, typename ValueType> 
+class ListOf
 {
 public:
-    ListOfLongs();
+    static size_t constexpr const EntriesPerBlock = 4096;
 
-    void Append(long l);
-    HRESULT Write(Atom* patm);
-    enum {
-        EntriesPerBlock = 4096/4,
-    };
-    long Entries() {
-        return (long)(((m_Blocks.size() - 1) * EntriesPerBlock) + m_nEntriesInLast);
+    ListOf()
+    {
+        std::vector<ValueType> Vector;
+        Vector.reserve(EntriesPerBlock);
+        m_Blocks.emplace_back(std::move(Vector));
     }
-    long Entry(long nEntry);
+
+    void Append(ValueType Value)
+    {
+        WI_ASSERT(!m_Blocks.empty());
+        if (m_Blocks.back().size() >= EntriesPerBlock)
+        {
+            std::vector<ValueType> Vector;
+            Vector.reserve(EntriesPerBlock);
+            m_Blocks.emplace_back(std::move(Vector));
+        }
+        auto& Block = m_Blocks.back();
+        Block.emplace_back(static_cast<T*>(this)->Transform(Value));
+    }
+    HRESULT Write(std::shared_ptr<Atom> const& Atom)
+    {
+        for(auto&& Block: m_Blocks)
+            RETURN_IF_FAILED(Atom->Append(reinterpret_cast<uint8_t const*>(Block.data()), Block.size() * sizeof (ValueType)));
+        return S_OK;
+    }
+    size_t Entries() const
+    {
+        return ((m_Blocks.size() - 1) * EntriesPerBlock) + m_Blocks.back().size();
+    }
+    ValueType Entry(size_t Index) const
+    {
+        if(Index >= Entries())
+            return 0;
+        auto Iterator = m_Blocks.cbegin();
+        std::advance(Iterator, Index / EntriesPerBlock);
+        auto const& Block = *Iterator;
+        return static_cast<T const*>(this)->Transform(Block[Index % EntriesPerBlock]);
+    }
 
 private:
-    vector<BytePtr> m_Blocks;
-    long m_nEntriesInLast;
+    std::list<std::vector<ValueType>> m_Blocks;
 };
 
-// growable list of 64-bit values
-class ListOfI64
+class ListOfLongs : public ListOf<ListOfLongs, uint32_t>
 {
 public:
-    ListOfI64();
-
-    void Append(LONGLONG ll);
-    HRESULT Write(Atom* patm);
-    enum {
-        EntriesPerBlock = 4096/8,
-    };
-    long Entries() {
-        return (long) (((m_Blocks.size() - 1) * EntriesPerBlock) + m_nEntriesInLast);
+    static uint32_t Transform(uint32_t Value)
+    {
+        return _byteswap_ulong(Value);
     }
-private:
-    vector<BytePtr> m_Blocks;
-    long m_nEntriesInLast;
+};
+
+class ListOfI64 : public ListOf<ListOfI64, uint64_t>
+{
+public:
+    static uint64_t Transform(uint64_t Value)
+    {
+        return _byteswap_uint64(Value);
+    }
 };
 
 // pairs of <count, value> longs -- this is essentially an RLE compression
@@ -214,10 +261,9 @@ private:
 class ListOfPairs
 {
 public:
-    ListOfPairs();
     void Append(long l);
-    HRESULT Write(Atom* patm);
-    long Entries() { return m_cEntries; }
+    HRESULT Write(std::shared_ptr<Atom> const& Atom);
+    long Entries() const { return m_cEntries; }
 private:
     ListOfLongs m_Table;
 
@@ -225,8 +271,8 @@ private:
     long m_cEntries;
 
     // current pair not in table
-    long m_lValue;
-    long m_lCount;
+    long m_lValue = 0;
+    long m_lCount = 0;
 };
 
 // sample size index -- table of <count, size> pairs
@@ -234,20 +280,18 @@ private:
 class SizeIndex
 {
 public:
-    SizeIndex();
-
     void Add(long cBytes);
     void AddMultiple(long cBytes, long count);
-    HRESULT Write(Atom* patm);
+    HRESULT Write(std::shared_ptr<Atom> const& Atom);
 private:
     ListOfLongs m_Table;
 
     // current pair not in table
-    long m_cBytesCurrent;
-    long m_nCurrent;
+    long m_cBytesCurrent = 0;
+    long m_nCurrent = 0;
 
     // total samples
-    long m_nSamples;
+    long m_nSamples = 0;
 };
 
 // sample duration table -- table of <count, duration> pairs
@@ -268,13 +312,13 @@ public:
     void Add(REFERENCE_TIME tStart, REFERENCE_TIME tEnd);
     void AddOldFormat(int count);
     void SetOldIndexStart(REFERENCE_TIME tStart);
-    HRESULT WriteEDTS(Atom* patm, long scale);
-    HRESULT WriteTable(Atom* patm);
-    REFERENCE_TIME Duration()
+    HRESULT WriteEDTS(std::shared_ptr<Atom> const& Atom, long scale);
+    HRESULT WriteTable(std::shared_ptr<Atom> const& Atom);
+    REFERENCE_TIME Duration() const
     {
         return m_tStopLast;
     }
-    long Scale()
+    long Scale() const
     {
         return m_scale;
     }
@@ -306,8 +350,8 @@ public:
         m_TotalDuration += ToScale(tAdjust);
         m_refDuration += tAdjust;
     }
-    int SampleCount()						{ return m_nSamples; }
-    REFERENCE_TIME AverageDuration()		{ return m_refDuration / m_nSamples; }
+    int SampleCount() const { return m_nSamples; }
+    REFERENCE_TIME AverageDuration() const { return m_refDuration / m_nSamples; }
 
 private:
     void AddDuration(long cThis);
@@ -357,15 +401,18 @@ private:
 class SamplesPerChunkIndex
 {
 public:
-    SamplesPerChunkIndex(long dataref);
+    SamplesPerChunkIndex(long dataref) : 
+        m_dataref(dataref)
+    {
+    }
 
     void Add(long nSamples);
-    HRESULT Write(Atom* patm);
+    HRESULT Write(std::shared_ptr<Atom> const& Atom);
 private:
     long m_dataref;
     ListOfLongs m_Table;
-    long m_nTotalChunks;
-    long m_nSamples;    //last entry
+    long m_nTotalChunks = 0;
+    long m_nSamples = 0;    //last entry
 };
 
 // index of chunk offsets
@@ -381,7 +428,7 @@ class ChunkOffsetIndex
 {
 public:
     void Add(LONGLONG posChunk);
-    HRESULT Write(Atom* patm);
+    HRESULT Write(std::shared_ptr<Atom> const& Atom);
 private:
     ListOfLongs m_Table32;
     ListOfI64 m_Table64;
@@ -391,13 +438,12 @@ private:
 class SyncIndex
 {
 public:
-    SyncIndex();
-
     void Add(bool bSync);
-    HRESULT Write(Atom* patm);
+    HRESULT Write(std::shared_ptr<Atom> const& Atom);
+
 private:
-    long m_nSamples;
-    bool m_bAllSync;
+    long m_nSamples = 0;
+    bool m_bAllSync = true;
     ListOfLongs m_Syncs;
 };
 
@@ -405,14 +451,14 @@ private:
 class TrackWriter
 {
 public:
-    TrackWriter(MovieWriter* pMovie, int index, TypeHandler* ptype, BOOL bNotifyMediaSampleWrite = FALSE);
+    TrackWriter(MovieWriter* pMovie, int index, std::unique_ptr<TypeHandler>&& TypeHandler, bool NotifyMediaSampleWrite = false);
 
     HRESULT Add(IMediaSample* pSample);
 
     // returns true if all tracks now at end
     bool OnEOS();
 
-    bool IsAtEOS()
+    bool IsAtEOS() const
     {
         CAutoLock lock(&m_csQueue);
         return m_bEOS;
@@ -421,9 +467,13 @@ public:
     // no more writes accepted -- partial/queued writes abandoned (optionally)
     void Stop(bool bFlush);
 
-    bool GetHeadTime(LONGLONG* ptHead);
-    HRESULT WriteHead(Atom* patm);
-    REFERENCE_TIME LastWrite();
+    bool GetHeadTime(LONGLONG* ptHead) const;
+    HRESULT WriteHead(std::shared_ptr<Atom> const& Atom);
+    REFERENCE_TIME LastWrite() const
+    {
+        CAutoLock lock(&m_csQueue);
+        return m_tLast;
+    }
 
     void IndexChunk(LONGLONG posChunk, size_t nSamples);
     void IndexSample(bool bSync, REFERENCE_TIME tStart, REFERENCE_TIME tStop, size_t cBytes);
@@ -432,9 +482,9 @@ public:
     {
         m_Durations.SetOldIndexStart(tStart);
     }
-    HRESULT Close(Atom* patm);
+    HRESULT Close(std::shared_ptr<Atom> const& Atom);
 
-    REFERENCE_TIME SampleDuration()
+    REFERENCE_TIME SampleDuration() const
     {
         if (m_Durations.SampleCount() > 3)
         {
@@ -446,27 +496,25 @@ public:
         }
         return UNITS / m_pType->SampleRate();
     }
-    REFERENCE_TIME Duration()
+    REFERENCE_TIME Duration() const
     {
-        REFERENCE_TIME tDur = m_Durations.Duration();
-        
-        return tDur;
+        return m_Durations.Duration();
     }
-    bool IsVideo()
+    bool IsVideo() const
     {
         return m_pType->IsVideo();
     }
-    bool IsAudio()
+    bool IsAudio() const
     {
         return m_pType->IsAudio();
     }
-    TypeHandler* Handler()
+    std::unique_ptr<TypeHandler> const& Handler() const
     {
         return m_pType;
     }
-    long ID() 
+    long ID() const
     {
-        return m_index+1;
+        return m_index + 1;
     }
     REFERENCE_TIME Earliest()
     {
@@ -487,29 +535,25 @@ public:
             m_StartAt = tStart;
         }
     }
-    bool IsNonMP4()
+    bool IsNonMP4() const
     {
-        if (m_pType)
-        {
-            return m_pType->IsNonMP4();
-        }
-        return false;
+        return m_pType && m_pType->IsNonMP4();
     }
 
-    VOID NotifyMediaSampleWrite(IMediaSample* pMediaSample, SIZE_T nDataSize);
+    void NotifyMediaSampleWrite(wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize);
 
 private:
     MovieWriter* m_pMovie;
     int m_index;
-    smart_ptr<TypeHandler> m_pType;
-    BOOL m_bNotifyMediaSampleWrite;
+    std::unique_ptr<TypeHandler> m_pType;
+    bool m_NotifyMediaSampleWrite;
 
-    CCritSec m_csQueue;
-    bool m_bEOS;
-    bool m_bStopped;
-    REFERENCE_TIME m_tLast;
-    MediaChunkPtr m_pCurrent;
-    list<MediaChunkPtr> m_Queue;
+    mutable CCritSec m_csQueue;
+    bool m_bEOS = false;
+    bool m_bStopped = false;
+    REFERENCE_TIME m_tLast = 0;
+    std::shared_ptr<MediaChunk> m_pCurrent;
+    std::list<std::shared_ptr<MediaChunk>> m_Queue;
 
     SizeIndex m_Sizes;
     DurationIndex m_Durations;
@@ -521,10 +565,8 @@ private:
     // -- set to first StartAt time, if explicit,
     // which is used instead of Earliest to zero-base the
     // timestamps
-    REFERENCE_TIME m_StartAt;
+    REFERENCE_TIME m_StartAt = 0;
 };
-typedef smart_ptr<TrackWriter> TrackWriterPtr;
-
 
 class MovieWriter
 {
@@ -541,7 +583,7 @@ public:
         m_Comment = Comment;
     }
 
-    TrackWriter* MakeTrack(const CMediaType* pmt, BOOL bNotifyMediaSampleWrite = FALSE);
+    std::shared_ptr<TrackWriter> MakeTrack(const CMediaType* pmt, bool NotifyMediaSampleWrite = false);
     HRESULT Close(REFERENCE_TIME* pDuration);
 
     // ensures that CheckQueues is not active when
@@ -563,43 +605,43 @@ public:
         return DEFAULT_TIMESCALE;
     }
 
-    long TrackCount()
+    size_t TrackCount() const
     {
-        return (long)m_Tracks.size();
+        return m_Tracks.size();
     }
-    TrackWriter* Track(long nTrack)
+    std::shared_ptr<TrackWriter> const& Track(size_t TrackIndex) const
     {
-        return m_Tracks[nTrack];
+        return m_Tracks[TrackIndex];
     }
     REFERENCE_TIME CurrentPosition();
 
-    REFERENCE_TIME MaxInterleaveDuration()
+    REFERENCE_TIME MaxInterleaveDuration() const
     {
         CAutoLock lock(&m_csBitrate);
         return m_tInterleave;
     }
     void RecordBitrate(size_t index, long bitrate);
 
-    VOID NotifyMediaSampleWrite(INT nTrackIndex, IMediaSample* pMediaSample, SIZE_T nDataSize);
+    void NotifyMediaSampleWrite(INT TrackIndex, wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize);
 
 private:
-    void MakeIODS(Atom* pmoov);
+    void MakeIODS(std::shared_ptr<Atom> const& pmoov);
     void InsertFTYP(AtomWriter* pFile);
     void WriteTrack(int indexReady);
 
 private:
-    AtomWriter* m_pContainer;
+    AtomWriter* m_Container;
 
     BOOL m_bAlignTrackStartTimeDisabled;
     REFERENCE_TIME m_nMinimalMovieDuration;
 
-    CCritSec m_csWrite;
+    mutable CCritSec m_csWrite;
     bool m_bStopped;
     bool m_bFTYPInserted;
-    smart_ptr<Atom> m_patmMDAT;
-    vector<TrackWriterPtr> m_Tracks;
+    std::shared_ptr<Atom> m_patmMDAT;
+    std::vector<std::shared_ptr<TrackWriter>> m_Tracks;
 
-    CCritSec m_csBitrate;
+    mutable CCritSec m_csBitrate;
     vector<int> m_Bitrates;
     REFERENCE_TIME m_tInterleave;
 

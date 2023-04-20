@@ -35,21 +35,53 @@ public:
         // Command tags
         ObjDescrUpdate = 1,
     };
-    Descriptor(TagType type);
 
-    void Append(uint8_t const* pBuffer, size_t cBytes);
-    void Append(Descriptor* pdesc);
-    long Length();
-    void Write(uint8_t* pBuffer);
-    HRESULT Write(Atom* patm);
-private:
-    void Reserve(size_t cBytes);
+    Descriptor(TagType Type) :
+        m_Type(Type)
+    {
+    }
+
+    void Append(uint8_t const* Data, size_t DataSize)
+    {
+	    std::copy(Data, Data + DataSize, std::back_inserter(m_Data));
+    }
+    void Append(Descriptor const* Descriptor)
+    {
+        auto const Data = Descriptor->Compose();
+	    std::copy(Data.cbegin(), Data.cend(), std::back_inserter(m_Data));
+    }
+    std::vector<uint8_t> Compose() const
+    {
+        size_t HeaderSize = 2;
+        for(size_t Size = m_Data.size(); Size > 0x7F; )
+        {
+            HeaderSize++;
+            Size >>= 7;
+        }
+        HeaderSize += m_Data.size();
+        std::vector<uint8_t> Data;
+        Data.reserve(16 + m_Data.size());
+        Data.emplace_back(static_cast<uint8_t>(m_Type));
+        if(!m_Data.empty())
+        {
+		    for(size_t Size = m_Data.size(); Size; )
+		    {
+			    uint8_t Value = static_cast<uint8_t>(Size & 0x7F);
+			    Size >>= 7;
+			    if(Size)
+				    Value |= 0x80;
+                Data.emplace_back(Value);
+		    }
+	        std::copy(m_Data.cbegin(), m_Data.cend(), std::back_inserter(Data));
+        } else
+            Data.emplace_back(static_cast<uint8_t>(0u));
+        return Data;
+    }
+    HRESULT Write(std::shared_ptr<Atom> const& Atom) const;
 
 private:
-    TagType m_type;
-    size_t m_cBytes;
-    size_t m_cValid;
-    smart_array<uint8_t> m_pBuffer;
+    TagType const m_Type;
+    std::vector<uint8_t> m_Data;
 };
 
 class Atom;
@@ -65,12 +97,15 @@ public:
 	{
 		return DWORD('mhlr');
 	}
-    virtual void WriteTREF(Atom* patm) = 0;
+    virtual void WriteTREF(std::shared_ptr<Atom> const& Atom)
+    {
+		UNREFERENCED_PARAMETER(Atom);
+    }
     virtual bool IsVideo() = 0;
     virtual bool IsAudio() = 0;
 	virtual bool IsOldIndexFormat() { return false; }
 	virtual bool IsNonMP4()			{ return IsOldIndexFormat(); }
-    virtual void WriteDescriptor(Atom* patm, int id, int dataref, long scale) = 0;
+    virtual void WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int dataref, long scale) = 0;
     virtual long SampleRate() = 0;
     virtual long Scale() = 0;
 	virtual long Width() = 0;
@@ -89,8 +124,8 @@ public:
 		return UNITS / SampleRate();
 	}
 
-	virtual HRESULT WriteData(Atom* patm, uint8_t const* pData, size_t cBytes, size_t* pcActual);
+	virtual HRESULT WriteData(std::shared_ptr<Atom> const& Atom, uint8_t const* pData, size_t cBytes, size_t* pcActual);
     static bool CanSupport(const CMediaType* pmt);
-    static TypeHandler* Make(const CMediaType* pmt);
+    static std::unique_ptr<TypeHandler> Make(const CMediaType* pmt);
 };
 

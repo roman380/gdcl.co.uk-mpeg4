@@ -37,7 +37,6 @@ public:
     {
         return 'vide';
     }
-    void WriteTREF(Atom* patm) { UNREFERENCED_PARAMETER(patm); }
     bool IsVideo() 
     {
         return true;
@@ -58,13 +57,12 @@ public:
 	long Width();
 	long Height();
 
-    void WriteDescriptor(Atom* patm, int id, int dataref, long scale);
-	HRESULT WriteData(Atom* patm, const BYTE* pData, size_t cBytes, size_t* pcActual) override;
+    void WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int dataref, long scale);
+	HRESULT WriteData(std::shared_ptr<Atom> const& Atom, const BYTE* pData, size_t cBytes, size_t* pcActual) override;
 
 private:
     CMediaType m_mt;
-	smart_array<BYTE> m_pConfig;
-	long m_cConfig;
+	std::vector<uint8_t> m_pConfig;
 };
 
 class H264Handler : public TypeHandler
@@ -78,7 +76,6 @@ public:
     {
         return 'vide';
     }
-    void WriteTREF(Atom* patm) {UNREFERENCED_PARAMETER(patm);}
     bool IsVideo() override
     {
         return true;
@@ -99,7 +96,7 @@ public:
 	long Width() override;
 	long Height() override;
 
-    void WriteDescriptor(Atom* patm, int id, int dataref, long scale) override;
+    void WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int dataref, long scale) override;
 	LONGLONG FrameDuration() override;
 
 protected:
@@ -140,11 +137,11 @@ public:
         }
     }
 
-    void WriteDescriptor(Atom* patm, int id, int dataref, long scale)
+    void WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int dataref, long scale)
     {
         UNREFERENCED_PARAMETER(scale);
         UNREFERENCED_PARAMETER(id);
-        smart_ptr<Atom> psd = patm->CreateAtom('avc1');
+        auto const psd = Atom->CreateAtom('avc1');
 
         // locate param sets in parse buffer
         NALUnit sps, pps;
@@ -164,19 +161,18 @@ public:
         SeqParamSet seq;
         seq.Parse(&sps);
 
-        BYTE b[78];
-        ZeroMemory(b, 78);
-        WriteShort(dataref, b + 6);
-        WriteShort(m_FrameSize.first, b + 24);
-        WriteShort(m_FrameSize.second, b + 26);
+		BYTE b[78] { };
+        Write16(static_cast<uint16_t>(dataref), b + 6);
+        Write16(static_cast<uint16_t>(m_FrameSize.first), b + 24);
+        Write16(static_cast<uint16_t>(m_FrameSize.second), b + 26);
         b[29] = 0x48;
         b[33] = 0x48;
         b[41] = 1;
         b[75] = 24;
-        WriteShort(-1, b + 76);
+        Write16(0xFFFF, b + 76);
         psd->Append(b, 78);
 
-        smart_ptr<Atom> pesd = psd->CreateAtom('avcC');
+        auto const pesd = psd->CreateAtom('avcC');
         b[0] = 1;           // version 1
         b[1] = (BYTE) seq.Profile();
         b[2] = seq.Compat();
@@ -212,7 +208,7 @@ public:
     {
         return m_FrameTime;
     }
-    HRESULT WriteData(Atom* Atom, uint8_t const* Data, size_t DataSize, size_t* ActualDataSize) override
+    HRESULT WriteData(std::shared_ptr<Atom> const& Atom, uint8_t const* Data, size_t DataSize, size_t* ActualDataSize) override
     {
 		WI_ASSERT(ActualDataSize);
 		std::vector<uint8_t> TemporaryData;
@@ -276,7 +272,6 @@ public:
     {
         return 'vide';
     }
-    void WriteTREF(Atom* patm) { UNREFERENCED_PARAMETER(patm); }
     bool IsVideo() 
     {
         return true;
@@ -296,8 +291,8 @@ public:
     }
 	long Width();
 	long Height();
-    void WriteDescriptor(Atom* patm, int id, int dataref, long scale);
-	HRESULT WriteData(Atom* patm, const BYTE* pData, size_t cBytes, size_t* pcActual) override;
+    void WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int dataref, long scale);
+	HRESULT WriteData(std::shared_ptr<Atom> const& Atom, const BYTE* pData, size_t cBytes, size_t* pcActual) override;
 
 	bool IsNonMP4()			{ return m_bMJPG; }
 
@@ -321,10 +316,6 @@ public:
     {
         return 'soun';
     }
-    void WriteTREF(Atom* patm)
-	{ 
-		UNREFERENCED_PARAMETER(patm); 
-	}
     bool IsVideo() 
     {
         return false;
@@ -350,22 +341,21 @@ public:
 	{ 
 		return 0; 
 	}
-    void WriteDescriptor(Atom* patm, int id, int dataref, long scale)
+    void WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int dataref, long scale)
 	{
 		// WARN: This is merely a blind copy of AACHandler's method with a different ES Descriptor value
 
-		smart_ptr<Atom> psd = patm->CreateAtom('mp4a');
+		auto const psd = Atom->CreateAtom('mp4a');
 
-		BYTE b[28];
-		ZeroMemory(b, 28);
-		WriteShort(dataref, b + 6);
-		WriteShort(2, b + 16);
-		WriteShort(16, b + 18);
-		WriteShort(unsigned short(scale), b + 24);    // this is what forces us to use short audio scales
+		BYTE b[28] { };
+		Write16(static_cast<uint16_t>(dataref), b + 6);
+		Write16(2, b + 16);
+		Write16(16, b + 18);
+		Write16(unsigned short(scale), b + 24);    // this is what forces us to use short audio scales
 		psd->Append(b, 28);
 
-		smart_ptr<Atom> pesd = psd->CreateAtom('esds');
-		WriteLong(0, b);        // ver/flags
+		auto const pesd = psd->CreateAtom('esds');
+		Write32(0, b);        // ver/flags
 		pesd->Append(b, 4);
 		// es descr
 		//      decoder config
@@ -373,7 +363,7 @@ public:
 		//          decoder specific info desc
 		//      sl descriptor
 		Descriptor es(Descriptor::ES_Desc);
-		WriteShort(id, b);
+		Write16(static_cast<uint16_t>(id), b);
 		b[2] = 0;
 		es.Append(b, 3);
 		Descriptor dcfg(Descriptor::Decoder_Config);
@@ -384,8 +374,8 @@ public:
 		b[2] = 0;
 		b[3] = 0x3a;
 		b[4] = 0x98;
-		WriteLong(1500000, b + 5);    // max bitrate
-		WriteLong(0, b + 9);          // avg bitrate 0 = variable
+		Write32(1500000, b + 5);    // max bitrate
+		Write32(0, b + 9);          // avg bitrate 0 = variable
 		dcfg.Append(b, 13);
 		Descriptor dsi(Descriptor::Decoder_Specific_Info);
 		//BYTE* pExtra = m_mt.Format() + sizeof(WAVEFORMATEX);
@@ -415,7 +405,6 @@ public:
     {
         return 'soun';
     }
-    void WriteTREF(Atom* patm) { UNREFERENCED_PARAMETER(patm); }
     bool IsVideo() 
     {
         return false;
@@ -431,8 +420,8 @@ public:
     long Scale();
 	long Width()	{ return 0; }
 	long Height()	{ return 0; }
-    void WriteDescriptor(Atom* patm, int id, int dataref, long scale);
-	HRESULT WriteData(Atom* patm, const BYTE* pData, size_t cBytes, size_t* pcActual) override;
+    void WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int dataref, long scale);
+	HRESULT WriteData(std::shared_ptr<Atom> const& Atom, const BYTE* pData, size_t cBytes, size_t* pcActual) override;
 
 private:
     CMediaType m_mt;
@@ -450,7 +439,6 @@ public:
     {
         return 'soun';
     }
-    void WriteTREF(Atom* patm) {UNREFERENCED_PARAMETER(patm);}
     bool IsVideo() 
     {
         return false;
@@ -469,7 +457,7 @@ public:
     long Scale();
 	long Width()	{ return 0; }
 	long Height()	{ return 0; }
-    void WriteDescriptor(Atom* patm, int id, int dataref, long scale);
+    void WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int dataref, long scale);
 	bool IsOldIndexFormat();
 	long BlockAlign();
 private:
@@ -493,7 +481,6 @@ public:
     {
         return 'text';
     }
-    void WriteTREF(Atom* patm) {UNREFERENCED_PARAMETER(patm);}
     bool IsVideo() 
     {
         return false;
@@ -512,7 +499,7 @@ public:
 	}
 	long Width()	{ return 0; }
 	long Height()	{ return 0; }
-    void WriteDescriptor(Atom* patm, int id, int dataref, long scale);
+    void WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int dataref, long scale);
 private:
     CMediaType m_mt;
 };
@@ -526,7 +513,6 @@ public:
     MPEG2VideoHandler(const CMediaType* pmt) : m_mt(*pmt) {}
 
     DWORD Handler()				{ return 'vide'; }
-    void WriteTREF(Atom* patm)	{ UNREFERENCED_PARAMETER(patm); }
     bool IsVideo()				{ return true;	 }
     bool IsAudio()				{ return false;  }
 	long SampleRate()			{ return 30;	 } // TODO: value???
@@ -534,7 +520,7 @@ public:
 	long Width();
 	long Height();
 
-    void WriteDescriptor(Atom* patm, int id, int dataref, long scale);
+    void WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int dataref, long scale);
 	LONGLONG FrameDuration();
 
 protected:
@@ -547,7 +533,6 @@ public:
 	MPEG2AudioHandler(const CMediaType* pmt) : m_mt(*pmt) {}
 
     DWORD Handler()				{ return 'soun'; }
-    void WriteTREF(Atom* patm)	{ UNREFERENCED_PARAMETER(patm); }
     bool IsVideo()				{ return false;  }
     bool IsAudio()				{ return true;   }
 	long SampleRate()			{ return 50;	 } // TODO: value???
@@ -555,7 +540,7 @@ public:
 	long Height()				{ return 0;		 }
 
 	long Scale();
-    void WriteDescriptor(Atom* patm, int id, int dataref, long scale);
+    void WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int dataref, long scale);
 
 private:
     CMediaType m_mt;
@@ -584,7 +569,6 @@ public:
 		m_mt(*pmt), m_bParsed(FALSE) {}
 
     DWORD Handler()				{ return 'soun'; }
-    void WriteTREF(Atom* patm)	{ UNREFERENCED_PARAMETER(patm); }
     bool IsVideo()				{ return false;  }
     bool IsAudio()				{ return true;	 }
     long SampleRate()			{ return 50;	 }  // TODO: value???
@@ -592,8 +576,8 @@ public:
 	long Height()				{ return 0;		 }
 
 	long Scale();
-	HRESULT WriteData(Atom* patm, const BYTE* pData, size_t cbData, size_t* pcActual) override;
-    void WriteDescriptor(Atom* patm, int id, int dataref, long scale);
+	HRESULT WriteData(std::shared_ptr<Atom> const& Atom, const BYTE* pData, size_t cbData, size_t* pcActual) override;
+    void WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int dataref, long scale);
 
 private:
     CMediaType m_mt;
@@ -638,7 +622,6 @@ public:
     DolbyDigitalPlusHandler(const CMediaType* pmt) : m_mt(*pmt)	{}
 
     DWORD Handler()				{ return 'soun'; }
-    void WriteTREF(Atom* patm)	{ UNREFERENCED_PARAMETER(patm); }
     bool IsVideo()				{ return false;  }
     bool IsAudio()				{ return true;	 }
     long SampleRate()			{ return 50;	 }  // TODO: value???
@@ -646,8 +629,8 @@ public:
 	long Height()				{ return 0;		 }
 
 	long Scale();
-	HRESULT WriteData(Atom* patm, const BYTE* pData, size_t cbData, size_t* pcActual) override;
-    void WriteDescriptor(Atom* patm, int id, int dataref, long scale);
+	HRESULT WriteData(std::shared_ptr<Atom> const& Atom, const BYTE* pData, size_t cbData, size_t* pcActual) override;
+    void WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int dataref, long scale);
 
 
 private:
@@ -835,7 +818,7 @@ TypeHandler::CanSupport(const CMediaType* pmt)
 }
 
 //static 
-TypeHandler* 
+std::unique_ptr<TypeHandler> 
 TypeHandler::Make(const CMediaType* pmt)
 {
     if (!CanSupport(pmt))
@@ -855,7 +838,7 @@ TypeHandler::Make(const CMediaType* pmt)
 			(*pmt->Subtype() == xvidCaps) ||
 			(*pmt->Subtype() == dx50)) 
         {
-            return new DivxHandler(pmt);
+            return std::make_unique<DivxHandler>(pmt);
         }	
 		#pragma	endregion 
 		#pragma region MPEG-4 Part 10 H.264
@@ -872,7 +855,7 @@ TypeHandler::Make(const CMediaType* pmt)
 			// BSF
 			if ((*pmt->FormatType() == FORMAT_VideoInfo) || (*pmt->FormatType() == FORMAT_VideoInfo2))
 			{
-				return new H264ByteStreamHandler(pmt);
+				return std::make_unique<H264ByteStreamHandler>(pmt);
 			}
 			// length-prepended
 			if (*pmt->FormatType() == FORMAT_MPEG2Video)
@@ -882,14 +865,14 @@ TypeHandler::Make(const CMediaType* pmt)
 				if ((pvi->dwFlags < 1) || (pvi->dwFlags > 4))
 				{
 					// this is not MP4 format. 
-					return new H264ByteStreamHandler(pmt);
+					return std::make_unique<H264ByteStreamHandler>(pmt);
 				}
-	            return new H264Handler(pmt);
+	            return std::make_unique<H264Handler>(pmt);
 			}
 
 			if (*pmt->FormatType() == FORMAT_UVCH264Video)
 			{
-				return new H264ByteStreamHandler(pmt);
+				return std::make_unique<H264ByteStreamHandler>(pmt);
 			}
 		}
 		#pragma	endregion 
@@ -897,7 +880,7 @@ TypeHandler::Make(const CMediaType* pmt)
 		if ((*pmt->Subtype() == MEDIASUBTYPE_MPEG2_VIDEO) &&
 			(*pmt->FormatType()	== FORMAT_MPEG2Video))
 		{
-			return new MPEG2VideoHandler(pmt);
+			return std::make_unique<MPEG2VideoHandler>(pmt);
 		}
 		#pragma	endregion 
 		#pragma region Other (Raw, FourCC)
@@ -908,13 +891,13 @@ TypeHandler::Make(const CMediaType* pmt)
 			#pragma region 24/32-bit RGB
 			if(pmt->subtype == MEDIASUBTYPE_ARGB32 || pmt->subtype == MEDIASUBTYPE_RGB32 || pmt->subtype == MEDIASUBTYPE_RGB24)
 				if(pvi->bmiHeader.biCompression == BI_RGB && DIBSIZE(pvi->bmiHeader) == pmt->GetSampleSize())
-					return new FOURCCVideoHandler(pmt);
+					return std::make_unique<FOURCCVideoHandler>(pmt);
 			#pragma	endregion 
 			FOURCCMap fcc(pmt->subtype.Data1);
 			if(fcc == *pmt->Subtype())
 			{
 				if((pvi->bmiHeader.biBitCount > 0) && (DIBSIZE(pvi->bmiHeader) == pmt->GetSampleSize()))
-					return new FOURCCVideoHandler(pmt);
+					return std::make_unique<FOURCCVideoHandler>(pmt);
 				#pragma region M-JPEG
 				FOURCCMap MJPG(DWORD('GPJM'));
 				FOURCCMap jpeg(DWORD('gepj'));
@@ -923,7 +906,7 @@ TypeHandler::Make(const CMediaType* pmt)
 					(*pmt->Subtype() == jpeg) ||
 					(*pmt->Subtype() == mjpg))
 				{
-					return new FOURCCVideoHandler(pmt);
+					return std::make_unique<FOURCCVideoHandler>(pmt);
 				}
 				#pragma endregion 
 			}
@@ -944,117 +927,109 @@ TypeHandler::Make(const CMediaType* pmt)
 			if ((pwfx->wFormatTag == WAVE_FORMAT_RAW_AAC1) || 
 				(pwfx->wFormatTag == WAVE_FORMAT_AACEncoder))
 			{
-				return new AACHandler(pmt);
+				return std::make_unique<AACHandler>(pmt);
 			}
             if ((pwfx->wFormatTag == WAVE_FORMAT_PCM) ||
                 (pwfx->wFormatTag == WAVE_FORMAT_ALAW) ||
                 (pwfx->wFormatTag == WAVE_FORMAT_MULAW))
             {
-                return new WaveHandler(pmt);
+                return std::make_unique<WaveHandler>(pmt);
             }
 			if (pwfx->wFormatTag == WAVE_FORMAT_MPEG)
 			{
-				return new MPEG2AudioHandler(pmt);
+				return std::make_unique<MPEG2AudioHandler>(pmt);
 			}
 			if (pwfx->wFormatTag == WAVE_FORMAT_DOLBY_AC3_SPDIF)	// Dolby AC-3 SPDIF
             {
-				return new DolbyDigitalHandler(pmt);
+				return std::make_unique<DolbyDigitalHandler>(pmt);
             }
 			// (wFormatTag = 0)
 			if (*pmt->Subtype() == MEDIASUBTYPE_DOLBY_DDPLUS)
 			{
-				return new DolbyDigitalPlusHandler(pmt);
+				return std::make_unique<DolbyDigitalPlusHandler>(pmt);
 			}
 			if (*pmt->Subtype() == MEDIASUBTYPE_ADTS && pwfx->wFormatTag == static_cast<UINT16>(MEDIASUBTYPE_ADTS.Data1)) // #25
 			{
 				// NOTE: AACHandler also handles ADTS by skipping the header
-				return new AACHandler(pmt);
+				return std::make_unique<AACHandler>(pmt);
 			}
 			if ((*pmt->Subtype() == MEDIASUBTYPE_DOLBY_AC3 || *pmt->Subtype() == MEDIASUBTYPE_DVM) && pwfx->wFormatTag == WAVE_FORMAT_DVM) // #25
 			{
-				return new DolbyDigitalHandler(pmt);
+				return std::make_unique<DolbyDigitalHandler>(pmt);
 			}
 			if ((*pmt->Subtype() == MEDIASUBTYPE_MPEGLAYER3) && pwfx->wFormatTag == WAVE_FORMAT_MPEGLAYER3) // #25
 			{
-				return new MP3Handler(pmt);
+				return std::make_unique<MP3Handler>(pmt);
 			}
 			// Intel Media SDK uses the 0xFF- aac subtype guid, but
 			// the wFormatTag does not match
 			if (*pmt->Subtype() == MEDIASUBTYPE_RAW_AAC1)
 			{
-				return new AACHandler(pmt);
+				return std::make_unique<AACHandler>(pmt);
 			}
         }
     } else 
 	#pragma endregion 
 	if(*pmt->Type() == MEDIATYPE_AUXLine21Data && *pmt->Subtype() == MEDIASUBTYPE_Line21_BytePair)
 	{
-		return new CC608Handler(pmt);
+		return std::make_unique<CC608Handler>(pmt);
 	}
     return NULL;
 }
 
 HRESULT 
-TypeHandler::WriteData(Atom* patm, const BYTE* pData, size_t cBytes, size_t* pcActual)
+TypeHandler::WriteData(std::shared_ptr<Atom> const& Atom, const BYTE* pData, size_t cBytes, size_t* pcActual)
 {
 	*pcActual = cBytes;
-	return patm->Append(pData, cBytes);
+	return Atom->Append(pData, cBytes);
 }
 
 
 // -------------------------------------------
 DivxHandler::DivxHandler(const CMediaType* pmt)
-: m_mt(*pmt),
-  m_cConfig(0)
+: m_mt(*pmt)
 {
-	if ((*m_mt.FormatType() == FORMAT_VideoInfo) && 
-		(m_mt.FormatLength() > sizeof(VIDEOINFOHEADER)))
-	{
-		m_cConfig = m_mt.FormatLength() - sizeof(VIDEOINFOHEADER);
-		m_pConfig = new BYTE[m_cConfig];
-		const BYTE* pExtra = m_mt.Format() + sizeof(VIDEOINFOHEADER);
-		CopyMemory(m_pConfig, pExtra, m_cConfig);
-	}
+	if((*m_mt.FormatType() == FORMAT_VideoInfo) && m_mt.FormatLength() > sizeof(VIDEOINFOHEADER))
+		m_pConfig = std::vector(m_mt.Format() + sizeof(VIDEOINFOHEADER), m_mt.Format() + m_mt.FormatLength());
 }
 
 long 
 DivxHandler::Width()
 {
-    VIDEOINFOHEADER* pvi = (VIDEOINFOHEADER*)m_mt.Format();
+    auto const pvi = reinterpret_cast<VIDEOINFOHEADER const*>(m_mt.Format());
 	return pvi->bmiHeader.biWidth;
 }
 
 long 
 DivxHandler::Height()
 {
-    VIDEOINFOHEADER* pvi = (VIDEOINFOHEADER*)m_mt.Format();
-	return abs(pvi->bmiHeader.biHeight);
+    auto const pvi = reinterpret_cast<VIDEOINFOHEADER const*>(m_mt.Format());
+	return std::abs(pvi->bmiHeader.biHeight);
 }
 
 void 
-DivxHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
+DivxHandler::WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int dataref, long scale)
 {
     UNREFERENCED_PARAMETER(scale);
-    smart_ptr<Atom> psd = patm->CreateAtom('mp4v');
+    auto const psd = Atom->CreateAtom('mp4v');
 
-    VIDEOINFOHEADER* pvi = (VIDEOINFOHEADER*)m_mt.Format();
-    int width = pvi->bmiHeader.biWidth;
-    int height = abs(pvi->bmiHeader.biHeight);
+    auto const pvi = reinterpret_cast<VIDEOINFOHEADER const*>(m_mt.Format());
+    auto const width = static_cast<uint16_t>(pvi->bmiHeader.biWidth);
+    auto const height = static_cast<uint16_t>(std::abs(pvi->bmiHeader.biHeight));
 
-    BYTE b[78];
-    ZeroMemory(b, 78);
-    WriteShort(dataref, b+6);
-    WriteShort(width, b+24);
-    WriteShort(height, b+26);
+	BYTE b[78] { };
+    Write16(static_cast<uint16_t>(dataref), b+6);
+    Write16(width, b+24);
+    Write16(height, b+26);
     b[29] = 0x48;
     b[33] = 0x48;
     b[41] = 1;
     b[75] = 24;
-    WriteShort(-1, b+76);
+    Write16(0xFFFF, b+76);
     psd->Append(b, 78);
 
-    smart_ptr<Atom> pesd = psd->CreateAtom('esds');
-    WriteLong(0, b);        // ver/flags
+    auto const pesd = psd->CreateAtom('esds');
+    Write32(0, b);        // ver/flags
     pesd->Append(b, 4);
 
     // es descr
@@ -1063,7 +1038,7 @@ DivxHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
     //          decoder specific info desc
     //      sl descriptor
     Descriptor es(Descriptor::ES_Desc);
-    WriteShort(id, b);
+    Write16(static_cast<uint16_t>(id), b);
     b[2] = 0;
     es.Append(b, 3);
     Descriptor dcfg(Descriptor::Decoder_Config);
@@ -1074,12 +1049,12 @@ DivxHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
     b[2] = 0;
     b[3] = 0x3a;
     b[4] = 0x98;
-    WriteLong(1500000, b+5);    // max bitrate
-    WriteLong(0, b+9);          // avg bitrate 0 = variable
+    Write32(1500000, b+5);    // max bitrate
+    Write32(0, b+9);          // avg bitrate 0 = variable
     dcfg.Append(b, 13);
     Descriptor dsi(Descriptor::Decoder_Specific_Info);
 
-	dsi.Append(m_pConfig, m_cConfig);
+	dsi.Append(m_pConfig.data(), m_pConfig.size());
     dcfg.Append(&dsi);
     es.Append(&dcfg);
 	Descriptor sl(Descriptor::SL_Config); // ISO 14496-1 8.3.6, 10.2.3
@@ -1104,9 +1079,9 @@ inline bool NextStartCode(const BYTE*&pBuffer, size_t& cBytes)
 }
 
 HRESULT 
-DivxHandler::WriteData(Atom* patm, const BYTE* pData, size_t cBytes, size_t* pcActual)
+DivxHandler::WriteData(std::shared_ptr<Atom> const& Atom, const BYTE* pData, size_t cBytes, size_t* pcActual)
 {
-	if (m_cConfig == 0)
+	if (m_pConfig.empty())
 	{
 		const BYTE* p = pData;
 		size_t c = cBytes;
@@ -1122,16 +1097,14 @@ DivxHandler::WriteData(Atom* patm, const BYTE* pData, size_t cBytes, size_t* pcA
 			}
 			else
 			{
-				m_cConfig = long(p - pVOL);
-				m_pConfig = new BYTE[m_cConfig];
-				CopyMemory(m_pConfig, pVOL, m_cConfig);
+				std::copy(pVOL, p, std::back_inserter(m_pConfig));
 				break;
 			}
 			p += 4;
 			c -= 4;
 		}
 	}
-	return __super::WriteData(patm, pData, cBytes, pcActual);
+	return __super::WriteData(Atom, pData, cBytes, pcActual);
 }
 
 long 
@@ -1164,7 +1137,7 @@ AACHandler::AACHandler(const CMediaType* pmt)
 }
 
 HRESULT 
-AACHandler::WriteData(Atom* patm, const BYTE* pData, size_t cBytes, size_t* pcActual)
+AACHandler::WriteData(std::shared_ptr<Atom> const& Atom, const BYTE* pData, size_t cBytes, size_t* pcActual)
 {
 	if ((cBytes > 7) && (pData[0] == 0xff) && ((pData[1] & 0xF0) == 0xF0))
 	{
@@ -1183,7 +1156,7 @@ AACHandler::WriteData(Atom* patm, const BYTE* pData, size_t cBytes, size_t* pcAc
 			}
 		}
 	}
-	return __super::WriteData(patm, pData, cBytes, pcActual);
+	return __super::WriteData(Atom, pData, cBytes, pcActual);
 }
 
 const DWORD AACSamplingFrequencies[] = 
@@ -1210,20 +1183,19 @@ const DWORD AACSamplingFrequencies[] =
 #endif
 
 void 
-AACHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
+AACHandler::WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int dataref, long scale)
 {
-    smart_ptr<Atom> psd = patm->CreateAtom('mp4a');
+    auto const psd = Atom->CreateAtom('mp4a');
 
-    BYTE b[28];
-    ZeroMemory(b, 28);
-    WriteShort(dataref, b+6);
-    WriteShort(2, b+16);
-    WriteShort(16, b+18);
-    WriteShort(unsigned short(scale), b+24);    // this is what forces us to use short audio scales
+	BYTE b[28] { };
+    Write16(static_cast<uint16_t>(dataref), b+6);
+    Write16(2, b+16);
+    Write16(16, b+18);
+    Write16(unsigned short(scale), b+24);    // this is what forces us to use short audio scales
     psd->Append(b, 28);
 
-    smart_ptr<Atom> pesd = psd->CreateAtom('esds');
-    WriteLong(0, b);        // ver/flags
+    auto const pesd = psd->CreateAtom('esds');
+    Write32(0, b);        // ver/flags
     pesd->Append(b, 4);
     // es descr
     //      decoder config
@@ -1231,7 +1203,7 @@ AACHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
     //          decoder specific info desc
     //      sl descriptor
     Descriptor es(Descriptor::ES_Desc);
-    WriteShort(id, b);
+    Write16(static_cast<uint16_t>(id), b);
     b[2] = 0;
     es.Append(b, 3);
     Descriptor dcfg(Descriptor::Decoder_Config);
@@ -1242,8 +1214,8 @@ AACHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
     b[2] = 0;
     b[3] = 0x3a;
     b[4] = 0x98;
-    WriteLong(1500000, b+5);    // max bitrate
-    WriteLong(0, b+9);          // avg bitrate 0 = variable
+    Write32(1500000, b+5);    // max bitrate
+    Write32(0, b+9);          // avg bitrate 0 = variable
     dcfg.Append(b, 13);
     Descriptor dsi(Descriptor::Decoder_Specific_Info);
     BYTE* pExtra = m_mt.Format() + sizeof(WAVEFORMATEX);
@@ -1318,30 +1290,28 @@ H264Handler::Height()
 }
 
 void 
-H264Handler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
+H264Handler::WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int dataref, long scale)
 {
     UNREFERENCED_PARAMETER(scale);
     UNREFERENCED_PARAMETER(id);
-    smart_ptr<Atom> psd = patm->CreateAtom('avc1');
+    auto const psd = Atom->CreateAtom('avc1');
 
-	MPEG2VIDEOINFO* pvi = (MPEG2VIDEOINFO*)m_mt.Format();
-    int width = pvi->hdr.bmiHeader.biWidth;
-    int height = abs(pvi->hdr.bmiHeader.biHeight);
+	auto const pvi = reinterpret_cast<MPEG2VIDEOINFO const*>(m_mt.Format());
+    auto const width = static_cast<uint16_t>(pvi->hdr.bmiHeader.biWidth);
+    auto const height = static_cast<uint16_t>(std::abs(pvi->hdr.bmiHeader.biHeight));
 
-
-    BYTE b[78];
-    ZeroMemory(b, 78);
-    WriteShort(dataref, b+6);
-    WriteShort(width, b+24);
-    WriteShort(height, b+26);
+	BYTE b[78] { };
+    Write16(static_cast<uint16_t>(dataref), b+6);
+    Write16(width, b+24);
+    Write16(height, b+26);
     b[29] = 0x48;
     b[33] = 0x48;
     b[41] = 1;
     b[75] = 24;
-    WriteShort(-1, b+76);
+    Write16(0xFFFF, b+76);
     psd->Append(b, 78);
 
-    smart_ptr<Atom> pesd = psd->CreateAtom('avcC');
+    auto const pesd = psd->CreateAtom('avcC');
     b[0] = 1;           // version 1
     b[1] = (BYTE)pvi->dwProfile;
     b[2] = 0;
@@ -1490,7 +1460,7 @@ BYTE DefaultHuffTable[] =
 const int DefaultHuffSize = sizeof(DefaultHuffTable);
 
 void
-FOURCCVideoHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
+FOURCCVideoHandler::WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int dataref, long scale)
 {
 	UNREFERENCED_PARAMETER(scale);
 	UNREFERENCED_PARAMETER(dataref);
@@ -1516,7 +1486,7 @@ FOURCCVideoHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
 			codec = MAKEFOURCC('j', 'p', 'e', 'g'); // jpeg
 		}
 	}
-	smart_ptr<Atom> psd = patm->CreateAtom(Swap4Bytes(codec));
+	auto const psd = Atom->CreateAtom(Swap4Bytes(codec));
 
 	int cx, cy, depth;
 	if (*m_mt.FormatType() == FORMAT_VideoInfo)
@@ -1576,7 +1546,7 @@ FOURCCVideoHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
 	psd->Append((const BYTE*)&fmt, sizeof(fmt));
 	if (m_bMJPG)
 	{
-		smart_ptr<Atom> pfiel = psd->CreateAtom(DWORD('fiel'));
+		auto const pfiel = psd->CreateAtom(DWORD('fiel'));
 		BYTE b[] = {2, 1};
 		pfiel->Append(b, sizeof(b));
 		pfiel->Close();
@@ -1619,11 +1589,11 @@ struct APP0
 	DWORD fieldsize;
 };
 
-HRESULT FOURCCVideoHandler::WriteData(Atom* patm, const BYTE* pData, size_t cBytes, size_t* pcActual)
+HRESULT FOURCCVideoHandler::WriteData(std::shared_ptr<Atom> const& Atom, const BYTE* pData, size_t cBytes, size_t* pcActual)
 {
 	if (!m_bProcessMJPG)
 	{
-		return __super::WriteData(patm, pData, cBytes, pcActual);
+		return __super::WriteData(Atom, pData, cBytes, pcActual);
 	}
 	if ((cBytes < 2) || (pData[0] != 0xff) || (pData[1] != 0xD8))
 	{
@@ -1782,7 +1752,7 @@ HRESULT FOURCCVideoHandler::WriteData(Atom* patm, const BYTE* pData, size_t cByt
 						{
 							// no modification necessary (still MJPEG but no processing needed)
 							m_bProcessMJPG = false;
-							return __super::WriteData(patm, fieldstart, cBytesTotal, pcActual);
+							return __super::WriteData(Atom, fieldstart, cBytesTotal, pcActual);
 						}
 						const BYTE* pNextFrame = pData;
 						if (m == 0xd8)
@@ -1799,7 +1769,7 @@ HRESULT FOURCCVideoHandler::WriteData(Atom* patm, const BYTE* pData, size_t cByt
 								// no modification necessary (treat as Photo JPEG not MJPEG)
 								m_bMJPG = false;
 								m_bProcessMJPG = false;
-								return __super::WriteData(patm, fieldstart, cBytesTotal, pcActual);
+								return __super::WriteData(Atom, fieldstart, cBytesTotal, pcActual);
 							}
 							// marker is last in present field
 							header.paddedsize = Swap4Bytes(offset + markerlen);
@@ -1823,7 +1793,7 @@ HRESULT FOURCCVideoHandler::WriteData(Atom* patm, const BYTE* pData, size_t cByt
 							pInsertBefore = fieldstart + 2;
 						}
 						int len = int(pInsertBefore - fieldstart);
-						HRESULT hr = patm->Append(fieldstart, len);
+						HRESULT hr = Atom->Append(fieldstart, len);
 						if (FAILED(hr))
 						{
 							return hr;
@@ -1872,7 +1842,7 @@ HRESULT FOURCCVideoHandler::WriteData(Atom* patm, const BYTE* pData, size_t cByt
 							app0.fieldsize = header.fieldsize;
 							app0.paddedsize = header.paddedsize;
 
-							hr = patm->Append((const BYTE*)&app0, sizeof(APP0));
+							hr = Atom->Append((const BYTE*)&app0, sizeof(APP0));
 							if (FAILED(hr))
 							{
 								return hr;
@@ -1884,7 +1854,7 @@ HRESULT FOURCCVideoHandler::WriteData(Atom* patm, const BYTE* pData, size_t cByt
 						// APP1
 						if (!pAPP1)
 						{
-							hr = patm->Append((const BYTE*)&header, sizeof(header));
+							hr = Atom->Append((const BYTE*)&header, sizeof(header));
 							if (FAILED(hr))
 							{
 								return hr;
@@ -1894,7 +1864,7 @@ HRESULT FOURCCVideoHandler::WriteData(Atom* patm, const BYTE* pData, size_t cByt
 
 						if (bInsertHuff)
 						{
-							hr = patm->Append(DefaultHuffTable, DefaultHuffSize);
+							hr = Atom->Append(DefaultHuffTable, DefaultHuffSize);
 							if (FAILED(hr))
 							{
 								return hr;
@@ -1904,7 +1874,7 @@ HRESULT FOURCCVideoHandler::WriteData(Atom* patm, const BYTE* pData, size_t cByt
 
 						// rest of field
 						len = int(pNextFrame - pInsertBefore);
-						hr = patm->Append(pInsertBefore, len);
+						hr = Atom->Append(pInsertBefore, len);
 						total += len;
 						if (FAILED(hr))
 						{
@@ -1968,28 +1938,27 @@ bool WaveHandler::IsOldIndexFormat()
 }
 
 void 
-WaveHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
+WaveHandler::WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int dataref, long scale)
 {
 	WAVEFORMATEX* pwfx = (WAVEFORMATEX*)m_mt.Format();
 
 	if (IsOldIndexFormat())
 	{
-	    smart_ptr<Atom> psd = patm->CreateAtom(DWORD('sowt'));
-		BYTE b[44];
-		ZeroMemory(b, 44);
-		WriteShort(dataref, b+6);
-		WriteShort(1, b+8);		// ver 1 of sound sample desc
-		WriteShort(pwfx->nChannels, b+16);
+	    auto const psd = Atom->CreateAtom(DWORD('sowt'));
+		BYTE b[44] { };
+		Write16(static_cast<uint16_t>(dataref), b+6);
+		Write16(1, b+8);		// ver 1 of sound sample desc
+		Write16(pwfx->nChannels, b+16);
 		short bits = (pwfx->wBitsPerSample == 8) ? 8 : 16;
-		WriteShort(bits, b+18);
-		WriteShort(0xffff, b+20);
-		WriteShort(pwfx->nSamplesPerSec, b+24);    // this is what forces us to use short audio scales
+		Write16(bits, b+18);
+		Write16(0xFFFF, b+20);
+		Write16(static_cast<uint16_t>(pwfx->nSamplesPerSec), b+24);    // this is what forces us to use short audio scales
 
 		short bytesperchan = pwfx->wBitsPerSample / 8;
-		WriteLong(1, b+28);
-		WriteLong(bytesperchan, b+32);
-		WriteLong(bytesperchan * pwfx->nChannels, b+36);
-		WriteLong(2, b+40);
+		Write32(1, b+28);
+		Write32(bytesperchan, b+32);
+		Write32(bytesperchan * pwfx->nChannels, b+36);
+		Write32(2, b+40);
 
 		psd->Append(b, 44);
 	    psd->Close();
@@ -2007,17 +1976,16 @@ WaveHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
 		{
 			dwAtom = 'alaw';
 		}
-	    smart_ptr<Atom> psd = patm->CreateAtom(dwAtom);
-		BYTE b[28];
-		ZeroMemory(b, 28);
-		WriteShort(dataref, b+6);
-		WriteShort(2, b+16);
-		WriteShort(16, b+18);
-		WriteShort(unsigned short(scale), b+24);    // this is what forces us to use short audio scales
+	    auto const psd = Atom->CreateAtom(dwAtom);
+		BYTE b[28] { };
+		Write16(static_cast<uint16_t>(dataref), b+6);
+		Write16(2, b+16);
+		Write16(16, b+18);
+		Write16(unsigned short(scale), b+24);    // this is what forces us to use short audio scales
 		psd->Append(b, 28);
 
-		smart_ptr<Atom> pesd = psd->CreateAtom('esds');
-		WriteLong(0, b);        // ver/flags
+		auto const pesd = psd->CreateAtom('esds');
+		Write32(0, b);        // ver/flags
 		pesd->Append(b, 4);
 		// es descr
 		//      decoder config
@@ -2025,7 +1993,7 @@ WaveHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
 		//          decoder specific info desc
 		//      sl descriptor
 		Descriptor es(Descriptor::ES_Desc);
-		WriteShort(id, b);
+		Write16(static_cast<uint16_t>(id), b);
 		b[2] = 0;
 		es.Append(b, 3);
 		Descriptor dcfg(Descriptor::Decoder_Config); // ISO 14496-1 8.3.4
@@ -2036,8 +2004,8 @@ WaveHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
 		b[2] = 0;
 		b[3] = 0x3a;
 		b[4] = 0x98;
-		WriteLong(1500000, b+5);    // max bitrate
-		WriteLong(0, b+9);          // avg bitrate 0 = variable
+		Write32(1500000, b+5);    // max bitrate
+		Write32(0, b+9);          // avg bitrate 0 = variable
 		dcfg.Append(b, 13);
 		Descriptor dsi(Descriptor::Decoder_Specific_Info); // ISO 14496-1 8.3.5
 
@@ -2108,7 +2076,7 @@ public:
 
 	//void WriteLanguage(LPCSTR pszLanguage);
 	
-	HRESULT AppendTo(Atom* pAtom, long cbLength = -1);
+	HRESULT AppendTo(std::shared_ptr<Atom> const& Atom, long cbLength = -1);
 	void AppendTo(Descriptor* pDesc, long cbLength = -1);
 
 
@@ -2140,16 +2108,16 @@ void MP4BitstreamWriter::WriteLanguage(LPCSTR pszLanguage)
 }
 */
 
-HRESULT MP4BitstreamWriter::AppendTo(Atom* pAtom, long cbLength)
+HRESULT MP4BitstreamWriter::AppendTo(std::shared_ptr<Atom> const& Atom, long cbLength)
 {
-	ASSERT(pAtom);
+	ASSERT(Atom);
 	ASSERT(m_pBits);
 
 	if (cbLength < 0)
 		cbLength = GetByteCount();
 
 	ASSERT(cbLength <= static_cast<long>(m_cMaxBits >> 3));
-	return pAtom->Append(m_pBits, cbLength);
+	return Atom->Append(m_pBits, cbLength);
 }
 
 void MP4BitstreamWriter::AppendTo(Descriptor* pDesc, long cbLength)
@@ -2219,7 +2187,7 @@ int GetMPEG2VideoObjectTypeId(MPEG2VIDEOINFO* pvi)
 	return 0;
 }
 
-void MPEG2VideoHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
+void MPEG2VideoHandler::WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int dataref, long scale)
 {
     UNREFERENCED_PARAMETER(scale);
 
@@ -2250,11 +2218,11 @@ void MPEG2VideoHandler::WriteDescriptor(Atom* patm, int id, int dataref, long sc
 
 	// MP4VisualSampleEntry
 	// ISO/IEC 14496-14 - 5.6.1 - Syntax
-    smart_ptr<Atom> psd = patm->CreateAtom('mp4v');
+    auto const psd = Atom->CreateAtom('mp4v');
 	bsw.AppendTo(psd);
 
 	// ESDescriptor Box
-	smart_ptr<Atom> pesd = psd->CreateAtom('esds');
+	auto const pesd = psd->CreateAtom('esds');
 	bsw.Rewind();
 	bsw.Write32(0);								//  0- 1: version:8				= 0
 												//  1- 3: flags:24				= 0
@@ -2359,7 +2327,7 @@ int GetMPEG2AudioObjectTypeId(WAVEFORMATEX* pwfx)
 	return 0;
 }
 
-void MPEG2AudioHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
+void MPEG2AudioHandler::WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int dataref, long scale)
 {
 	WAVEFORMATEX* pwfx = reinterpret_cast<WAVEFORMATEX*>(m_mt.Format());
 
@@ -2383,11 +2351,11 @@ void MPEG2AudioHandler::WriteDescriptor(Atom* patm, int id, int dataref, long sc
 	
 	// MP4AudioSampleEntry
 	// ISO/IEC 14496-14 - 5.6.1 - Syntax
-    smart_ptr<Atom> psd = patm->CreateAtom('mp4a');
+    auto const psd = Atom->CreateAtom('mp4a');
 	bsw.AppendTo(psd);
 
 	// ES_Descr box
-	smart_ptr<Atom> pesd = psd->CreateAtom('esds');
+	auto const pesd = psd->CreateAtom('esds');
 	bsw.Rewind();
 	bsw.Write32(0);								//  0   : version:8				= 0
 												//  1- 3: flags:24				= 0
@@ -2583,7 +2551,7 @@ long DolbyDigitalHandler::Scale()
     }
 }
 
-HRESULT DolbyDigitalHandler::WriteData(Atom* patm, const BYTE* pData, size_t cbData, size_t* pcActual)
+HRESULT DolbyDigitalHandler::WriteData(std::shared_ptr<Atom> const& Atom, const BYTE* pData, size_t cbData, size_t* pcActual)
 {
 	if (!m_bParsed)
 	{
@@ -2595,10 +2563,10 @@ HRESULT DolbyDigitalHandler::WriteData(Atom* patm, const BYTE* pData, size_t cbD
 		m_bParsed = TRUE;
 	}
 
-	return __super::WriteData(patm, pData, cbData, pcActual);
+	return __super::WriteData(Atom, pData, cbData, pcActual);
 }
 
-void DolbyDigitalHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
+void DolbyDigitalHandler::WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int dataref, long scale)
 {
 	UNREFERENCED_PARAMETER(id); // TODO: not used???
 
@@ -2617,7 +2585,7 @@ void DolbyDigitalHandler::WriteDescriptor(Atom* patm, int id, int dataref, long 
     bsw.Write16(static_cast<short>(scale));		// 24-25: sample rate
 	bsw.Write16(0);								// 26-27: reserved				= 0	   
 	
-    smart_ptr<Atom> psd = patm->CreateAtom('ac-3');
+    auto const psd = Atom->CreateAtom('ac-3');
 	bsw.AppendTo(psd);
 
 	
@@ -2631,7 +2599,7 @@ void DolbyDigitalHandler::WriteDescriptor(Atom* patm, int id, int dataref, long 
 	bsw.Write(m_info.frmsizcod / 2, 5);			// see Table F.1: bit_rate_code
 	bsw.Reserve(5);
 
-	smart_ptr<Atom> pdac3 = psd->CreateAtom('dac3');
+	auto const pdac3 = psd->CreateAtom('dac3');
 	bsw.AppendTo(pdac3);
 
 	pdac3->Close();
@@ -2905,7 +2873,7 @@ int DolbyDigitalPlusHandler::GetDependentSubstreams(int substreamid, int& chan_l
 	return num_dep_sub;
 }
 
-HRESULT DolbyDigitalPlusHandler::WriteData(Atom* patm, const BYTE* pData, size_t cbData, size_t* pcActual)
+HRESULT DolbyDigitalPlusHandler::WriteData(std::shared_ptr<Atom> const& Atom, const BYTE* pData, size_t cbData, size_t* pcActual)
 {
 	if (m_streams.size() == 0)
 	{
@@ -2933,10 +2901,10 @@ HRESULT DolbyDigitalPlusHandler::WriteData(Atom* patm, const BYTE* pData, size_t
 
 	//LOG((TEXT("Writing DD+ data")));
 
-	return __super::WriteData(patm, pData, cbData, pcActual);
+	return __super::WriteData(Atom, pData, cbData, pcActual);
 }
 
-void DolbyDigitalPlusHandler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
+void DolbyDigitalPlusHandler::WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int dataref, long scale)
 {
 	UNREFERENCED_PARAMETER(id); // TODO: not used???
 
@@ -2955,7 +2923,7 @@ void DolbyDigitalPlusHandler::WriteDescriptor(Atom* patm, int id, int dataref, l
     bsw.Write16(static_cast<short>(scale));			// 24-25: sample rate
 	bsw.Write16(0);									// 26-27: reserved				= 0	   
 	
-	smart_ptr<Atom> psd = patm->CreateAtom('ec-3');
+	auto const psd = Atom->CreateAtom('ec-3');
 	bsw.AppendTo(psd);
 
 	// F.6 - EC3SpecificBox
@@ -3004,116 +2972,25 @@ void DolbyDigitalPlusHandler::WriteDescriptor(Atom* patm, int id, int dataref, l
 	bsw.Write(bitrate / 1000, 13);	// data_rate:13 in Kb/s
 	bsw.Write(num_ind_sub - 1, 3);	// num_ind_sub:3, one less than the number of independent substreams present
 
-	smart_ptr<Atom> pdec3 = psd->CreateAtom('dec3');
+	auto const pdec3 = psd->CreateAtom('dec3');
 	bsw.AppendTo(pdec3, cBytes);
 	
 	pdec3->Close();
     psd->Close();
 }
-	
 
-///////////////////////////////////////////////////////////////////////////////
-
-
-// ---- descriptor ------------------------
-
-Descriptor::Descriptor(TagType type)
-: m_type(type),
-  m_cBytes(0),
-  m_cValid(0)
+HRESULT Descriptor::Write(std::shared_ptr<Atom> const& Atom) const
 {
-}
-
-void
-Descriptor::Append(uint8_t const* pBuffer, size_t cBytes)
-{
-    Reserve(cBytes);
-    CopyMemory(m_pBuffer+m_cValid, pBuffer, cBytes);
-    m_cValid += cBytes;
-}
-
-void
-Descriptor::Reserve(size_t cBytes)
-{
-    if ((m_cValid + cBytes) > m_cBytes)
-    {
-        // increment memory in 128 byte chunks
-        size_t inc = ((cBytes+127)/128) * 128;
-        smart_array<BYTE> pNew = new BYTE[m_cBytes + inc];
-        if (m_cValid > 0)
-        {
-            CopyMemory(pNew, m_pBuffer, m_cValid);
-        }
-        m_pBuffer = pNew;
-        m_cBytes += inc;
-    }
-}
-
-void
-Descriptor::Append(Descriptor* pdesc)
-{
-    long cBytes = pdesc->Length();
-    Reserve(cBytes);
-    pdesc->Write(m_pBuffer + m_cValid);
-    m_cValid += cBytes;
-}
-
-long 
-Descriptor::Length()
-{
-    long cHdr = 2;
-    size_t cBody = m_cValid;
-    while (cBody > 0x7f)
-    {
-        cHdr++;
-        cBody >>= 7;
-    }
-    return static_cast<long>(cHdr + m_cValid);
-
+    return Atom->Append(Compose());
 }
 
 void 
-Descriptor::Write(BYTE* pBuffer)
-{
-    int idx = 0;
-    pBuffer[idx++] = (BYTE) m_type;
-	if (m_cValid == 0)
-	{
-		pBuffer[idx++] = 0;
-	}
-	else
-	{
-		size_t cBody = m_cValid;
-		while (cBody)
-		{
-			BYTE b = BYTE(cBody & 0x7f);
-			if (cBody > 0x7f)
-			{
-				b |= 0x80;
-			}
-			pBuffer[idx++] = b;
-			cBody >>= 7;
-		}
-	}
-	CopyMemory(pBuffer + idx, m_pBuffer, m_cValid);
-}
-
-HRESULT 
-Descriptor::Write(Atom* patm)
-{
-    long cBytes = Length();
-    smart_array<BYTE> ptemp = new BYTE[cBytes];
-    Write(ptemp);
-    return patm->Append(ptemp, cBytes);
-}
-
-void 
-CC608Handler::WriteDescriptor(Atom* patm, int id, int dataref, long scale)
+CC608Handler::WriteDescriptor(std::shared_ptr<Atom> const& Atom, int id, int dataref, long scale)
 {
     UNREFERENCED_PARAMETER(scale);
     UNREFERENCED_PARAMETER(dataref);
     UNREFERENCED_PARAMETER(id);
 
-    smart_ptr<Atom> psd = patm->CreateAtom('c608');
+    auto const psd = Atom->CreateAtom('c608');
 	psd->Close();
 }

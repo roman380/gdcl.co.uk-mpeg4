@@ -26,16 +26,17 @@ _COM_SMARTPTR_TYPEDEF(IMemAllocator, IID_IMemAllocator);
 
 #include <assert.h>
 
-#include <list>
-#include <vector>
+#include <memory>
+#include <algorithm>
 #include <iterator>
+#include <vector>
+#include <list>
 #include <utility>
+#include <string>
 
 using namespace std;
 
 #pragma warning(pop)
-
-#include "smartptr.h"
 
 #include <wil\resource.h>
 #include <wil\com.h>

@@ -234,13 +234,13 @@ private:
     LONGLONG ParseEDTS(Atom* patm);
 
 private:
-    Atom* m_pRoot;
-    Movie* m_pMovie;
+    Atom* m_pRoot = nullptr;
+    Movie* m_pMovie = nullptr;
     string m_strName;
     long m_idx;
 
     long m_scale;
-    Atom* m_patmSTBL;
+    Atom* m_patmSTBL = nullptr;
     smart_ptr<ElementaryType> m_pType;
     smart_ptr<SampleSizes> m_pSizes;
     smart_ptr<KeyMap> m_pKeyMap;

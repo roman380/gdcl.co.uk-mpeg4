@@ -225,9 +225,7 @@ Movie::ReadAbsolute(LONGLONG llPos, BYTE* pBuffer, long cBytes)
 
 
 MovieTrack::MovieTrack(Atom* pAtom, Movie* pMovie, long idx)
-: m_pRoot(NULL),
-  m_pMovie(pMovie),
-  m_patmSTBL(NULL),
+: m_pMovie(pMovie),
   m_idx(idx),
   m_bOldFixedAudio(false)
 {

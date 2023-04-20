@@ -14,46 +14,8 @@
 #include "TypeHandler.h"
 #include "logger.h"
 
-Atom::Atom(AtomWriter* pContainer, LONGLONG llOffset, DWORD type)
-: m_pContainer(pContainer),
-  m_cBytes(0),
-  m_llOffset(llOffset),
-  m_bClosed(false)
-{
-    // write the initial length and type dwords
-    BYTE b[8];
-    WriteLong(8, b);
-    WriteLong(type, b+4);
-    Append(b, 8);
-}
-
-HRESULT 
-Atom::Close()
-{
-    m_bClosed = true;
-    // we only support 32-bit lengths for atoms
-    // (otherwise you would have to either decide in the constructor
-    // or shift the whole atom down).
-    if (m_cBytes > 0xffffffff)
-    {
-        return E_INVALIDARG;
-    }
-
-    BYTE b[4];
-    WriteLong(long(m_cBytes), b);
-    return Replace(0, b, 4);
-}
-
-Atom* 
-Atom::CreateAtom(DWORD type)
-{
-    return new Atom(this, Length(), type);
-}
-
-// --------------------------------------------------------------------
-
 MovieWriter::MovieWriter(AtomWriter* pContainer)
-: m_pContainer(pContainer),
+: m_Container(pContainer),
   m_bAlignTrackStartTimeDisabled(FALSE),
   m_nMinimalMovieDuration(0),
   m_bStopped(false),
@@ -62,17 +24,15 @@ MovieWriter::MovieWriter(AtomWriter* pContainer)
 {
 }
 
-TrackWriter* 
-MovieWriter::MakeTrack(const CMediaType* pmt, BOOL bNotifyMediaSampleWrite)
+std::shared_ptr<TrackWriter> 
+MovieWriter::MakeTrack(const CMediaType* pmt, bool NotifyMediaSampleWrite)
 {
-	TypeHandler* ph = TypeHandler::Make(pmt);
-	if (!ph)
-	{
-		return NULL;
-	}
-    TrackWriter* pTrack = new TrackWriter(this, (long)m_Tracks.size(), ph, bNotifyMediaSampleWrite);
-    m_Tracks.push_back(pTrack);
-    return pTrack;
+	auto Handler = TypeHandler::Make(pmt);
+	if (!Handler)
+		return nullptr;
+    auto const Track = std::make_shared<TrackWriter>(this, static_cast<int>(m_Tracks.size()), std::move(Handler), NotifyMediaSampleWrite);
+    m_Tracks.push_back(Track);
+    return Track;
 }
 
 HRESULT 
@@ -80,35 +40,28 @@ MovieWriter::Close(REFERENCE_TIME* pDuration)
 {
     // get longest duration of all tracks
     // also get earliest sample
-    vector<TrackWriterPtr>::iterator it;
     REFERENCE_TIME tEarliest = -1;
 	REFERENCE_TIME tThis;
-    for (it = m_Tracks.begin(); it != m_Tracks.end(); it++)
+    for(auto&& pTrack: m_Tracks)
     {
-        TrackWriter* pTrack = *it;
         tThis = pTrack->Earliest();
         if (tThis != -1)
         {
           if ((tEarliest == -1) || (tThis < tEarliest))
-          {
               tEarliest = tThis;
-          }
         }
     }
 
     // adjust track start times so that the earliest track starts at 0
     REFERENCE_TIME tDur = 0;
     REFERENCE_TIME tAdj = -tEarliest;
-    for (it = m_Tracks.begin(); it != m_Tracks.end(); it++)
+    for(auto&& pTrack: m_Tracks)
     {
-        TrackWriter* pTrack = *it;
 		if(!m_bAlignTrackStartTimeDisabled)
 			pTrack->AdjustStart(tAdj);
         tThis = pTrack->Duration();
         if (tThis > tDur)
-        {
             tDur = tThis;
-        }
     }
 	if(m_nMinimalMovieDuration && tDur < m_nMinimalMovieDuration)
 		tDur = m_nMinimalMovieDuration;
@@ -124,14 +77,13 @@ MovieWriter::Close(REFERENCE_TIME* pDuration)
 
     // create moov atom
     HRESULT hr = S_OK;
-    smart_ptr<Atom> pmoov = new Atom(m_pContainer, m_pContainer->Length(), DWORD('moov'));
+    auto const pmoov = std::make_shared<Atom>(m_Container, m_Container->Length(), DWORD('moov'));
 
     // movie header
     // we are using 90khz as the movie timescale, so
     // we may need 64-bits.
-    smart_ptr<Atom> pmvhd = pmoov->CreateAtom('mvhd');
-    BYTE b[28*4];
-    ZeroMemory(b, (28*4));
+    auto const pmvhd = pmoov->CreateAtom('mvhd');
+    BYTE b[28*4] { };
     int cHdr;
     if (tScaledDur > 0x7fffffff)
     {
@@ -140,15 +92,15 @@ MovieWriter::Close(REFERENCE_TIME* pDuration)
         // modify time 64bit
         // timescale 32-bit
         // duration 64-bit
-        WriteLong(MovieScale(), b + (5*4));
-        WriteI64(tScaledDur, b + (6 * 4));
+        Write32(MovieScale(), b + (5*4));
+        Write64(tScaledDur, b + (6 * 4));
         cHdr = 8 * 4;
     }
     else
     {
         long lDur = long(tScaledDur);
-        WriteLong(MovieScale(), b + (3 * 4));
-        WriteLong(lDur, b + (4 * 4));
+        Write32(MovieScale(), b + (3 * 4));
+        Write32(lDur, b + (4 * 4));
         cHdr = 5 * 4;
     }
     b[cHdr + 1] = 0x01;
@@ -156,48 +108,45 @@ MovieWriter::Close(REFERENCE_TIME* pDuration)
     b[cHdr + 17] = 0x01;
     b[cHdr + 33] = 0x01;
     b[cHdr + 48] = 0x40;
-    WriteLong((long)m_Tracks.size() + 1, b + cHdr + 76); // one-based next-track-id
+    Write32((long)m_Tracks.size() + 1, b + cHdr + 76); // one-based next-track-id
     pmvhd->Append(b, cHdr + 80);
     pmvhd->Close();
 
     MakeIODS(pmoov);
 
-    for (it = m_Tracks.begin(); it != m_Tracks.end(); it++)
+    for(auto&& pTrack: m_Tracks)
     {
-        TrackWriter* pTrack = *it;
         hr = pTrack->Close(pmoov);
         if (FAILED(hr))
-        {
             break;
-        }
     }
 
     if(!m_Comment.empty())
     {
-        smart_ptr<Atom> const udta = pmoov->CreateAtom('udta'); // ISO/IEC 14496-12:2012 8.10.1 User Data Box
-        smart_ptr<Atom> const meta = udta->CreateAtom('meta'); // https://developer.apple.com/library/archive/documentation/QuickTime/QTFF/Metadata/Metadata.html
+        auto const udta = pmoov->CreateAtom('udta'); // ISO/IEC 14496-12:2012 8.10.1 User Data Box
+        auto const meta = udta->CreateAtom('meta'); // https://developer.apple.com/library/archive/documentation/QuickTime/QTFF/Metadata/Metadata.html
         {
             uint8_t MetaData[44];
             uint8_t* MetaDataPointer = MetaData;
-            WriteLong(0, MetaDataPointer); MetaDataPointer += 4;
-            WriteLong(32, MetaDataPointer); MetaDataPointer += 4;
-            WriteLong('hdlr', MetaDataPointer); MetaDataPointer += 4;
-            WriteLong(0, MetaDataPointer); MetaDataPointer += 4; // Version, Flags
-            WriteLong(0, MetaDataPointer); MetaDataPointer += 4; // Predefined
-            WriteLong('mdir', MetaDataPointer); MetaDataPointer += 4;
-            WriteLong(0, MetaDataPointer); MetaDataPointer += 4;
-            WriteLong(0, MetaDataPointer); MetaDataPointer += 4;
-            WriteLong(0, MetaDataPointer); MetaDataPointer += 4;
+            Write32(0, MetaDataPointer); MetaDataPointer += 4;
+            Write32(32, MetaDataPointer); MetaDataPointer += 4;
+            Write32('hdlr', MetaDataPointer); MetaDataPointer += 4;
+            Write32(0, MetaDataPointer); MetaDataPointer += 4; // Version, Flags
+            Write32(0, MetaDataPointer); MetaDataPointer += 4; // Predefined
+            Write32('mdir', MetaDataPointer); MetaDataPointer += 4;
+            Write32(0, MetaDataPointer); MetaDataPointer += 4;
+            Write32(0, MetaDataPointer); MetaDataPointer += 4;
+            Write32(0, MetaDataPointer); MetaDataPointer += 4;
             ASSERT(static_cast<size_t>(MetaDataPointer - MetaData) <= std::size(MetaData));
             meta->Append(MetaData, static_cast<long>(MetaDataPointer - MetaData));
-            smart_ptr<Atom> const ilst = meta->CreateAtom('ilst');
-            smart_ptr<Atom> const cmt = ilst->CreateAtom(0xA9000000 | 'cmt');
+            auto const ilst = meta->CreateAtom('ilst');
+            auto const cmt = ilst->CreateAtom(0xA9000000 | 'cmt');
             {
-                smart_ptr<Atom> const data = cmt->CreateAtom('data');
+                auto const data = cmt->CreateAtom('data');
                 uint8_t Data[8];
                 uint8_t* DataPointer = Data;
-                WriteLong(0x00000001, DataPointer); DataPointer += 4; // Version, Flags
-                WriteLong(0, DataPointer); DataPointer += 4;
+                Write32(0x00000001, DataPointer); DataPointer += 4; // Version, Flags
+                Write32(0, DataPointer); DataPointer += 4;
                 ASSERT(static_cast<size_t>(DataPointer - Data) <= std::size(Data));
                 data->Append(Data, static_cast<long>(DataPointer - Data));
                 data->Append(reinterpret_cast<uint8_t const*>(m_Comment.data()), static_cast<long>(m_Comment.size()));
@@ -229,22 +178,18 @@ MovieWriter::InsertFTYP(AtomWriter* pFile)
     if (!m_bFTYPInserted)
     {
 		bool bHasOld = false;
-	    vector<TrackWriterPtr>::iterator it;
-		for (it = m_Tracks.begin(); it != m_Tracks.end(); it++)
-		{
-			TrackWriter* pTrack = *it;
+        for(auto&& pTrack: m_Tracks)
 			if (pTrack->IsNonMP4())
 			{
 				bHasOld = true;
 				break;
 			}
-		}
-        smart_ptr<Atom> pFTYP = new Atom(pFile, pFile->Length(), DWORD('ftyp'));
+        auto const pFTYP = std::make_shared<Atom>(pFile, pFile->Length(), DWORD('ftyp'));
         // file type
         BYTE b[8];
 		if (bHasOld)
 		{
-			WriteLong(DWORD('qt  '), b);
+			Write32(DWORD('qt  '), b);
 			// minor version
 			b[4] = 0x20;
 			b[5] = 0x04;
@@ -253,15 +198,15 @@ MovieWriter::InsertFTYP(AtomWriter* pFile)
 		}
 		else
 		{
-			WriteLong(DWORD('mp42'), b);
+			Write32(DWORD('mp42'), b);
 			// minor version
-			WriteLong(0, b+4);
+			Write32(0, b+4);
 		}
 		pFTYP->Append(b, 8);
         // additional compatible specs
-        WriteLong(DWORD('mp42'), b);
+        Write32(DWORD('mp42'), b);
         pFTYP->Append(b, 4);
-        WriteLong(DWORD('isom'), b);
+        Write32(DWORD('isom'), b);
         pFTYP->Append(b, 4);
         pFTYP->Close();
         m_bFTYPInserted = true;
@@ -366,9 +311,9 @@ MovieWriter::WriteTrack(int indexReady)
     {
         if (!m_bFTYPInserted)
         {
-            InsertFTYP(m_pContainer);
+            InsertFTYP(m_Container);
         }
-        m_patmMDAT = new Atom(m_pContainer, m_pContainer->Length(), DWORD('mdat'));
+        m_patmMDAT = std::make_shared<Atom>(m_Container, m_Container->Length(), DWORD('mdat'));
     }
 
 	// write earliest block
@@ -428,13 +373,13 @@ MovieWriter::CurrentPosition()
 }
 
 void 
-MovieWriter::MakeIODS(Atom* pmoov)
+MovieWriter::MakeIODS(std::shared_ptr<Atom> const& pmoov)
 {
-    smart_ptr<Atom> piods = pmoov->CreateAtom('iods');
+    auto const piods = pmoov->CreateAtom('iods');
 
     Descriptor iod(Descriptor::MP4_IOD);
     BYTE b[16];
-    WriteShort(0x004f, b);      // object id 1, no url, no inline profile + reserved bits
+    Write16(0x004f, b);      // object id 1, no url, no inline profile + reserved bits
     b[2] = 0xff;        // no od capability required
     b[3] = 0xff;        // no scene graph capability required
     b[4] = 0x0f;        // audio profile
@@ -443,18 +388,18 @@ MovieWriter::MakeIODS(Atom* pmoov)
     iod.Append(b, 7);
 
     // append the id of each media track
-    for (UINT i = 0; i < m_Tracks.size(); i++)
+    for(auto&& Track: m_Tracks)
     {
-        if (m_Tracks[i]->IsVideo() || m_Tracks[i]->IsAudio())
+        if (Track->IsVideo() || Track->IsAudio())
         {
             // use 32-bit track id in IODS
             Descriptor es(Descriptor::ES_ID_Inc);
-            WriteLong(m_Tracks[i]->ID(), b);
+            Write32(Track->ID(), b);
             es.Append(b, 4);
             iod.Append(&es);
         }
     }
-    WriteLong(0, b);
+    Write32(0, b);
     piods->Append(b, 4);       // ver/flags
     iod.Write(piods);
     piods->Close();
@@ -487,28 +432,24 @@ void MovieWriter::RecordBitrate(size_t index, long bitrate)
 	}
 }
 
-VOID MovieWriter::NotifyMediaSampleWrite(INT nTrackIndex, IMediaSample* pMediaSample, SIZE_T nDataSize)
+void MovieWriter::NotifyMediaSampleWrite(INT TrackIndex, wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize)
 {
-	if(m_pContainer)
-		m_pContainer->NotifyMediaSampleWrite(nTrackIndex, pMediaSample, nDataSize);
+	if(m_Container)
+		m_Container->NotifyMediaSampleWrite(TrackIndex, MediaSample, DataSize);
 }
 
 // -------- Track -------------------------------------------------------
 
-TrackWriter::TrackWriter(MovieWriter* pMovie, int index, TypeHandler* pType, BOOL bNotifyMediaSampleWrite)
-: m_bEOS(false),
-  m_bStopped(false),
+TrackWriter::TrackWriter(MovieWriter* pMovie, int index, std::unique_ptr<TypeHandler>&& TypeHandler, bool NotifyMediaSampleWrite)
+: m_pMovie(pMovie),
   m_index(index),
-  m_pType(pType),
-  m_tLast(0),
-  m_StartAt(0),
-  m_pMovie(pMovie),
-  m_bNotifyMediaSampleWrite(bNotifyMediaSampleWrite),
+  m_pType(std::move(TypeHandler)),
+  m_NotifyMediaSampleWrite(NotifyMediaSampleWrite),
   m_Durations(DEFAULT_TIMESCALE),
   m_SC(1)                // dataref 1
 {
     // adjust scale to media type (mostly because audio scales must be 16 bits);
-    m_Durations.SetScale(pType->Scale());
+    m_Durations.SetScale(m_pType->Scale());
 	m_Durations.SetFrameDuration(m_pType->FrameDuration());
 }
 
@@ -524,27 +465,22 @@ TrackWriter::Add(IMediaSample* pSample)
         if (m_bEOS || m_bStopped)
         {
             hr = VFW_E_WRONG_STATE;
-        } else {
-            if (m_pCurrent == NULL)
+        } else 
+        {
+            if(!m_pCurrent)
             {
-                m_pCurrent = new MediaChunk(this);
-				if (m_pType->IsOldIndexFormat())
-				{
+                m_pCurrent = std::make_shared<MediaChunk>(this);
+				if(m_pType->IsOldIndexFormat())
 					m_pCurrent->SetOldIndexFormat();
-				}
             }
             m_pCurrent->AddSample(pSample);
 			// write out this block if larger than permitted interleave size
 			if (m_pCurrent->IsFull(m_pMovie->MaxInterleaveDuration()))
 			{
-				REFERENCE_TIME tDur = m_pCurrent->GetDuration();
-				if (tDur > 0)
-				{
-					long bitrate = long(m_pCurrent->Length() * UNITS / tDur) * 8;
-					m_pMovie->RecordBitrate(m_index, bitrate);
-				}
-                m_Queue.push_back(m_pCurrent);
-                m_pCurrent = NULL;
+				auto const Duration = m_pCurrent->GetDuration();
+				if(Duration > 0)
+					m_pMovie->RecordBitrate(m_index, static_cast<long>((m_pCurrent->Length() * UNITS / Duration) * 8));
+                m_Queue.push_back(std::exchange(m_pCurrent, nullptr));
             }
         }
     }
@@ -562,7 +498,7 @@ TrackWriter::OnEOS()
         CAutoLock lock(&m_csQueue);
         m_bEOS = true;
         // queue final partial chunk
-        if (m_pCurrent && (m_pCurrent->Samples() > 0))
+        if (m_pCurrent && (m_pCurrent->MediaSampleCount() > 0))
         {
             m_Queue.push_back(m_pCurrent);
             m_pCurrent = NULL;
@@ -589,7 +525,7 @@ TrackWriter::Stop(bool bFlush)
 	else
 	{
 		// queue current partial block 
-        if (m_pCurrent && (m_pCurrent->Samples() > 0))
+        if (m_pCurrent && (m_pCurrent->MediaSampleCount() > 0))
         {
             m_Queue.push_back(m_pCurrent);
             m_pCurrent = NULL;
@@ -599,49 +535,36 @@ TrackWriter::Stop(bool bFlush)
 }
 
 bool 
-TrackWriter::GetHeadTime(LONGLONG* ptHead)
+TrackWriter::GetHeadTime(LONGLONG* ptHead) const
 {
     CAutoLock lock(&m_csQueue);
-    if (m_Queue.size() == 0)
-    {
+    if(m_Queue.empty())
         return false;
-    }
-    MediaChunkPtr pChunk = *m_Queue.begin();
     REFERENCE_TIME tLast;
-    pChunk->GetTime(ptHead, &tLast);
+    m_Queue.front()->GetTime(ptHead, &tLast);
     return true;
 }
 
 HRESULT 
-TrackWriter::WriteHead(Atom* patm)
+TrackWriter::WriteHead(std::shared_ptr<Atom> const& Atom)
 {
     CAutoLock lock(&m_csQueue);
-    if (m_Queue.size() == 0)
-    {
+    if(m_Queue.empty())
         return E_FAIL;
-    }
-    MediaChunkPtr pChunk = *m_Queue.begin();
+    auto const Chunk = m_Queue.front();
     m_Queue.pop_front();
 
     REFERENCE_TIME tStart, tEnd;
-    pChunk->GetTime(&tStart, &tEnd);
+    Chunk->GetTime(&tStart, &tEnd);
 
     // the chunk will call back to us to index
     // the samples during this call, once
     // the media data is successfully written
-    HRESULT hr = pChunk->Write(patm);
-    if (SUCCEEDED(hr))
-    {
-        m_tLast = tEnd;
-    }
+    auto const hr = Chunk->Write(Atom);
+    if (FAILED(hr))
+        return hr;
+    m_tLast = tEnd;
     return hr;
-}
-
-REFERENCE_TIME 
-TrackWriter::LastWrite()
-{
-    CAutoLock lock(&m_csQueue);
-    return m_tLast;
 }
 
 void 
@@ -675,14 +598,13 @@ TrackWriter::OldIndex(LONGLONG posChunk, size_t cBytes)
 }
 
 HRESULT 
-TrackWriter::Close(Atom* patm)
+TrackWriter::Close(std::shared_ptr<Atom> const& Atom)
 {
-    smart_ptr<Atom> ptrak = patm->CreateAtom('trak');
+    auto const ptrak = Atom->CreateAtom('trak');
 
     // track header tkhd
-    smart_ptr<Atom> ptkhd = ptrak->CreateAtom('tkhd');
-    BYTE b[24*4];
-    ZeroMemory(b, (24*4));
+    auto const ptkhd = ptrak->CreateAtom('tkhd');
+    BYTE b[24*4] { };
 
     // duration in movie timescale
     LONGLONG scaledur = long(Duration() * m_pMovie->MovieScale() / UNITS);
@@ -692,13 +614,13 @@ TrackWriter::Close(Atom* patm)
         // use 64-bit version (64-bit create/modify and duration
         cHdr = 9*4;
         b[0] = 1;
-        WriteLong(ID(), b+(5*4));
-        WriteI64(scaledur, b+(7*4));
+        Write32(ID(), b+(5*4));
+        Write64(scaledur, b+(7*4));
     }
     else
     {
-        WriteLong(ID(), b+(3*4));     // 1-base track id
-        WriteLong(long(scaledur), b+(5*4));
+        Write32(ID(), b+(3*4));     // 1-base track id
+        Write32(long(scaledur), b+(5*4));
         cHdr = 6*4;
     }
     b[3] = 7;   // enabled, in movie and in preview
@@ -712,8 +634,8 @@ TrackWriter::Close(Atom* patm)
     b[cHdr + 48] = 0x40;
     if (IsVideo())
     {
-		WriteShort(m_pType->Width(), &b[cHdr + 52]);
-		WriteShort(m_pType->Height(), &b[cHdr + 56]);
+		Write16(static_cast<uint16_t>(m_pType->Width()), &b[cHdr + 52]);
+		Write16(static_cast<uint16_t>(m_pType->Height()), &b[cHdr + 56]);
     }
 
     ptkhd->Append(b, cHdr + 60);
@@ -726,10 +648,10 @@ TrackWriter::Close(Atom* patm)
     // -- note, this is in movie timescale, not track
     m_Durations.WriteEDTS(ptrak, m_pMovie->MovieScale());
 
-    smart_ptr<Atom> pmdia = ptrak->CreateAtom('mdia');
+    auto const pmdia = ptrak->CreateAtom('mdia');
 
     // Media Header mdhd
-    smart_ptr<Atom> pmdhd = pmdia->CreateAtom('mdhd');
+    auto const pmdhd = pmdia->CreateAtom('mdhd');
     ZeroMemory(b, 9*4);
     
     // duration now in track timescale
@@ -737,14 +659,14 @@ TrackWriter::Close(Atom* patm)
     if (scaledur > 0x7fffffff)
     {
         b[0] = 1;       // 64-bit
-        WriteLong(m_Durations.Scale(), b+20);
-        WriteI64(scaledur, b+24);         
+        Write32(m_Durations.Scale(), b+20);
+        Write64(scaledur, b+24);         
         cHdr = 8*4;
     }
     else
     {
-        WriteLong(m_Durations.Scale(), b+12);
-        WriteLong(long(scaledur), b+16);         
+        Write32(m_Durations.Scale(), b+12);
+        Write32(long(scaledur), b+16);         
         cHdr = 5*4;
     }
     // 'eng' as offset from 0x60 in 0 pad bit plus 3x5-bit (05 0xe 07)
@@ -754,41 +676,41 @@ TrackWriter::Close(Atom* patm)
     pmdhd->Close();
 
     // handler id hdlr
-    smart_ptr<Atom> phdlr = pmdia->CreateAtom('hdlr');
+    auto const phdlr = pmdia->CreateAtom('hdlr');
     ZeroMemory(b, 25);
-	WriteLong(Handler()->DataType(), b+4);
-    WriteLong(Handler()->Handler(), b+8);
+	Write32(Handler()->DataType(), b+4);
+    Write32(Handler()->Handler(), b+8);
     phdlr->Append(b, 25);
     phdlr->Close();
     
-    smart_ptr<Atom> pminf = pmdia->CreateAtom('minf');
+    auto const pminf = pmdia->CreateAtom('minf');
 
     // media information header vmhd/smhd
     ZeroMemory(b, sizeof(b));
     if (IsVideo())
     {
-        smart_ptr<Atom> pvmhd = pminf->CreateAtom('vmhd');
+        auto const pvmhd = pminf->CreateAtom('vmhd');
         b[3] = 1;
         pvmhd->Append(b, 12);
         pvmhd->Close();
     } else if (IsAudio())
     {
-        smart_ptr<Atom> psmhd = pminf->CreateAtom('smhd');
+        auto const psmhd = pminf->CreateAtom('smhd');
         psmhd->Append(b, 8);
         psmhd->Close();
     } else {
-        smart_ptr<Atom> pnmhd = pminf->CreateAtom('nmhd');
+        auto const pnmhd = pminf->CreateAtom('nmhd');
         pnmhd->Append(b, 4);
         pnmhd->Close();
     }
 
     // dinf/dref -- data reference
-    smart_ptr<Atom> pdinf = pminf->CreateAtom('dinf');
-    smart_ptr<Atom> pdref = pdinf->CreateAtom('dref');
-    WriteLong(0, b);        // ver/flags
-    WriteLong(1, b+4);      // entries
+    auto const pdinf = pminf->CreateAtom('dinf');
+    auto const pdref = pdinf->CreateAtom('dref');
+    Write32(0, b);        // ver/flags
+    Write32(1, b+4);      // entries
     pdref->Append(b, 8);
-    smart_ptr<Atom> purl = pdref->CreateAtom('url ');
+    auto const purl = pdref->CreateAtom('url ');
     // self-contained flag set, and no string required
     // -- all data is in this file
     b[3] = 1;
@@ -797,13 +719,13 @@ TrackWriter::Close(Atom* patm)
     pdref->Close();
     pdinf->Close();
 
-    smart_ptr<Atom> pstbl = pminf->CreateAtom('stbl');
+    auto const pstbl = pminf->CreateAtom('stbl');
 
     // Sample description
     // -- contains one descriptor atom mp4v/mp4a/... for each data reference.
-    smart_ptr<Atom> pstsd = pstbl->CreateAtom('stsd');
-    WriteLong(0, b);    // ver/flags
-    WriteLong(1, b+4);    // count of entries
+    auto const pstsd = pstbl->CreateAtom('stsd');
+    Write32(0, b);    // ver/flags
+    Write32(1, b+4);    // count of entries
     pstsd->Append(b, 8);
     Handler()->WriteDescriptor(pstsd, ID(), 1, m_Durations.Scale());   // dataref = 1
     pstsd->Close();
@@ -833,77 +755,48 @@ TrackWriter::Close(Atom* patm)
     return hr;
 }
 
-VOID TrackWriter::NotifyMediaSampleWrite(IMediaSample* pMediaSample, SIZE_T nDataSize)
+void TrackWriter::NotifyMediaSampleWrite(wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize)
 {
-	if(m_bNotifyMediaSampleWrite && m_pMovie)
-		m_pMovie->NotifyMediaSampleWrite(m_index, pMediaSample, nDataSize);
+	if(m_NotifyMediaSampleWrite && m_pMovie)
+		m_pMovie->NotifyMediaSampleWrite(m_index, MediaSample, DataSize);
 }
 
 // -- Media Chunk ----------------------
 
-MediaChunk::MediaChunk(TrackWriter* pTrack)
-: m_cBytes(0),
-  m_pTrack(pTrack),
-  m_tStart(0),
-  m_tEnd(0),
-  m_bOldIndexFormat(false)
-{
-}
-MediaChunk::~MediaChunk()
-{
-    // I wanted to use list<IMediaSamplePtr> but the
-    // compiler could not handle the deep nesting of templates
-    while(m_Samples.size() > 0)
-    {
-        IMediaSample* pSample = m_Samples.front();
-        pSample->Release();
-        m_Samples.pop_front();
-    }
-}
-
 HRESULT 
-MediaChunk::AddSample(IMediaSample* pSample)
+MediaChunk::AddSample(IMediaSample* MediaSample)
 {
     REFERENCE_TIME tStart, tEnd;
-    HRESULT hr = pSample->GetTime(&tStart, &tEnd);
+    auto const hr = MediaSample->GetTime(&tStart, &tEnd);
 	if(hr == VFW_S_NO_STOP_TIME)
 		tEnd = tStart + 1;
     if(SUCCEEDED(hr))
     {
-        // H264 samples from large frames
-        // may be broken across several buffers, with the
-        // time set on the last sample
+        // NOTE: H264 samples from large frames may be broken across several buffers, with the time set on the last sample
 
-        // record overall time
-        if (m_cBytes == 0)
+        if (!m_cBytes)
         {
-            // first sample
             m_tStart = tStart;
             m_tEnd = tEnd;
-        } else {
+        } else 
+        {
             if (tStart < m_tStart)
-            {
                 m_tStart = tStart;
-            }
             if (tEnd > m_tEnd)
-            {
                 m_tEnd = tEnd;
-            }
         }
     }
 
-    m_cBytes += pSample->GetActualDataLength();
-    pSample->AddRef();
-    m_Samples.push_back(pSample);
+    m_cBytes += static_cast<size_t>(MediaSample->GetActualDataLength());
+    m_MediaSampleList.push_back(MediaSample);
     return S_OK;
 }
 
-
 HRESULT
-MediaChunk::Write(Atom* patm)
+MediaChunk::Write(std::shared_ptr<Atom> const& Atom)
 {
 	// record chunk start position
-	LONGLONG posChunk = patm->Position() + patm->Length();
+	LONGLONG posChunk = Atom->Position() + Atom->Length();
 
 	if (m_bOldIndexFormat)
 	{
@@ -913,19 +806,18 @@ MediaChunk::Write(Atom* patm)
 		const size_t MAX_PCM_SIZE = 22050;
 		size_t max_bytes = MAX_PCM_SIZE - (MAX_PCM_SIZE % m_pTrack->Handler()->BlockAlign());
 
-		list<IMediaSample*>::iterator it = m_Samples.begin();
 		size_t cAvail = 0;
 		BYTE* pBuffer = NULL;
 
-		for (;;)
+		for (auto it = m_MediaSampleList.begin(); ; )
 		{
 			if (!cAvail)
 			{
-				if (it == m_Samples.end())
+				if (it == m_MediaSampleList.end())
 				{
 					break;
 				}
-				IMediaSample* pSample = *it++;
+				auto const& pSample = *it++;
 				pSample->GetPointer(&pBuffer);
 				cAvail = pSample->GetActualDataLength();
 				REFERENCE_TIME tStart, tStop;
@@ -934,14 +826,10 @@ MediaChunk::Write(Atom* patm)
 					m_pTrack->SetOldIndexStart(tStart);
 				}
 			}
-			size_t cThis = max_bytes - cBytes;
-			if (cThis > cAvail)
-			{
-				cThis = cAvail;
-			}
+			auto const cThis = std::min<size_t>(max_bytes - cBytes, cAvail);
 
 			size_t cActual = 0;
-			m_pTrack->Handler()->WriteData(patm, pBuffer, cThis, &cActual);
+			m_pTrack->Handler()->WriteData(Atom, pBuffer, cThis, &cActual);
 			cBytes += cActual;
 			cAvail -= cActual;
 			pBuffer += cActual;
@@ -949,7 +837,7 @@ MediaChunk::Write(Atom* patm)
 			if (cBytes >= max_bytes)
 			{
 				m_pTrack->OldIndex(posChunk, cBytes);
-				posChunk = patm->Position() + patm->Length();
+				posChunk = Atom->Position() + Atom->Length();
 				cBytes = 0;
 			}
 		}
@@ -968,10 +856,9 @@ MediaChunk::Write(Atom* patm)
 	size_t nSamples = 0;
 
 	// loop once through the samples writing the data
-	list<IMediaSample*>::iterator it;
-	for (it = m_Samples.begin(); it != m_Samples.end(); it++)
+	for (auto it = m_MediaSampleList.begin(); it != m_MediaSampleList.end(); it++)
 	{
-		IMediaSample* pSample = *it;
+		auto const& pSample = *it;
 
 		// record positive sync flag, but for
 		// multiple-buffer samples, only one sync flag will be present
@@ -985,7 +872,7 @@ MediaChunk::Write(Atom* patm)
 		BYTE* pBuffer;
 		pSample->GetPointer(&pBuffer);
 		size_t cActual = 0;
-		m_pTrack->Handler()->WriteData(patm, pBuffer, pSample->GetActualDataLength(), &cActual);
+		m_pTrack->Handler()->WriteData(Atom, pBuffer, pSample->GetActualDataLength(), &cActual);
 		cBytes += cActual;
 		REFERENCE_TIME tStart, tEnd;
 		HRESULT hr = pSample->GetTime(&tStart, &tEnd);
@@ -1001,7 +888,7 @@ MediaChunk::Write(Atom* patm)
 			nSamples++;
 		}
 
-		m_pTrack->NotifyMediaSampleWrite(pSample, (SIZE_T) cActual);
+		m_pTrack->NotifyMediaSampleWrite(pSample, cActual);
 	}
 
 	// add chunk position to index
@@ -1013,146 +900,24 @@ MediaChunk::Write(Atom* patm)
 }
 
 bool 
-MediaChunk::IsFull(REFERENCE_TIME tMaxDur)
+MediaChunk::IsFull(REFERENCE_TIME tMaxDur) const
 {
-	if (Length() > MAX_INTERLEAVE_SIZE)
-	{
+	if(Length() > MAX_INTERLEAVE_SIZE)
 		return true;
-	}
-
-	if (GetDuration() > tMaxDur)
-	{
+	if(GetDuration() > tMaxDur)
 		return true;
-	}
 	return false;
 }
 
-REFERENCE_TIME MediaChunk::GetDuration()
+REFERENCE_TIME 
+MediaChunk::GetDuration() const
 {
-	if (m_pTrack->IsAudio())
-	{
-		return (m_tEnd - m_tStart);
-	}
-	else
-	{
-		return Samples() * m_pTrack->SampleDuration();
-	}
+    if(m_pTrack->IsAudio())
+        return m_tEnd - m_tStart;
+    return m_MediaSampleList.size() * m_pTrack->SampleDuration();
 }
-
 
 // ---- index classes --------------------
-
-ListOfLongs::ListOfLongs()
-: m_nEntriesInLast(0)
-{
-    m_Blocks.push_back(new BYTE[EntriesPerBlock * 4]);
-}
-
-void 
-ListOfLongs::Append(long l)
-{
-    if (m_nEntriesInLast >= EntriesPerBlock)
-    {
-        m_Blocks.push_back(new BYTE[EntriesPerBlock * 4]);
-		m_nEntriesInLast = 0;
-    }
-    BytePtr p = m_Blocks[m_Blocks.size() - 1];
-    WriteLong(l, p + m_nEntriesInLast*4);
-    m_nEntriesInLast++;
-}
-
-HRESULT 
-ListOfLongs::Write(Atom* patm)
-{
-    // write all the full blocks
-    for (UINT i = 0; i < m_Blocks.size() -1; i++)
-    {
-        BytePtr p = m_Blocks[i];
-        HRESULT hr = patm->Append(p, EntriesPerBlock*4);
-        if (FAILED(hr))
-        {
-            return hr;
-        }
-    }
-
-    // partial last block
-    if (m_nEntriesInLast > 0)
-    {
-        BytePtr p = m_Blocks[m_Blocks.size() - 1];
-        HRESULT hr = patm->Append(p, m_nEntriesInLast * 4);
-        if (FAILED(hr))
-        {
-            return hr;
-        }
-    }
-    return S_OK;
-}
-
-long 
-ListOfLongs::Entry(long nEntry)
-{
-    // read back a value (for 32 to 64 conversion)
-    long nValue = 0;
-    if (nEntry < Entries())
-    {
-        BytePtr p = m_Blocks[nEntry/EntriesPerBlock];
-        nValue = ReadLong(p + (nEntry % EntriesPerBlock)*4);
-    }
-    return nValue;
-}
-
-
-ListOfI64::ListOfI64()
-: m_nEntriesInLast(0)
-{
-    m_Blocks.push_back(new BYTE[EntriesPerBlock * 8]);
-}
-
-void 
-ListOfI64::Append(LONGLONG ll)
-{
-    if (m_nEntriesInLast >= EntriesPerBlock)
-    {
-        m_Blocks.push_back(new BYTE[EntriesPerBlock * 8]);
-		m_nEntriesInLast = 0;
-    }
-    BytePtr p = m_Blocks[m_Blocks.size() - 1];
-    WriteI64(ll, p + m_nEntriesInLast*8);
-    m_nEntriesInLast++;
-}
-
-HRESULT 
-ListOfI64::Write(Atom* patm)
-{
-    // write all the full blocks
-    for (UINT i = 0; i < m_Blocks.size() -1; i++)
-    {
-        BytePtr p = m_Blocks[i];
-        HRESULT hr = patm->Append(p, EntriesPerBlock*8);
-        if (FAILED(hr))
-        {
-            return hr;
-        }
-    }
-
-    // partial last block
-    if (m_nEntriesInLast > 0)
-    {
-        BytePtr p = m_Blocks[m_Blocks.size() - 1];
-        HRESULT hr = patm->Append(p, m_nEntriesInLast * 8);
-        if (FAILED(hr))
-        {
-            return hr;
-        }
-    }
-    return S_OK;
-}
-
-ListOfPairs::ListOfPairs()
-: m_cEntries(0),
-  m_lCount(0)
-{
-}
 
 void 
 ListOfPairs::Append(long val)
@@ -1176,7 +941,7 @@ ListOfPairs::Append(long val)
 }
 
 HRESULT 
-ListOfPairs::Write(Atom* patm)
+ListOfPairs::Write(std::shared_ptr<Atom> const& Atom)
 {
 	if (m_lCount > 0)
 	{
@@ -1187,28 +952,14 @@ ListOfPairs::Write(Atom* patm)
     // nEntries
     // pairs of <count, value>
 
-    BYTE b[8];
-    ZeroMemory(b, 8);
+    BYTE b[8] { };
     // entry count is count of pairs
-    WriteLong(m_Table.Entries() / 2, b+4);
-
-    HRESULT hr = patm->Append(b, 8);
-
-	if (SUCCEEDED(hr))
-    {
-        hr = m_Table.Write(patm);
-    }
-	return hr;
+    Write32(static_cast<uint32_t>(m_Table.Entries() / 2), b+4);
+    RETURN_IF_FAILED(Atom->Append(b, 8));
+	return m_Table.Write(Atom);
 }
 
 // -----
-
-SizeIndex::SizeIndex()
-: m_cBytesCurrent(0),
-  m_nCurrent(0),
-  m_nSamples(0)
-{
-}
 
 void 
 SizeIndex::AddMultiple(long cBytes, long count)
@@ -1274,11 +1025,10 @@ SizeIndex::Add(long cBytes)
 }
 
 HRESULT 
-SizeIndex::Write(Atom* patm)
+SizeIndex::Write(std::shared_ptr<Atom> const& Atom)
 {
-    smart_ptr<Atom> psz = patm->CreateAtom('stsz');
-    BYTE b[12];
-    ZeroMemory(b, 12);
+    auto const psz = Atom->CreateAtom('stsz');
+    BYTE b[12] { };
 
     // ver/flags = 0
     // size
@@ -1289,14 +1039,12 @@ SizeIndex::Write(Atom* patm)
     {
         // this size field is left 0 if we are
         // creating a size entry for each sample
-        WriteLong(m_cBytesCurrent, b+4);
+        Write32(m_cBytesCurrent, b+4);
     }
-    WriteLong(m_nSamples, b+8);
+    Write32(m_nSamples, b+8);
     psz->Append(b, 12);
     if (m_Table.Entries() > 0)
-    {
         m_Table.Write(psz);
-    }
     psz->Close();
     return S_OK;
 }
@@ -1509,7 +1257,7 @@ DurationIndex::ModeDecide()
 }
 
 HRESULT 
-DurationIndex::WriteEDTS(Atom* patm, long scale)
+DurationIndex::WriteEDTS(std::shared_ptr<Atom> const& Atom, long scale)
 {
     if (m_tStartFirst > 0)
     {
@@ -1523,11 +1271,10 @@ DurationIndex::WriteEDTS(Atom* patm, long scale)
         //     0 : start of media
         //     media rate 1
 
-        smart_ptr<Atom> pedts = patm->CreateAtom('edts');
-        smart_ptr<Atom> pelst = pedts->CreateAtom('elst');
+        auto const pedts = Atom->CreateAtom('edts');
+        auto const pelst = pedts->CreateAtom('elst');
 
-        BYTE b[48];
-        ZeroMemory(b, sizeof(b));
+        BYTE b[48] { };
 
         // values are in movie scale
         LONGLONG offset = long(m_tStartFirst * scale / UNITS);
@@ -1540,14 +1287,14 @@ DurationIndex::WriteEDTS(Atom* patm, long scale)
 
             // create an offset for the first sample
             // using an "empty" edit
-            WriteLong(2, b+4);
-            WriteI64(offset, b+8);
-            WriteI64(-1, b+16);        // no media used
+            Write32(2, b+4);
+            Write64(offset, b+8);
+            Write64(0xFFFF, b+16);        // no media used
             b[25] = 1;
 
             // whole track as next edit
-            WriteI64(dur, b+28);
-            WriteI64(0, b+36);
+            Write64(dur, b+28);
+            Write64(0, b+36);
             b[45] = 1;
             cSz = 48;
         }
@@ -1555,14 +1302,14 @@ DurationIndex::WriteEDTS(Atom* patm, long scale)
         {
             // create an offset for the first sample
             // using an "empty" edit
-            WriteLong(2, b+4);
-            WriteLong(long(offset), b+8);
-            WriteLong(-1, b+12);        // no media used
+            Write32(2, b+4);
+            Write32(long(offset), b+8);
+            Write32(0xFFFF, b+12);        // no media used
             b[17] = 1;
 
             // whole track as next edit
-            WriteLong(long(dur), b+20);
-            WriteLong(0, b+24);
+            Write32(long(dur), b+20);
+            Write32(0, b+24);
             b[29] = 1;
             cSz = 32;
         }
@@ -1575,7 +1322,7 @@ DurationIndex::WriteEDTS(Atom* patm, long scale)
 }
 
 HRESULT 
-DurationIndex::WriteTable(Atom* patm)
+DurationIndex::WriteTable(std::shared_ptr<Atom> const& Atom)
 {
     // do nothing if no samples at all
     HRESULT hr = S_OK;
@@ -1598,26 +1345,19 @@ DurationIndex::WriteTable(Atom* patm)
 		}
 
         // create atom and write table
-        smart_ptr<Atom> pstts = patm->CreateAtom('stts');
+        auto const pstts = Atom->CreateAtom('stts');
 		m_STTS.Write(pstts);
         pstts->Close();
 
 		if (m_bCTTS)
 		{
 			// write CTTS table
-			smart_ptr<Atom> pctts = patm->CreateAtom('ctts');
+			auto const pctts = Atom->CreateAtom('ctts');
 			m_CTTS.Write(pctts);
 			pctts->Close();
 		}
     }
     return hr;
-}
-
-SamplesPerChunkIndex::SamplesPerChunkIndex(long dataref)
-: m_dataref(dataref),
-  m_nTotalChunks(0),
-  m_nSamples(0)
-{
 }
 
 void 
@@ -1638,22 +1378,20 @@ SamplesPerChunkIndex::Add(long nSamples)
 }
 
 HRESULT 
-SamplesPerChunkIndex::Write(Atom* patm)
+SamplesPerChunkIndex::Write(std::shared_ptr<Atom> const& Atom)
 {
-    smart_ptr<Atom> pSC = patm->CreateAtom('stsc');
+    auto const pSC = Atom->CreateAtom('stsc');
     //
     // ver/flags = 0
     // count of entries
     //    triple <first chunk, samples per chunk, dataref>
 
     BYTE b[8];
-    WriteLong(0, b);
-    WriteLong(m_Table.Entries() / 3, b+4);
+    Write32(0, b);
+    Write32(static_cast<uint32_t>(m_Table.Entries() / 3), b+4);
     HRESULT hr = pSC->Append(b, 8);
     if (SUCCEEDED(hr))
-    {
         hr = m_Table.Write(pSC);
-    }
     return hr;
 }
 
@@ -1672,7 +1410,7 @@ ChunkOffsetIndex::Add(LONGLONG posChunk)
 }
 
 HRESULT 
-ChunkOffsetIndex::Write(Atom* patm)
+ChunkOffsetIndex::Write(std::shared_ptr<Atom> const& Atom)
 {
     HRESULT hr = S_OK;
     // did we need 64-bit offsets?
@@ -1680,34 +1418,27 @@ ChunkOffsetIndex::Write(Atom* patm)
     {
         // convert 32-bit entries to 64-bit
         ListOfI64 converted;
-        for (long idx = 0; idx < m_Table32.Entries(); idx++)
-        {
+        for (size_t idx = 0; idx < m_Table32.Entries(); idx++)
             converted.Append(m_Table32.Entry(idx));
-        }
 
         // create 64-bit atom co64
-        smart_ptr<Atom> pCO = patm->CreateAtom('co64');
+        auto const pCO = Atom->CreateAtom('co64');
         BYTE b[8];
-        WriteLong(0, b);        // ver/flags
-        long nEntries = converted.Entries() + m_Table64.Entries();
-        WriteLong(nEntries, b+4);
+        Write32(0, b);        // ver/flags
+        Write32(static_cast<uint32_t>(converted.Entries() + m_Table64.Entries()), b+4);
         hr = pCO->Append(b, 8);
         if (SUCCEEDED(hr))
-        {
             hr = converted.Write(pCO);
-        }
         if (SUCCEEDED(hr))
-        {
             hr = m_Table64.Write(pCO);
-        }
 
         pCO->Close();
     } else if (m_Table32.Entries() > 0) {
         // 32-bit atom
-        smart_ptr<Atom> pCO = patm->CreateAtom('stco');
+        auto const pCO = Atom->CreateAtom('stco');
         BYTE b[8];
-        WriteLong(0, b);        // ver/flags
-        WriteLong(m_Table32.Entries(), b+4);
+        Write32(0, b);        // ver/flags
+        Write32(static_cast<uint32_t>(m_Table32.Entries()), b+4);
         hr = pCO->Append(b, 8);
         if (SUCCEEDED(hr))
         {
@@ -1716,12 +1447,6 @@ ChunkOffsetIndex::Write(Atom* patm)
         pCO->Close();
     }
     return hr;
-}
-
-SyncIndex::SyncIndex()
-: m_bAllSync(true),
-  m_nSamples(0)
-{
 }
 
 void 
@@ -1752,18 +1477,18 @@ SyncIndex::Add(bool bSync)
 }
 
 HRESULT 
-SyncIndex::Write(Atom* patm)
+SyncIndex::Write(std::shared_ptr<Atom> const& Atom)
 {
     HRESULT hr = S_OK;
 
     // if all syncs, create no table
     if (!m_bAllSync)
     {
-        smart_ptr<Atom> pss = patm->CreateAtom('stss');
+        auto const pss = Atom->CreateAtom('stss');
 
         BYTE b[8];
-        WriteLong(0, b);    // ver/flags
-        WriteLong(m_Syncs.Entries(), b+4);
+        Write32(0, b);    // ver/flags
+        Write32(static_cast<uint32_t>(m_Syncs.Entries()), b+4);
         hr = pss->Append(b, 8);
         if (SUCCEEDED(hr))
         {
