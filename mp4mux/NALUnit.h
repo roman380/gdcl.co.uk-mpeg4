@@ -23,14 +23,14 @@ typedef unsigned long ULONG;
 class NALUnit
 {
 public:
-    NALUnit();
+    NALUnit() = default;
 	NALUnit(const BYTE* pStart, int len)
     {
         m_pStart = m_pStartCodeStart = pStart;
         m_cBytes = len;
         ResetBitstream();
     }
-	virtual ~NALUnit() {}
+	~NALUnit() = default;
 
 	// assignment copies a pointer into a fixed buffer managed elsewhere. We do not copy the data
 	NALUnit(const NALUnit& r)
@@ -60,11 +60,8 @@ public:
 		NAL_AUD					= 9,
     };
 
-    // identify a NAL unit within a buffer.
-    // If LengthSize is non-zero, it is the number of bytes
-    // of length field we expect. Otherwise, we expect start-code
-    // delimiters.
-    bool Parse(const BYTE* pBuffer, int cSpace, int LengthSize, bool bEnd);
+    bool Parse(uint8_t const* pBuffer, size_t cSpace);
+    bool Parse(uint8_t const* pBuffer, size_t cSpace, unsigned int LengthSize);
     
     eNALType Type()
     {
@@ -75,19 +72,18 @@ public:
         return eNALType(m_pStart[0] & 0x1F);
     }
     
-    int Length()
+    size_t Length() const
     {
         return m_cBytes;
     }
-
-    const BYTE* Start()
+    uint8_t const* Start() const
     {
         return m_pStart;
     }
 
     // bitwise access to data
     void ResetBitstream();
-    void Skip(int nBits);
+    void Skip(unsigned int nBits);
 
     unsigned long GetWord(int nBits);
     unsigned long GetUE();
@@ -100,20 +96,19 @@ public:
 
 
 private:
-    bool GetStartCode(const BYTE*& pBegin, const BYTE*& pStart, int& cRemain);
+    bool GetStartCode(const BYTE*& pBegin, const BYTE*& pStart, size_t& cRemain);
 
 private:
 	const BYTE* m_pStartCodeStart;
-    const BYTE* m_pStart;
-    int m_cBytes;
+    const BYTE* m_pStart = nullptr;
+    size_t m_cBytes = 0u;
 
     // bitstream access
-    int m_idx;
-    int m_nBits;
+    size_t m_idx;
+    size_t m_nBits;
     BYTE m_byte;
-    int m_cZeros;
+    size_t m_cZeros;
 };
-
 
 
 // simple parser for the Sequence parameter set things that we need

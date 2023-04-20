@@ -8,6 +8,7 @@
 
 // Insert your headers here
 #define WIN32_LEAN_AND_MEAN		// Exclude rarely-used stuff from Windows headers
+#define NOMINMAX
 
 // truncation of name in debug info (long template names)
 #pragma warning(disable:4786)
@@ -24,13 +25,20 @@ _COM_SMARTPTR_TYPEDEF(IMediaSeeking, IID_IMediaSeeking);
 _COM_SMARTPTR_TYPEDEF(IMemAllocator, IID_IMemAllocator);
 
 #include <assert.h>
+
 #include <list>
 #include <vector>
+#include <iterator>
+#include <utility>
+
 using namespace std;
 
 #pragma warning(pop)
 
 #include "smartptr.h"
+
+#include <wil\resource.h>
+#include <wil\com.h>
 
 #if defined(WITH_DIRECTSHOWSPY)
 	// NOTE: This enables DirectShow Spy integration to review filter graphs being created;

@@ -15,14 +15,8 @@
 
 // --- core NAL Unit implementation ------------------------------
 
-NALUnit::NALUnit()
-: m_pStart(NULL),
-  m_cBytes(0)
-{
-}
-
 bool
-NALUnit::GetStartCode(const BYTE*& pBegin, const BYTE*& pStart, int& cRemain)
+NALUnit::GetStartCode(const BYTE*& pBegin, const BYTE*& pStart, size_t& cRemain)
 {
     // start code is any number of 00 followed by 00 00 01
     // We need to record the first 00 in pBegin and the first byte
@@ -30,7 +24,7 @@ NALUnit::GetStartCode(const BYTE*& pBegin, const BYTE*& pStart, int& cRemain)
     // if no start code is found, pStart and cRemain should be unchanged.
 
     const BYTE* pThis = pStart;
-    int cBytes = cRemain;
+    size_t cBytes = cRemain;
 
     pBegin = NULL;
     while (cBytes>= 4)
@@ -59,57 +53,46 @@ NALUnit::GetStartCode(const BYTE*& pBegin, const BYTE*& pStart, int& cRemain)
     return false;
 }
 
-bool 
-NALUnit::Parse(const BYTE* pBuffer, int cSpace, int LengthSize, bool bEnd)
+bool NALUnit::Parse(uint8_t const* pBuffer, size_t cSpace)
 {
+    m_cBytes = 0;
+    ResetBitstream();
+    const BYTE* pBegin;
+    if (GetStartCode(pBegin, pBuffer, cSpace))
+    {
+        m_pStart = pBuffer;
+		m_pStartCodeStart = pBegin;
+
+        // either we find another startcode, or we continue to the
+        // buffer end (if this is the last block of data)
+        if (GetStartCode(pBegin, pBuffer, cSpace))
+        {
+            m_cBytes = pBegin - m_pStart;
+            return true;
+        }
+        // current element extends to end of buffer
+        m_cBytes = cSpace;
+        return true;
+    }
+    return false;
+}
+bool NALUnit::Parse(uint8_t const* pBuffer, size_t cSpace, unsigned int LengthSize)
+{
+    WI_ASSERT(LengthSize == 4);
     // if we get the start code but not the whole
     // NALU, we can return false but still have the length property valid
     m_cBytes = 0;
 
     ResetBitstream();
-
-    if (LengthSize > 0)
+	m_pStartCodeStart = pBuffer;
+    if (LengthSize > cSpace)
+        return false;
+    m_cBytes = _byteswap_ulong(*reinterpret_cast<uint32_t const*>(pBuffer));
+    pBuffer += sizeof (uint32_t);
+    if ((m_cBytes+LengthSize) <= cSpace)
     {
-		m_pStartCodeStart = pBuffer;
-
-        if (LengthSize > cSpace)
-        {
-            return false;
-        }
-
-        m_cBytes = 0;
-        for (int i = 0; i < LengthSize; i++)
-        {
-            m_cBytes <<= 8;
-            m_cBytes += *pBuffer++;
-        }
-
-        if ((m_cBytes+LengthSize) <= cSpace)
-        {
-            m_pStart = pBuffer;
-            return true;
-        }
-    } else {
-        // this is not length-delimited: we must look for start codes
-        const BYTE* pBegin;
-        if (GetStartCode(pBegin, pBuffer, cSpace))
-        {
-            m_pStart = pBuffer;
-			m_pStartCodeStart = pBegin;
-
-            // either we find another startcode, or we continue to the
-            // buffer end (if this is the last block of data)
-            if (GetStartCode(pBegin, pBuffer, cSpace))
-            {
-                m_cBytes = int(pBegin - m_pStart);
-                return true;
-            } else if (bEnd)
-            {
-                // current element extends to end of buffer
-                m_cBytes = cSpace;
-                return true;
-            }
-        }
+        m_pStart = pBuffer;
+        return true;
     }
     return false;
 }
@@ -124,7 +107,7 @@ NALUnit::ResetBitstream()
 }
 
 void
-NALUnit::Skip(int nBits)
+NALUnit::Skip(unsigned int nBits)
 {
     if (nBits < m_nBits)
     {
