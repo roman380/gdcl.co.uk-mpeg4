@@ -25,6 +25,9 @@ $BasePath = $PSScriptRoot
 $RepositoryPath = "$BasePath"
 $BuildDirectoryName = 'bin'
 
+$BuildBinary = $true
+$BuildSetup = $true
+
 $Release = $true
 $Date = Get-Date -Format "yyyyMMdd"
 $Zip = "C:\Program Files\7-Zip\7z"
@@ -35,16 +38,27 @@ if (!(Test-Path "$RepositoryPath\$BuildDirectoryName")) {
     New-Item -Path $RepositoryPath -Name $BuildDirectoryName -ItemType Directory
 }
 
-$Platforms | ForEach-Object {
-    $Platform = $_
-    $Configurations | ForEach-Object {
-        $Configuration = $_
-        Write-Host "Configuration $Configuration, Platform $Platform"
-        $Build = Start-Process "msbuild.exe" -ArgumentList "`"mp4.sln`" /t:$Type /p:Configuration=`"$Configuration`";Platform=`"$Platform`" /nodeReuse:false" -WorkingDirectory $RepositoryPath -PassThru -NoNewWindow -Wait
-        $ExitCode = $Build.ExitCode
-        Write-Host "Build ExitCode $ExitCode"
-        if($ExitCode -ne 0) {
-            throw "Failed to build Configuration $Configuration, Platform $Platform"
+if($BuildBinary) {
+    $Platforms | ForEach-Object {
+        $Platform = $_
+        $Configurations | ForEach-Object {
+            $Configuration = $_
+            Write-Host "Configuration $Configuration, Platform $Platform"
+            $Build = Start-Process "msbuild.exe" -ArgumentList "`"mp4.sln`" /t:$Type /p:Configuration=`"$Configuration`";Platform=`"$Platform`" /nodeReuse:false" -WorkingDirectory $RepositoryPath -PassThru -NoNewWindow -Wait
+            $ExitCode = $Build.ExitCode
+            Write-Host "Build ExitCode $ExitCode"
+            if($ExitCode -ne 0) {
+                throw "Failed to build Configuration $Configuration, Platform $Platform"
+            }
         }
+    }
+}
+
+if($BuildSetup) {
+    $Build = Start-Process "C:\Program Files (x86)\NSIS\makensisw.exe" -ArgumentList "`"$RepositoryPath\install\Setup.nsi`"" -WorkingDirectory $RepositoryPath -PassThru -NoNewWindow -Wait
+    $ExitCode = $Build.ExitCode
+    Write-Host "Makensisw ExitCode $ExitCode"
+    if($ExitCode -ne 0) {
+        throw "Failed to build setup"
     }
 }
