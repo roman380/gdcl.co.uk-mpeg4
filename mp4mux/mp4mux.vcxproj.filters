@@ -163,9 +163,6 @@
     <ClInclude Include="alloc.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="logger.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="Bitstream.h">
       <Filter>Header Files</Filter>
     </ClInclude>

@@ -19,7 +19,6 @@
 #include "MovieWriter.h"
 #include "nalunit.h"
 #include "Bitstream.h"
-#include "logger.h"
 
 #pragma comment(lib, "wmcodecdspuuid.lib")
 #pragma comment(lib, "strmiids.lib")

@@ -12,7 +12,6 @@
 #include "stdafx.h"
 #include "MovieWriter.h"
 #include "TypeHandler.h"
-#include "logger.h"
 
 MovieWriter::MovieWriter(AtomWriter* pContainer)
 : m_Container(pContainer),
@@ -894,7 +893,7 @@ MediaChunk::Write(std::shared_ptr<Atom> const& Atom)
 	// add chunk position to index
 	m_pTrack->IndexChunk(posChunk, nSamples);
 
-	LOG((TEXT("Writing %ld samples to track"), nSamples));
+	DbgLog((LOG_TRACE, 4, TEXT("Writing %ld samples to track"), nSamples));
 
 	return S_OK;
 }
