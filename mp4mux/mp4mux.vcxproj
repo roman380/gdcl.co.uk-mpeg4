@@ -95,7 +95,6 @@
     <PostBuildEvent />
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="Bitstream.cpp" />
     <ClCompile Include="MovieWriter.cpp" />
     <ClCompile Include="mp4mux.cpp" />
     <ClCompile Include="MuxFilter.cpp" />
