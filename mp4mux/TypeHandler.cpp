@@ -10,6 +10,7 @@
 
 #include <utility>
 #include <vector>
+#include <optional>
 
 #include <dvdmedia.h>
 #include <mmreg.h>  // for a-law and u-law G.711 audio types
@@ -2067,20 +2068,28 @@ WaveHandler::Truncate(IMediaSample* pSample, REFERENCE_TIME tNewStart)
 class MP4BitstreamWriter : public BitstreamWriter
 {
 public:
-	MP4BitstreamWriter(void) : 
-		BitstreamWriter(m_bits, sizeof(m_bits)) {}
-	
-	MP4BitstreamWriter(BYTE *pData, int cbData) : 
-		BitstreamWriter(pData, cbData) {}
+	MP4BitstreamWriter() : 
+		BitstreamWriter(m_PrivateData, sizeof(m_PrivateData)) {}
 
 	//void WriteLanguage(LPCSTR pszLanguage);
 	
-	HRESULT AppendTo(std::shared_ptr<Atom> const& Atom, long cbLength = -1);
-	void AppendTo(Descriptor* pDesc, long cbLength = -1);
-
+	void AppendTo(std::shared_ptr<Atom> const& Atom, std::optional<size_t> DataSize = std::nullopt)
+	{
+		WI_ASSERT(Atom);
+		WI_ASSERT(m_Data);
+		WI_ASSERT(DataSize.value_or(ByteLeft()) <= (m_BitCount >> 3));
+		THROW_IF_FAILED(Atom->Append(m_Data, DataSize.value_or(ByteLeft())));
+	}
+	void AppendTo(Descriptor* Descriptor)
+	{
+		WI_ASSERT(Descriptor);
+		WI_ASSERT(m_Data);
+		WI_ASSERT(ByteLeft() <= (m_BitCount >> 3));
+		Descriptor->Append(m_Data, ByteLeft());
+	}
 
 protected:
-	BYTE m_bits[256];
+	uint8_t m_PrivateData[256];
 };
 	
 /*
@@ -2106,30 +2115,6 @@ void MP4BitstreamWriter::WriteLanguage(LPCSTR pszLanguage)
 					// language:5 [3]	= ISO-639-2/T language code
 }
 */
-
-HRESULT MP4BitstreamWriter::AppendTo(std::shared_ptr<Atom> const& Atom, long cbLength)
-{
-	ASSERT(Atom);
-	ASSERT(m_Data);
-
-	if (cbLength < 0)
-		cbLength = ByteLeft();
-
-	ASSERT(cbLength <= static_cast<long>(m_BitCount >> 3));
-	return Atom->Append(m_Data, cbLength);
-}
-
-void MP4BitstreamWriter::AppendTo(Descriptor* pDesc, long cbLength)
-{
-	ASSERT(pDesc);
-	ASSERT(m_Data);
-
-	if (cbLength < 0)
-		cbLength = ByteLeft();
-
-	ASSERT(cbLength <= static_cast<long>(m_BitCount >> 3));
-	pDesc->Append(m_Data, cbLength);
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 // MPEG-2 Video support
@@ -2488,18 +2473,18 @@ BOOL AC3StreamInfo::Parse(const BYTE* pData, int cbData)
 
 	bsr.Skip(16);					// crc1:16
 
-	fscod = bsr.Read(2);			// fscod:2 - Sampling rate: 00=48K, 01=44.1K, 10=32K, 11=reserved
+	fscod = static_cast<int>(bsr.Read(2));			// fscod:2 - Sampling rate: 00=48K, 01=44.1K, 10=32K, 11=reserved
 
 	if (fscod == 0x3)
 		return FALSE;
 
-	frmsizcod = bsr.Read(6);		// frmsizecod:6 - # of words before next syncword (see Table 4.13).
+	frmsizcod = static_cast<int>(bsr.Read(6));		// frmsizecod:6 - # of words before next syncword (see Table 4.13).
 
 	
 	// 4.3.2 - bsi - Bit stream information
-	bsid  = bsr.Read(5);			// bsid:5  - Bit stream identification
-	bsmod = bsr.Read(3);			// bsmod:3 - Bit stream mode
-	acmod = bsr.Read(3);			// acmod:3 - Audio coding mode
+	bsid  = static_cast<int>(bsr.Read(5));			// bsid:5  - Bit stream identification
+	bsmod = static_cast<int>(bsr.Read(3));			// bsmod:3 - Bit stream mode
+	acmod = static_cast<int>(bsr.Read(3));			// acmod:3 - Audio coding mode
 
 	// if 3 front channels, read {cmixlev}
 	if ((acmod & 0x1) && (acmod != 0x1)) 
@@ -2519,7 +2504,7 @@ BOOL AC3StreamInfo::Parse(const BYTE* pData, int cbData)
 		bsr.Skip(2);
 	}
 
-	lfeon = bsr.Read(1);
+	lfeon = static_cast<int>(bsr.Read(1));
 
 	return TRUE;
 }
@@ -2641,20 +2626,20 @@ bool EAC3StreamInfo::Parse(const BYTE* pData, int cbData)
 	int samplerate;
 	int numberOfBlocksPerSyncFrame;
 
-	strmtyp		= bsr.Read(2);
-    substreamid	= bsr.Read(3);
-    frmsiz		= bsr.Read(11);					// Frame size one less of 16-bit words
-    fscod		= bsr.Read(2);
+	strmtyp		= static_cast<int>(bsr.Read(2));
+    substreamid	= static_cast<int>(bsr.Read(3));
+    frmsiz		= static_cast<int>(bsr.Read(11));					// Frame size one less of 16-bit words
+    fscod		= static_cast<int>(bsr.Read(2));
     
 	if (fscod == 0x3) 
 	{
-        fscod2	   = bsr.Read(2);
+        fscod2	   = static_cast<int>(bsr.Read(2));
         numblkscod = 0x3;						// six blocks per frame
 		samplerate = aReducedSamplingRates[fscod2];
     } 
 	else 
 	{
-        numblkscod = bsr.Read(2);
+        numblkscod = static_cast<int>(bsr.Read(2));
 		samplerate = aSamplingRates[fscod];
     }
 
@@ -2667,9 +2652,9 @@ bool EAC3StreamInfo::Parse(const BYTE* pData, int cbData)
 
     bitrate = samplerate * frameSize * 8 / (numberOfBlocksPerSyncFrame * 256);
 	
-	acmod = bsr.Read(3);
-    lfeon = bsr.Read(1);
-    bsid  = bsr.Read(5);
+	acmod = static_cast<int>(bsr.Read(3));
+    lfeon = static_cast<int>(bsr.Read(1));
+    bsid  = static_cast<int>(bsr.Read(5));
     bsr.Skip(5);								// dialnorm
  
     bsr.SkipIfBitSet(8);						// compre; if (compre) {compr}
@@ -2684,7 +2669,7 @@ bool EAC3StreamInfo::Parse(const BYTE* pData, int cbData)
 	{
         if (bsr.Read(1))						// if (chanmape) 
 		{
-            chanmap = bsr.Read(16);				// {chanmap}
+            chanmap = static_cast<int>(bsr.Read(16));				// {chanmap}
         }
     }
  
@@ -2721,7 +2706,7 @@ bool EAC3StreamInfo::Parse(const BYTE* pData, int cbData)
  
             bsr.SkipIfBitSet(6);				// extpgmscle; if (extpgmscle) {extpgmscl}
  
-            int mixdef = bsr.Read(2);
+            int mixdef = static_cast<int>(bsr.Read(2));
  
             if (mixdef == 0x1)					// mixing option 2
 			{
@@ -2733,7 +2718,7 @@ bool EAC3StreamInfo::Parse(const BYTE* pData, int cbData)
             } 
 			else if (mixdef == 0x3)				// mixing option 4
 			{
-                int mixdeflen = bsr.Read(5);
+                int mixdeflen = static_cast<int>(bsr.Read(5));
  
                 if (bsr.Read(1))				// mixdata2e
 				{
@@ -2802,7 +2787,7 @@ bool EAC3StreamInfo::Parse(const BYTE* pData, int cbData)
  
     if (bsr.Read(1))							// infomdate - informational metadata
 	{ 
-        bsmod = bsr.Read(3);
+        bsmod = static_cast<int>(bsr.Read(3));
 
 		// Skip everything else, not used.
     }
@@ -2917,7 +2902,6 @@ void DolbyDigitalPlusHandler::WriteDescriptor(std::shared_ptr<Atom> const& Atom,
 	// F.6 - EC3SpecificBox
 	int num_ind_sub = 0;
 	int bitrate = 0;
-	int cBytes = 0;
 	int num_dep_sub;
 	int chan_loc;
 
@@ -2954,7 +2938,7 @@ void DolbyDigitalPlusHandler::WriteDescriptor(std::shared_ptr<Atom> const& Atom,
 		bitrate += it->bitrate;
 	}
 
-	cBytes = bsw.ByteLeft();
+	auto const cBytes = bsw.ByteLeft();
 
 	bsw.Position(0);
 	bsw.Write(bitrate / 1000, 13);	// data_rate:13 in Kb/s

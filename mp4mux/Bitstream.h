@@ -59,7 +59,7 @@ public:
         {
             uint8_t const Bit = 0x80 >> (m_Position & 7);
             auto& Data = m_Data[m_Position >> 3];
-            if(Value & (1 << (BitIndex - 1)))
+            if(Value & (static_cast<uintptr_t>(1u) << (BitIndex - 1)))
                 Data |= Bit;
             else
                 Data &= ~Bit;

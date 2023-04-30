@@ -188,55 +188,54 @@ private:
 // --- indexing ---
 
 template <typename T, typename ValueType> 
-class ListOf
+class BlockList
 {
 public:
-    static size_t constexpr const EntriesPerBlock = 4096;
+    static size_t constexpr const g_BlockEntryCount = 16u << 10;
 
-    ListOf()
+    BlockList()
     {
         std::vector<ValueType> Vector;
-        Vector.reserve(EntriesPerBlock);
+        Vector.reserve(g_BlockEntryCount);
         m_Blocks.emplace_back(std::move(Vector));
     }
 
     void Append(ValueType Value)
     {
         WI_ASSERT(!m_Blocks.empty());
-        if (m_Blocks.back().size() >= EntriesPerBlock)
+        if (m_Blocks.back().size() >= g_BlockEntryCount)
         {
             std::vector<ValueType> Vector;
-            Vector.reserve(EntriesPerBlock);
+            Vector.reserve(g_BlockEntryCount);
             m_Blocks.emplace_back(std::move(Vector));
         }
         auto& Block = m_Blocks.back();
         Block.emplace_back(static_cast<T*>(this)->Transform(Value));
     }
-    HRESULT Write(std::shared_ptr<Atom> const& Atom)
+    void Write(std::shared_ptr<Atom> const& Atom)
     {
         for(auto&& Block: m_Blocks)
-            RETURN_IF_FAILED(Atom->Append(reinterpret_cast<uint8_t const*>(Block.data()), Block.size() * sizeof (ValueType)));
-        return S_OK;
+            THROW_IF_FAILED(Atom->Append(reinterpret_cast<uint8_t const*>(Block.data()), Block.size() * sizeof (ValueType)));
     }
     size_t Entries() const
     {
-        return ((m_Blocks.size() - 1) * EntriesPerBlock) + m_Blocks.back().size();
+        return ((m_Blocks.size() - 1) * g_BlockEntryCount) + m_Blocks.back().size();
     }
     ValueType Entry(size_t Index) const
     {
         if(Index >= Entries())
             return 0;
         auto Iterator = m_Blocks.cbegin();
-        std::advance(Iterator, Index / EntriesPerBlock);
+        std::advance(Iterator, Index / g_BlockEntryCount);
         auto const& Block = *Iterator;
-        return static_cast<T const*>(this)->Transform(Block[Index % EntriesPerBlock]);
+        return static_cast<T const*>(this)->Transform(Block[Index % g_BlockEntryCount]);
     }
 
 private:
     std::list<std::vector<ValueType>> m_Blocks;
 };
 
-class ListOfLongs : public ListOf<ListOfLongs, uint32_t>
+class Uint32List : public BlockList<Uint32List, uint32_t>
 {
 public:
     static uint32_t Transform(uint32_t Value)
@@ -245,7 +244,7 @@ public:
     }
 };
 
-class ListOfI64 : public ListOf<ListOfI64, uint64_t>
+class Uint64List : public BlockList<Uint64List, uint64_t>
 {
 public:
     static uint64_t Transform(uint64_t Value)
@@ -258,21 +257,54 @@ public:
 // scheme for some index tables; instead of a list of values, consecutive
 // identical values are grouped, so you get a list of <count, value> pairs.
 // Used for CTTS and STTS
-class ListOfPairs
+class RunLengthUint32List
 {
 public:
-    void Append(long l);
-    HRESULT Write(std::shared_ptr<Atom> const& Atom);
-    long Entries() const { return m_cEntries; }
+    void Append(uint32_t Value)
+    {
+        m_ValueCount++;
+        if(m_Count)
+        {
+            if(Value != m_Value)
+            {
+                m_Table.Append(static_cast<uint32_t>(m_Count));
+                m_Table.Append(m_Value);
+                //m_Count = 0;
+            } else
+            {
+                m_Count++;
+                return;
+            }
+        }
+        m_Value = Value;
+        m_Count = 1;
+    }
+    void Write(std::shared_ptr<Atom> const& Atom)
+    {
+        if(m_Count > 0)
+        {
+            m_Table.Append(static_cast<uint32_t>(m_Count));
+            m_Table.Append(m_Value);
+            //m_Count = 0;
+        }
+        // ver/flags == 0
+        // nEntries
+        // pairs of <count, value>
+        BYTE b[8] { };
+        Write32(static_cast<uint32_t>(m_Table.Entries() / 2), b + 4); // entry count is count of pairs
+        THROW_IF_FAILED(Atom->Append(b, 8));
+        m_Table.Write(Atom);
+    }
+    size_t Entries() const 
+    { 
+        return m_ValueCount; 
+    }
+
 private:
-    ListOfLongs m_Table;
-
-    // total entries
-    long m_cEntries;
-
-    // current pair not in table
-    long m_lValue = 0;
-    long m_lCount = 0;
+    size_t m_ValueCount = 0; // Values
+    uint32_t m_Value = 0; // Current Value
+    size_t m_Count = 0; // Current Count
+    Uint32List m_Table;
 };
 
 // sample size index -- table of <count, size> pairs
@@ -280,18 +312,70 @@ private:
 class SizeIndex
 {
 public:
-    void Add(long cBytes);
-    void AddMultiple(long cBytes, long count);
-    HRESULT Write(std::shared_ptr<Atom> const& Atom);
+    void Add(size_t DataSize)
+    {
+        // if all sizes are the same, we only need a single count/size entry.
+        // Otherwise we need one size for each entry
+        if(m_ValueCount == 0) // first sample
+        {
+            m_DataSize = DataSize;
+            m_Count = 1;
+        } else 
+        if(m_Count > 0)
+        {
+            // still accumulating identical sizes
+            if(DataSize != m_DataSize)
+            {
+                for(size_t Index = 0; Index < m_Count; Index++) // different -- need to create an entry for every one so far
+                    m_Table.Append(static_cast<uint32_t>(m_DataSize));
+                m_Count = 0;
+                m_Table.Append(static_cast<uint32_t>(DataSize)); // add this sample
+            } else 
+                m_Count++;
+        } else 
+            m_Table.Append(static_cast<uint32_t>(DataSize)); // we are creating a separate entry for each sample
+        m_ValueCount++;
+    }
+    void Add(size_t DataSize, size_t Count)
+    {
+        if(m_ValueCount == 0) // first entry
+        {
+            m_DataSize = DataSize;
+            m_Count = Count;
+            m_ValueCount = Count;
+        } else 
+        if(m_Count > 0 && DataSize == m_DataSize)
+        {
+            m_Count += Count;
+            m_ValueCount += Count;
+        } else
+        {
+            for(size_t Index = 0; Index < Count; Index++) // not worth trying to optimise this, but make sure it works if we ever get here.
+                Add(DataSize);
+        }
+    }
+    void Write(std::shared_ptr<Atom> const& Atom)
+    {
+        auto const StszAtom = Atom->CreateAtom('stsz');
+        // ver/flags = 0
+        // size
+        // count
+        // if size == 0, list of <count> sizes
+        BYTE b[12] { };
+        if(m_Table.Entries() == 0)
+            Write32(static_cast<uint32_t>(m_DataSize), b + 4); // this size field is left 0 if we are creating a size entry for each sample
+        Write32(static_cast<uint32_t>(m_ValueCount), b + 8);
+        THROW_IF_FAILED(StszAtom->Append(b, 12));
+        if(m_Table.Entries() > 0)
+            m_Table.Write(StszAtom);
+        THROW_IF_FAILED(StszAtom->Close());
+    }
+
 private:
-    ListOfLongs m_Table;
-
-    // current pair not in table
-    long m_cBytesCurrent = 0;
-    long m_nCurrent = 0;
-
-    // total samples
-    long m_nSamples = 0;
+    size_t m_ValueCount = 0;
+    size_t m_DataSize = 0;
+    size_t m_Count = 0;
+    Uint32List m_Table;
 };
 
 // sample duration table -- table of <count, duration> pairs
@@ -313,7 +397,31 @@ public:
     void AddOldFormat(int count);
     void SetOldIndexStart(REFERENCE_TIME tStart);
     HRESULT WriteEDTS(std::shared_ptr<Atom> const& Atom, long scale);
-    HRESULT WriteTable(std::shared_ptr<Atom> const& Atom);
+    void WriteTable(std::shared_ptr<Atom> const& Atom)
+    {
+        if(m_nSamples <= 0)
+            return;
+        if(m_nSamples <= mode_decide_count) // do nothing if no samples at all
+            ModeDecide();
+        if(!m_bCTTS)
+        {
+            // the final sample duration has not been recorded -- use the stop time
+            if(ToScale(m_tStopLast) > m_TotalDuration)
+                AddDuration(static_cast<long>(ToScale(m_tStopLast) - m_TotalDuration));
+            else
+                // NOTE: We still need some duration recorded, to avoid stts/stsz discrepancy at the very least
+                AddDuration(1);
+        }
+        auto const SttsAtom = Atom->CreateAtom('stts');
+        m_STTS.Write(SttsAtom);
+        THROW_IF_FAILED(SttsAtom->Close());
+        if(m_bCTTS)
+        {
+            auto const CttsAtom = Atom->CreateAtom('ctts');
+            m_CTTS.Write(CttsAtom);
+            THROW_IF_FAILED(CttsAtom->Close());
+        }
+    }
     REFERENCE_TIME Duration() const
     {
         return m_tStopLast;
@@ -366,10 +474,8 @@ private:
     void ModeDecide();
     void AppendCTTSMode(REFERENCE_TIME tStart, REFERENCE_TIME tEnd);
 
-
-private:
     long m_scale;
-    ListOfPairs m_STTS;
+    RunLengthUint32List m_STTS;
     REFERENCE_TIME m_tStartFirst;
     REFERENCE_TIME m_tStartLast;
     REFERENCE_TIME m_tStopLast;
@@ -382,7 +488,7 @@ private:
     int m_nSamples;
 
     // for CTTS calculation
-    ListOfPairs m_CTTS;
+    RunLengthUint32List m_CTTS;
     bool m_bCTTS;
 
     // look at the first few samples to decide whether to use
@@ -398,21 +504,44 @@ private:
 
 // index of samples per chunk.
 // table of triplets <first chunk number, samples per chunk, data reference>
-class SamplesPerChunkIndex
+class SampleToChunkIndex
 {
 public:
-    SamplesPerChunkIndex(long dataref) : 
-        m_dataref(dataref)
+    SampleToChunkIndex(uint32_t sample_description_index = 1) : 
+        m_sample_description_index(sample_description_index)
     {
     }
 
-    void Add(long nSamples);
-    HRESULT Write(std::shared_ptr<Atom> const& Atom);
+    void Add(uint32_t samples_per_chunk)
+    {
+        if(m_samples_per_chunk != samples_per_chunk) // make a new entry if the old one does not match
+        {
+            // the entry is <chunk nr, samples per chunk, data ref>
+            // The Chunk Nr is one-based
+            m_Table.Append(m_ChunkIndex); // first_chunk
+            m_Table.Append(samples_per_chunk); // samples_per_chunk
+            m_Table.Append(m_sample_description_index); // sample_description_index
+            m_samples_per_chunk = samples_per_chunk;
+        }
+        m_ChunkIndex++;
+    }
+    void Write(std::shared_ptr<Atom> const& Atom)
+    {
+        auto const StscAtom = Atom->CreateAtom('stsc'); // 8.18 Sample To Chunk Box
+        // ver/flags = 0
+        // count of entries
+        //    triple <first chunk, samples per chunk, sample_description_index>
+        BYTE b[8] { };
+        Write32(static_cast<uint32_t>(m_Table.Entries() / 3), b + 4);
+        THROW_IF_FAILED(StscAtom->Append(b, 8));
+        m_Table.Write(StscAtom);
+    }
+
 private:
-    long m_dataref;
-    ListOfLongs m_Table;
-    long m_nTotalChunks = 0;
-    long m_nSamples = 0;    //last entry
+    uint32_t const m_sample_description_index;
+    uint32_t m_ChunkIndex = 1;
+    uint32_t m_samples_per_chunk = 0;    //last entry
+    Uint32List m_Table;
 };
 
 // index of chunk offsets
@@ -423,28 +552,90 @@ private:
 // We use 32-bit offsets until we see a 64-bit offset.
 // The 32-bit offset table will be converted on Write
 // if needed.
-
 class ChunkOffsetIndex
 {
 public:
-    void Add(LONGLONG posChunk);
-    HRESULT Write(std::shared_ptr<Atom> const& Atom);
+    void Add(uint64_t ChunkPosition)
+    {
+        // use the 32-bit table until we see a value > 2Gb, then always use the 64-bit table for the remainder.
+        if(ChunkPosition >= 0x80000000 || m_Table64.Entries() > 0)
+            m_Table64.Append(ChunkPosition);
+        else
+            m_Table32.Append(static_cast<uint32_t>(ChunkPosition));
+    }
+    void Write(std::shared_ptr<Atom> const& Atom)
+    {
+        // did we need 64-bit offsets?
+        if(m_Table64.Entries() > 0)
+        {
+            Uint64List Table64; // convert 32-bit entries to 64-bit
+            for(size_t Index = 0; Index < m_Table32.Entries(); Index++)
+                Table64.Append(m_Table32.Entry(Index));
+            
+            auto const Co64Atom = Atom->CreateAtom('co64'); // 8.19 Chunk Offset Box
+            BYTE b[8] { };
+            //Write32(0, b); // ver/flags
+            Write32(static_cast<uint32_t>(Table64.Entries() + m_Table64.Entries()), b + 4);
+            THROW_IF_FAILED(Co64Atom->Append(b, 8));
+            Table64.Write(Co64Atom);
+            m_Table64.Write(Co64Atom);
+            THROW_IF_FAILED(Co64Atom->Close());
+            return;
+        }
+        if(m_Table32.Entries() > 0)
+        {
+            auto const StcoAtom = Atom->CreateAtom('stco'); // 8.19 Chunk Offset Box
+            BYTE b[8] { };
+            //Write32(0, b); // ver/flags
+            Write32(static_cast<uint32_t>(m_Table32.Entries()), b + 4);
+            THROW_IF_FAILED(StcoAtom->Append(b, 8));
+            m_Table32.Write(StcoAtom);
+            THROW_IF_FAILED(StcoAtom->Close());
+        }
+    }
+
 private:
-    ListOfLongs m_Table32;
-    ListOfI64 m_Table64;
+    Uint32List m_Table32;
+    Uint64List m_Table64;
 };
 
 // map of key (sync-point) samples
-class SyncIndex
+class SyncSampleIndex
 {
 public:
-    void Add(bool bSync);
-    HRESULT Write(std::shared_ptr<Atom> const& Atom);
+    void Add(bool Sync)
+    {
+        if(!m_AnyNotSync)
+        {
+            if(!Sync)
+            {
+                m_AnyNotSync = true; // no longer all syncs - 
+                for(uint32_t SampleIndex = 0; SampleIndex < m_SampleIndex; SampleIndex++) // must create table entries for all syncs so far
+                    m_Table.Append(SampleIndex + 1); // 1-based sample index
+                // but we don't need to record this one as it is not sync
+            }
+        } else
+        if(Sync)
+            m_Table.Append(m_SampleIndex + 1);
+        m_SampleIndex++;
+    }
+    void Write(std::shared_ptr<Atom> const& Atom)
+    {
+        if(!m_AnyNotSync)
+            return; // if all syncs, create no table
+        auto const StssAtom = Atom->CreateAtom('stss'); // 8.20 Sync Sample Box
+        BYTE b[8] { };
+        //Write32(0, b); // ver/flags
+        Write32(static_cast<uint32_t>(m_Table.Entries()), b + 4);
+        THROW_IF_FAILED(StssAtom->Append(b, 8));
+        m_Table.Write(StssAtom);
+        THROW_IF_FAILED(StssAtom->Close());
+    }
 
 private:
-    long m_nSamples = 0;
-    bool m_bAllSync = true;
-    ListOfLongs m_Syncs;
+    bool m_AnyNotSync = false;
+    uint32_t m_SampleIndex = 0;
+    Uint32List m_Table;
 };
 
 // one media track within a file.
@@ -475,14 +666,14 @@ public:
         return m_tLast;
     }
 
-    void IndexChunk(LONGLONG posChunk, size_t nSamples);
+    void IndexChunk(uint64_t ChunkPosition, size_t nSamples);
     void IndexSample(bool bSync, REFERENCE_TIME tStart, REFERENCE_TIME tStop, size_t cBytes);
-    void OldIndex(LONGLONG posChunk, size_t cBytes);
+    void OldIndex(uint64_t ChunkPosition, size_t cBytes);
     void SetOldIndexStart(REFERENCE_TIME tStart)
     {
         m_Durations.SetOldIndexStart(tStart);
     }
-    HRESULT Close(std::shared_ptr<Atom> const& Atom);
+    void Close(std::shared_ptr<Atom> const& Atom);
 
     REFERENCE_TIME SampleDuration() const
     {
@@ -557,9 +748,9 @@ private:
 
     SizeIndex m_Sizes;
     DurationIndex m_Durations;
-    SamplesPerChunkIndex m_SC;
+    SampleToChunkIndex m_SC;
     ChunkOffsetIndex m_CO;
-    SyncIndex m_Syncs;
+    SyncSampleIndex m_Syncs;
 
     // IAMStreamControl start offset
     // -- set to first StartAt time, if explicit,
