@@ -742,35 +742,6 @@ void TrackWriter::NotifyMediaSampleWrite(wil::com_ptr<IMediaSample> const& Media
 
 // -- Media Chunk ----------------------
 
-HRESULT 
-MediaChunk::AddSample(IMediaSample* MediaSample)
-{
-    REFERENCE_TIME tStart, tEnd;
-    auto const hr = MediaSample->GetTime(&tStart, &tEnd);
-    if(hr == VFW_S_NO_STOP_TIME)
-        tEnd = tStart + 1;
-    if(SUCCEEDED(hr))
-    {
-        // NOTE: H264 samples from large frames may be broken across several buffers, with the time set on the last sample
-
-        if (!m_cBytes)
-        {
-            m_tStart = tStart;
-            m_tEnd = tEnd;
-        } else 
-        {
-            if (tStart < m_tStart)
-                m_tStart = tStart;
-            if (tEnd > m_tEnd)
-                m_tEnd = tEnd;
-        }
-    }
-
-    m_cBytes += static_cast<size_t>(MediaSample->GetActualDataLength());
-    m_MediaSampleList.push_back(MediaSample);
-    return S_OK;
-}
-
 HRESULT
 MediaChunk::Write(std::shared_ptr<Atom> const& Atom)
 {
@@ -783,7 +754,7 @@ MediaChunk::Write(std::shared_ptr<Atom> const& Atom)
 
         // ensure that we don't break in the middle of a sample (Maxim Kartavenkov)
         const size_t MAX_PCM_SIZE = 22050;
-        size_t max_bytes = MAX_PCM_SIZE - (MAX_PCM_SIZE % m_pTrack->Handler()->BlockAlign());
+        size_t max_bytes = MAX_PCM_SIZE - (MAX_PCM_SIZE % m_Track->Handler()->BlockAlign());
 
         size_t cAvail = 0;
         BYTE* pBuffer = NULL;
@@ -802,27 +773,27 @@ MediaChunk::Write(std::shared_ptr<Atom> const& Atom)
                 REFERENCE_TIME tStart, tStop;
                 if (SUCCEEDED(pSample->GetTime(&tStart, &tStop)))
                 {
-                    m_pTrack->SetOldIndexStart(tStart);
+                    m_Track->SetOldIndexStart(tStart);
                 }
             }
             auto const cThis = std::min<size_t>(max_bytes - cBytes, cAvail);
 
             size_t cActual = 0;
-            m_pTrack->Handler()->WriteData(Atom, pBuffer, cThis, &cActual);
+            m_Track->Handler()->WriteData(Atom, pBuffer, cThis, &cActual);
             cBytes += cActual;
             cAvail -= cActual;
             pBuffer += cActual;
 
             if (cBytes >= max_bytes)
             {
-                m_pTrack->OldIndex(ChunkPosition, cBytes);
+                m_Track->OldIndex(ChunkPosition, cBytes);
                 ChunkPosition = static_cast<uint64_t>(Atom->Position() + Atom->Length());
                 cBytes = 0;
             }
         }
         if (cBytes)
         {
-            m_pTrack->OldIndex(ChunkPosition, cBytes);
+            m_Track->OldIndex(ChunkPosition, cBytes);
         }
         return S_OK;
     }
@@ -851,7 +822,7 @@ MediaChunk::Write(std::shared_ptr<Atom> const& Atom)
         BYTE* pBuffer;
         pSample->GetPointer(&pBuffer);
         size_t cActual = 0;
-        m_pTrack->Handler()->WriteData(Atom, pBuffer, pSample->GetActualDataLength(), &cActual);
+        m_Track->Handler()->WriteData(Atom, pBuffer, pSample->GetActualDataLength(), &cActual);
         cBytes += cActual;
         REFERENCE_TIME tStart, tEnd;
         HRESULT hr = pSample->GetTime(&tStart, &tEnd);
@@ -860,40 +831,30 @@ MediaChunk::Write(std::shared_ptr<Atom> const& Atom)
         if (SUCCEEDED(hr))
         {
             // this is the last buffer in the sample
-            m_pTrack->IndexSample(bSync, tStart, tEnd, cBytes);
+            m_Track->IndexSample(bSync, tStart, tEnd, cBytes);
             // reset for new sample
             bSync = false;
             cBytes = 0;
             nSamples++;
         }
 
-        m_pTrack->NotifyMediaSampleWrite(pSample, cActual);
+        m_Track->NotifyMediaSampleWrite(pSample, cActual);
     }
 
     // add chunk position to index
-    m_pTrack->IndexChunk(ChunkPosition, nSamples);
+    m_Track->IndexChunk(ChunkPosition, nSamples);
 
     DbgLog((LOG_TRACE, 4, TEXT("Writing %ld samples to track"), nSamples));
 
     return S_OK;
 }
 
-bool 
-MediaChunk::IsFull(REFERENCE_TIME tMaxDur) const
-{
-    if(Length() > MAX_INTERLEAVE_SIZE)
-        return true;
-    if(GetDuration() > tMaxDur)
-        return true;
-    return false;
-}
-
 REFERENCE_TIME 
 MediaChunk::GetDuration() const
 {
-    if(m_pTrack->IsAudio())
+    if(m_Track->IsAudio())
         return m_tEnd - m_tStart;
-    return m_MediaSampleList.size() * m_pTrack->SampleDuration();
+    return m_MediaSampleList.size() * m_Track->SampleDuration();
 }
 
 // -----

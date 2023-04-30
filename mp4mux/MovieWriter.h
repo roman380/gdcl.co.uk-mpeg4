@@ -150,11 +150,38 @@ class MediaChunk
 {
 public:
     MediaChunk(TrackWriter* Track) :
-        m_pTrack(Track)
+        m_Track(Track)
     {
+        WI_ASSERT(m_Track);
     }
 
-    HRESULT AddSample(IMediaSample* pSample);
+    HRESULT AddSample(IMediaSample* MediaSample)
+    {
+        REFERENCE_TIME tStart, tEnd;
+        auto const hr = MediaSample->GetTime(&tStart, &tEnd);
+        if(hr == VFW_S_NO_STOP_TIME)
+            tEnd = tStart + 1;
+        if(SUCCEEDED(hr))
+        {
+            // NOTE: H264 samples from large frames may be broken across several buffers, with the time set on the last sample
+
+            if (!m_cBytes)
+            {
+                m_tStart = tStart;
+                m_tEnd = tEnd;
+            } else 
+            {
+                if (tStart < m_tStart)
+                    m_tStart = tStart;
+                if (tEnd > m_tEnd)
+                    m_tEnd = tEnd;
+            }
+        }
+
+        m_cBytes += static_cast<size_t>(MediaSample->GetActualDataLength());
+        m_MediaSampleList.push_back(MediaSample);
+        return S_OK;
+    }
     HRESULT Write(std::shared_ptr<Atom> const& Atom);
     size_t Length() const
     {
@@ -169,7 +196,14 @@ public:
     {
         return m_MediaSampleList.size();
     }
-    bool IsFull(REFERENCE_TIME tMaxDur) const;
+    bool IsFull(REFERENCE_TIME tMaxDur) const
+    {
+        if(Length() > MAX_INTERLEAVE_SIZE)
+            return true;
+        if(GetDuration() > tMaxDur)
+            return true;
+        return false;
+    }
     REFERENCE_TIME GetDuration() const;
     void SetOldIndexFormat()
     {
@@ -177,7 +211,7 @@ public:
     }
 
 private:
-    TrackWriter* m_pTrack;
+    TrackWriter* m_Track;
     REFERENCE_TIME m_tStart = 0;
     REFERENCE_TIME m_tEnd = 0;
     bool m_bOldIndexFormat = false;
