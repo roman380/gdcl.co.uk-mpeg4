@@ -95,7 +95,6 @@
     <PostBuildEvent />
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="Bitstream.cpp" />
     <ClCompile Include="MovieWriter.cpp" />
     <ClCompile Include="mp4mux.cpp" />
     <ClCompile Include="MuxFilter.cpp" />
@@ -116,7 +115,6 @@
     <ClInclude Include="alloc.h" />
     <ClInclude Include="Bitstream.h" />
     <ClInclude Include="DebugTrace.h" />
-    <ClInclude Include="logger.h" />
     <ClInclude Include="MovieWriter.h" />
     <ClInclude Include="MuxFilter.h" />
     <ClInclude Include="NALUnit.h" />

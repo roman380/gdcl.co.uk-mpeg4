@@ -495,7 +495,7 @@ public:
                         ClassFactory->CreateInstance(nullptr, IID_PPV_ARGS(BaseFilter.put()));
                     }
                     auto const MuxFilter = BaseFilter.query<IMuxFilter>(); 
-                    THROW_IF_FAILED(MuxFilter->SetCombineOutputCapacity(32 << 20));
+                    THROW_IF_FAILED(MuxFilter->SetCombineOutputCapacity(32u << 20));
                     THROW_IF_FAILED(FilterGraph2->AddFilter(BaseFilter.get(), L"Multiplexer"));
                     unsigned int Index = 0;
                     EnumeratePins(SourceBaseFilter, [&] (auto const& OutputPin) 

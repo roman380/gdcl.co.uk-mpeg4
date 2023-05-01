@@ -9,7 +9,6 @@
 #pragma once
 
 #include <utility>
-#include "logger.h"
 
 typedef std::pair<SSIZE_T, SSIZE_T> lock_t;
 typedef std::list<lock_t> lock_list_t;
@@ -39,7 +38,7 @@ public:
 	{
 		if ((m_cValid > 0) || !m_locks.empty())
 		{
-			LOG((TEXT("Allocate when not empty")));
+			DbgLog((LOG_TRACE, 4, TEXT("Allocate when not empty")));
 			return VFW_E_WRONG_STATE;
 		}
 		delete[] m_pBuffer;
@@ -50,7 +49,7 @@ public:
 		{
 			m_pBuffer = new BYTE[m_cSpace];
 		}
-		LOG((TEXT("Allocate %d bytes"), cSpace));
+		DbgLog((LOG_TRACE, 4, TEXT("Allocate %d bytes"), cSpace));
 		return S_OK;
 	}
 
@@ -59,7 +58,7 @@ public:
 		CAutoLock lock(&m_csLocks);
 		if ((c >= m_cValid) && m_locks.empty())
 		{
-			LOG((TEXT("Resetting idxRead in Consume")));
+			DbgLog((LOG_TRACE, 4, TEXT("Resetting idxRead in Consume")));
 			m_idxRead = 0;
 			m_cValid = 0;
 		} else 
@@ -69,7 +68,7 @@ public:
 			m_cValid -= c;
 		} else
 		{
-			LOG((TEXT("Consume not contiguous")));
+			DbgLog((LOG_TRACE, 4, TEXT("Consume not contiguous")));
 			return E_INVALIDARG;
 		}
 		return S_OK;
@@ -79,7 +78,7 @@ public:
 	{
 		if((p < m_pBuffer) || (p > (m_pBuffer + m_cSpace)) || (c > m_cSpace) || ((p+c) > (m_pBuffer + m_cSpace)))
 		{
-			LOG((TEXT("Invalid lock region")));
+			DbgLog((LOG_TRACE, 4, TEXT("Invalid lock region")));
 			return E_INVALIDARG;
 		}
 		SSIZE_T index = p - m_pBuffer;
@@ -87,11 +86,11 @@ public:
 		#if defined(_DEBUG) //&& FALSE
 			const SSIZE_T length = indexEnd - index;
 			m_cLocked += length;
-			LOG((TEXT("Locking region %d - %d (data = %d, total = %ld of %ld)"), index, indexEnd, length, m_cLocked, m_cSpace));
+			DbgLog((LOG_TRACE, 4, TEXT("Locking region %d - %d (data = %d, total = %ld of %ld)"), index, indexEnd, length, m_cLocked, m_cSpace));
 			if(m_cLocked > m_cbMaxData)
 				m_cbMaxData = m_cLocked;
 			if(m_cLocked == m_cSpace)
-				LOG((TEXT("100% of buffer space in use")));
+				DbgLog((LOG_TRACE, 4, TEXT("100% of buffer space in use")));
 		#endif
 		CAutoLock lock(&m_csLocks);
 		m_locks.push_back(lock_t(index, indexEnd));
@@ -101,7 +100,7 @@ public:
 	{
 		if ((p < m_pBuffer) || (p > (m_pBuffer + m_cSpace)) || (c > m_cSpace) || ((p+c) > (m_pBuffer + m_cSpace)))
 		{
-			LOG((TEXT("Invalid unlock region")));
+			DbgLog((LOG_TRACE, 4, TEXT("Invalid unlock region")));
 			return E_INVALIDARG;
 		}
 		SSIZE_T index = p - m_pBuffer;
@@ -114,21 +113,21 @@ public:
 				#if defined(_DEBUG) //&& FALSE
 					const SSIZE_T length = indexEnd - index;
 					m_cLocked -= length;
-					LOG((TEXT("Unlocking region %d - %d (data = %d, total = %ld of %ld)"), index, indexEnd, length, m_cLocked, m_cSpace));
+					DbgLog((LOG_TRACE, 4, TEXT("Unlocking region %d - %d (data = %d, total = %ld of %ld)"), index, indexEnd, length, m_cLocked, m_cSpace));
 				#endif
 				m_locks.erase(it);
 				m_evLocks.Set();
 				#if 0
 					if (!m_cValid && m_locks.empty())
 					{
-						LOG((TEXT("resetting idxRead on empty in Unlock")));
+						DbgLog((LOG_TRACE, 4, TEXT("resetting idxRead on empty in Unlock")));
 						m_idxRead = 0;
 					}
 				#endif
 				return S_OK;
 			}
 		}
-		LOG((TEXT("Lock not found in Unlock, len %d"), c));
+		DbgLog((LOG_TRACE, 4, TEXT("Lock not found in Unlock, len %d"), c));
 		return E_INVALIDARG;
 	}
 
@@ -146,13 +145,13 @@ public:
 
 				if (cMaxBytes > m_cSpace)
 				{
-					LOG((TEXT("Whole buffer too small for packet %d"), cMaxBytes));
+					DbgLog((LOG_TRACE, 4, TEXT("Whole buffer too small for packet %d"), cMaxBytes));
 					return NULL;
 				}
 				SSIZE_T index = m_idxRead + m_cValid;
 				if ((m_cSpace - index) < cMaxBytes)
 				{
-					LOG((TEXT("Allocator wrapping to start")));
+					DbgLog((LOG_TRACE, 4, TEXT("Allocator wrapping to start")));
 					index = 0;
 				}
 				bool bLocked = true;
@@ -164,7 +163,7 @@ public:
 						if (m_cValid && SearchLocks(m_idxRead, m_idxRead + m_cValid))
 						{
 							bLocked = true;
-							LOG((TEXT("Waiting for locks on valid bytes %d"), m_cValid));
+							DbgLog((LOG_TRACE, 4, TEXT("Waiting for locks on valid bytes %d"), m_cValid));
 						}
 						else
 						{
@@ -188,7 +187,7 @@ public:
 
 			if (!m_evLocks.Check())
 			{
-				LOG((TEXT("Timeout in Append")));
+				DbgLog((LOG_TRACE, 4, TEXT("Timeout in Append")));
 			}
 		}
 	}
@@ -219,7 +218,7 @@ public:
 
 	void Abort()
 	{
-		LOG((TEXT("Max locked data: %d of %d"), m_cbMaxData, m_cSpace));
+		DbgLog((LOG_TRACE, 4, TEXT("Max locked data: %d of %d"), m_cbMaxData, m_cSpace));
 		CAutoLock lock(&m_csLocks);
 		m_bAbort = true;
 		m_evLocks.Set();

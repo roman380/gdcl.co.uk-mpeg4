@@ -15,9 +15,6 @@
 #include <wmcodecdsp.h> // MEDIASUBTYPE_DOLBY_DDPLUS
 #include <sstream>
 #include "MuxFilter.h"
-#include "logger.h"
-
-Logger theLogger(TEXT("MP4Mux.txt"));
 
 // --- registration tables ----------------
 
@@ -649,7 +646,7 @@ MuxInput::NotifyAllocator(IMemAllocator* pAlloc, BOOL bReadOnly)
     // WARN: Thread unsafe
     ALLOCATOR_PROPERTIES propAlloc;
     pAlloc->GetProperties(&propAlloc);
-    LOG((TEXT("[%d] NotifyAllocator: cbBuffer = %ld, cBuffers = %ld"), m_index, propAlloc.cbBuffer, propAlloc.cBuffers));
+    DbgLog((LOG_TRACE, 4, TEXT("[%d] NotifyAllocator: cbBuffer = %ld, cBuffers = %ld"), m_index, propAlloc.cbBuffer, propAlloc.cBuffers));
     if(m_pCopyAlloc)
     {
         m_pCopyAlloc->Release();
