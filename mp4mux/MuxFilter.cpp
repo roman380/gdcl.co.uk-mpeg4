@@ -309,6 +309,15 @@ void Mpeg4Mux::NotifyMediaSampleWrite(uint32_t TrackIndex, uint64_t DataPosition
     WI_ASSERT(MediaSample);
     if(!MediaSample)
         return; // No Media Sample
+    {
+        // WARN: m_csFilter is locked here, not sure by whome exactly
+        if(m_Site)
+        {
+            REFERENCE_TIME StartTime, StopTime;
+            WI_VERIFY_SUCCEEDED(MediaSample->GetTime(&StartTime, &StopTime));
+            WI_VERIFY_SUCCEEDED(m_Site->NotifyMediaSampleWrite(TrackIndex, StartTime, StopTime, DataPosition, static_cast<uint32_t>(DataSize)));
+        }
+    }
     CAutoLock TemporaryIndexFileLock(&m_TemporaryIndexFileCriticalSection);
     if(!m_TemporaryIndexFile.Active())
         return; // No Index File

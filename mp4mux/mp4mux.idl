@@ -44,6 +44,16 @@ library GdclMp4Mux
 	};
 	[
 		object,
+		uuid(67ADDB4B-4CA0-4AEE-A3B2-C516BD32A251),
+		nonextensible,
+		pointer_default(unique)
+	]
+	interface IMuxFilterSite : IUnknown
+	{
+		HRESULT NotifyMediaSampleWrite([in] UINT32 TrackIndex, [in] INT64 StartTime, [in] INT64 StopTime, [in] UINT64 DataPosition, [in] UINT32 DataSize);
+	};
+	[
+		object,
 		uuid(6CE45967-F228-4F7B-8B93-83DC599618CA),
 		nonextensible,
 		pointer_default(unique)
@@ -59,6 +69,7 @@ library GdclMp4Mux
 		HRESULT SetComment([in] BSTR Comment);
 		HRESULT SetTemporaryIndexFileDirectory([in] BSTR TemporaryIndexFileDirectory);
 		HRESULT SetCombineOutputCapacity([in] ULONG CombineOutputCapacity);
+		HRESULT SetSite([in] IMuxFilterSite* Site);
 		#if !defined(NDEBUG) || defined(DEVELOPMENT)
 			HRESULT SetSkipClose([in] BOOL SkipClose);
 		#endif

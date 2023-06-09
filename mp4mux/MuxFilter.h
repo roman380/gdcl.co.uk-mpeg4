@@ -544,6 +544,17 @@ public:
         CATCH_RETURN();
         return S_OK;
     }
+    IFACEMETHOD(SetSite)(IMuxFilterSite* Site) override
+    {
+        //TRACE(L"this 0x%p, CombineOutputCapacity %u\n", this, CombineOutputCapacity);
+        try
+        {
+            CAutoLock lock(&m_csFilter);
+            m_Site = Site;
+        }
+        CATCH_RETURN();
+        return S_OK;
+    }
     #if !defined(NDEBUG) || defined(DEVELOPMENT)
         STDMETHOD(SetSkipClose)(BOOL SkipClose) override
         {
@@ -566,6 +577,7 @@ private:
 
 private:
     mutable CCritSec m_csFilter;
+    wil::com_ptr<IMuxFilterSite> m_Site;
     std::string m_Comment;
     mutable CCritSec m_csTracks;
     MuxOutput* m_pOutput;
