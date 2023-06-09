@@ -416,46 +416,24 @@ MuxInput::Receive(IMediaSample* pSample)
         }
     #endif // defined(WITH_DIRECTSHOWSPY)
 
-    if(pSample->IsPreroll() != S_FALSE)
-        return S_OK;
-    HRESULT hr = CBaseInputPin::Receive(pSample);
-    if (hr != S_OK)
-    {
-        return hr;
-    }
-    // WARN: m_pTrack needs m_pLock protection for thread safety (see #2)
-    if (!m_pTrack)
-        return E_FAIL;
+    RETURN_HR_IF_EXPECTED(S_OK, pSample->IsPreroll() != S_FALSE);
+    auto const ReceiveResult = CBaseInputPin::Receive(pSample);
+    RETURN_HR_IF_EXPECTED(ReceiveResult, ReceiveResult != S_OK);
+    RETURN_HR_IF_NULL(E_FAIL, m_pTrack); // WARN: m_pTrack needs m_pLock protection for thread safety (see #2)
+    RETURN_HR_IF_EXPECTED(S_OK, ShouldDiscard(pSample));
 
-    if (ShouldDiscard(pSample))
+    if(m_pCopyAlloc)
     {
-        return S_OK;
+        auto const CopyMediaSample = m_pCopyAlloc->AppendAndWrap(pSample);
+        RETURN_HR_IF_NULL(E_FAIL, CopyMediaSample);
+        RETURN_IF_FAILED(CopySampleProps(pSample, CopyMediaSample.get()));
+        CAutoLock Lock(m_pLock);
+        RETURN_HR_IF_NULL(E_FAIL, m_pTrack); // HOTFIX: m_pTrack needs m_pLock protection for thread safety, we have to make sure m_pTrack is still valid (see #2)
+        return m_pTrack->Add(CopyMediaSample.get());
     }
-    if (m_pCopyAlloc)
-    {
-        BYTE* pSrc;
-        pSample->GetPointer(&pSrc);
-        IMediaSamplePtr pOurs;
-        hr = m_pCopyAlloc->AppendAndWrap(pSrc, pSample->GetActualDataLength(), &pOurs);
-        if (SUCCEEDED(hr))
-        {
-            hr = CopySampleProps(pSample, pOurs);
-        }
-        if (SUCCEEDED(hr))
-        {
-            // HOTFIX: m_pTrack needs m_pLock protection for thread safety, we have to make sure m_pTrack is still valid (see #2)
-            CAutoLock Lock(m_pLock);
-            if(!m_pTrack)
-                return E_FAIL;
-            hr = m_pTrack->Add(pOurs);
-        }
-        return hr;
-    }
-
-    // HOTFIX: m_pTrack needs m_pLock protection for thread safety, we have to make sure m_pTrack is still valid (see #2)
+   
     CAutoLock Lock(m_pLock);
-    if(!m_pTrack)
-        return E_FAIL;
+    RETURN_HR_IF_NULL(E_FAIL, m_pTrack); // HOTFIX: m_pTrack needs m_pLock protection for thread safety, we have to make sure m_pTrack is still valid (see #2)
     return m_pTrack->Add(pSample);
 }
 
