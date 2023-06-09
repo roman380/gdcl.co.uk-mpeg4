@@ -428,7 +428,7 @@ void MovieWriter::RecordBitrate(size_t index, long bitrate)
     }
 }
 
-void MovieWriter::NotifyMediaSampleWrite(INT TrackIndex, wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize)
+void MovieWriter::NotifyMediaSampleWrite(uint32_t TrackIndex, wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize)
 {
     if(m_Container)
         m_Container->NotifyMediaSampleWrite(TrackIndex, MediaSample, DataSize);
@@ -436,7 +436,7 @@ void MovieWriter::NotifyMediaSampleWrite(INT TrackIndex, wil::com_ptr<IMediaSamp
 
 // -------- Track -------------------------------------------------------
 
-TrackWriter::TrackWriter(MovieWriter* pMovie, int index, std::unique_ptr<TypeHandler>&& TypeHandler, bool NotifyMediaSampleWrite)
+TrackWriter::TrackWriter(MovieWriter* pMovie, uint32_t index, std::unique_ptr<TypeHandler>&& TypeHandler, bool NotifyMediaSampleWrite)
 : m_pMovie(pMovie),
   m_index(index),
   m_pType(std::move(TypeHandler)),
@@ -540,26 +540,19 @@ TrackWriter::GetHeadTime(LONGLONG* ptHead) const
     return true;
 }
 
-HRESULT 
+void
 TrackWriter::WriteHead(std::shared_ptr<Atom> const& Atom)
 {
     CAutoLock lock(&m_csQueue);
     if(m_Queue.empty())
-        return E_FAIL;
+        return;
     auto const Chunk = m_Queue.front();
     m_Queue.pop_front();
-
     REFERENCE_TIME tStart, tEnd;
     Chunk->GetTime(&tStart, &tEnd);
-
-    // the chunk will call back to us to index
-    // the samples during this call, once
-    // the media data is successfully written
-    auto const hr = Chunk->Write(Atom);
-    if (FAILED(hr))
-        return hr;
+    // NOTE: the chunk will call back to us to index the samples during this call, once the media data is successfully written
+    LOG_IF_FAILED(Chunk->Write(Atom));
     m_tLast = tEnd;
-    return hr;
 }
 
 void 
@@ -745,6 +738,11 @@ void TrackWriter::NotifyMediaSampleWrite(wil::com_ptr<IMediaSample> const& Media
 HRESULT
 MediaChunk::Write(std::shared_ptr<Atom> const& Atom)
 {
+    WI_ASSERT(Atom);
+    #if !defined(NDEBUG)
+        WI_ASSERT(Atom->m_Type == 'mdat');
+    #endif
+
     // record chunk start position
     auto ChunkPosition = static_cast<uint64_t>(Atom->Position() + Atom->Length());
 
@@ -798,53 +796,43 @@ MediaChunk::Write(std::shared_ptr<Atom> const& Atom)
         return S_OK;
     }
 
-    // Remember that large H264 samples may be broken 
-    // across several buffers, with Sync flag at start and
-    // time on last buffer.
-    bool bSync = false;
-    size_t cBytes = 0;
-    size_t nSamples = 0;
+    // Remember that large H264 samples may be broken across several buffers, with Sync flag at start and time on last buffer
+    bool SyncPoint = false;
+    size_t MacroSampleDataSize = 0; 
+    size_t SampleCount = 0;
 
     // loop once through the samples writing the data
-    for (auto it = m_MediaSampleList.begin(); it != m_MediaSampleList.end(); it++)
+    for(auto&& Sample: m_MediaSampleList)
     {
-        auto const& pSample = *it;
-
-        // record positive sync flag, but for
-        // multiple-buffer samples, only one sync flag will be present
-        // so don't overwrite with later negatives.
-        if (pSample->IsSyncPoint() == S_OK)
-        {
-            bSync = true;
-        }
+        // record positive sync flag, but for multiple-buffer samples, only one sync flag will be present so don't overwrite with later negatives
+        if(Sample->IsSyncPoint() == S_OK)
+            SyncPoint = true;
 
         // write payload, including any transformation (eg BSF to length-prepended)
-        BYTE* pBuffer;
-        pSample->GetPointer(&pBuffer);
-        size_t cActual = 0;
-        m_Track->Handler()->WriteData(Atom, pBuffer, pSample->GetActualDataLength(), &cActual);
-        cBytes += cActual;
-        REFERENCE_TIME tStart, tEnd;
-        HRESULT hr = pSample->GetTime(&tStart, &tEnd);
-        if (hr == VFW_S_NO_STOP_TIME)
-            tEnd = tStart + 1;
-        if (SUCCEEDED(hr))
+        BYTE* Data;
+        WI_VERIFY_SUCCEEDED(Sample->GetPointer(&Data));
+        size_t DataSize = 0;
+        LOG_IF_FAILED(m_Track->Handler()->WriteData(Atom, Data, Sample->GetActualDataLength(), &DataSize));
+        MacroSampleDataSize += DataSize;
+        REFERENCE_TIME StartTime, StopTime;
+        auto const Result = Sample->GetTime(&StartTime, &StopTime);
+        if(Result == VFW_S_NO_STOP_TIME)
+            StopTime = StartTime + 1;
+        if(SUCCEEDED(Result)) // this is the last buffer in the sample
         {
-            // this is the last buffer in the sample
-            m_Track->IndexSample(bSync, tStart, tEnd, cBytes);
-            // reset for new sample
-            bSync = false;
-            cBytes = 0;
-            nSamples++;
+            m_Track->IndexSample(SyncPoint, StartTime, StopTime, MacroSampleDataSize);
+            SyncPoint = false; // this is the last buffer in the sample
+            MacroSampleDataSize = 0;
+            SampleCount++;
         }
 
-        m_Track->NotifyMediaSampleWrite(pSample, cActual);
+        m_Track->NotifyMediaSampleWrite(Sample, DataSize);
     }
 
     // add chunk position to index
-    m_Track->IndexChunk(ChunkPosition, nSamples);
+    m_Track->IndexChunk(ChunkPosition, SampleCount);
 
-    DbgLog((LOG_TRACE, 4, TEXT("Writing %ld samples to track"), nSamples));
+    DbgLog((LOG_TRACE, 4, TEXT("Writing %ld samples to track"), SampleCount));
 
     return S_OK;
 }

@@ -304,7 +304,7 @@ Mpeg4Mux::Pause()
     return CBaseFilter::Pause();
 }
 
-void Mpeg4Mux::NotifyMediaSampleWrite(int TrackIndex, uint64_t DataPosition, size_t DataSize, wil::com_ptr<IMediaSample> const& MediaSample)
+void Mpeg4Mux::NotifyMediaSampleWrite(uint32_t TrackIndex, uint64_t DataPosition, size_t DataSize, wil::com_ptr<IMediaSample> const& MediaSample)
 { 
     WI_ASSERT(MediaSample);
     if(!MediaSample)
@@ -328,24 +328,19 @@ void Mpeg4Mux::NotifyMediaSampleWrite(int TrackIndex, uint64_t DataPosition, siz
 
 // ------- input pin -------------------------------------------------------
 
-MuxInput::MuxInput(Mpeg4Mux* pFilter, CCritSec* pLock, HRESULT* phr, LPCWSTR pName, int index)
+MuxInput::MuxInput(Mpeg4Mux* pFilter, CCritSec* pLock, HRESULT* phr, LPCWSTR pName, uint32_t index)
 : m_pMux(pFilter),
   m_index(index),
-  m_pTrack(NULL),
-  m_pCopyAlloc(NULL),
-  m_nMaximalCopyBufferCapacity(200 << 20), // 200 MB
+  m_nMaximalCopyBufferCapacity(200u << 20), // 200 MB
   CBaseInputPin(NAME("MuxInput"), pFilter, pLock, phr, pName)
 {
-    ZeroMemory(&m_StreamInfo, sizeof(m_StreamInfo));
 }
 
 MuxInput::~MuxInput()
 {
     ASSERT(!m_pAllocator);
     if (m_pCopyAlloc)
-    {
         m_pCopyAlloc->Release();
-    }
 }
 
 HRESULT 
@@ -925,7 +920,7 @@ MuxOutput::Replace(int64_t Position, uint8_t const* Data, size_t DataSize)
     return S_OK;
 }
     
-void MuxOutput::NotifyMediaSampleWrite(int TrackIndex, wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize)
+void MuxOutput::NotifyMediaSampleWrite(uint32_t TrackIndex, wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize)
 { 
     WI_ASSERT(MediaSample);
     // NOTE: nDataSize is effectively written number of bytes, which might be different from media sample data in case respective handler added certain formatting
