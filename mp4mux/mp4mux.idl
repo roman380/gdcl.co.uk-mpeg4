@@ -50,6 +50,7 @@ library GdclMp4Mux
 	]
 	interface IMuxFilterSite : IUnknown
 	{
+		HRESULT NotifyMediaSampleReceive([in] IMuxInputPin* InputPin, [in] UINT32 TrackIndex, [in] IUnknown* MediaSampleUnknown);
 		HRESULT NotifyMediaSampleWrite([in] UINT32 TrackIndex, [in] INT64 StartTime, [in] INT64 StopTime, [in] UINT64 DataPosition, [in] UINT32 DataSize);
 	};
 	[

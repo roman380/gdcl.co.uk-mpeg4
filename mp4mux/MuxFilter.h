@@ -394,6 +394,12 @@ public:
     void OnEOS();
     REFERENCE_TIME Start() { return m_tStart;}
 
+    wil::com_ptr<IMuxFilterSite> Site() const
+    {
+        CAutoLock Lock(&m_csFilter);
+        return m_Site;
+    }
+
     void NotifyMediaSampleWrite(uint32_t TrackIndex, uint64_t DataPosition, size_t DataSize, wil::com_ptr<IMediaSample> const& MediaSample);
 
     // we implement IMediaSeeking to allow encoding

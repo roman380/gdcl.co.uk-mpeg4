@@ -422,6 +422,10 @@ MuxInput::Receive(IMediaSample* pSample)
     RETURN_HR_IF_NULL(E_FAIL, m_pTrack); // WARN: m_pTrack needs m_pLock protection for thread safety (see #2)
     RETURN_HR_IF_EXPECTED(S_OK, ShouldDiscard(pSample));
 
+    auto const Site = m_pMux->Site();
+    if(Site)
+        LOG_IF_FAILED(Site->NotifyMediaSampleReceive(this, m_index, pSample));
+
     if(m_pCopyAlloc)
     {
         auto const CopyMediaSample = m_pCopyAlloc->AppendAndWrap(pSample);

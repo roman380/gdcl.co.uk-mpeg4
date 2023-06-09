@@ -62,6 +62,13 @@ typedef interface IMuxInputPin IMuxInputPin;
 #endif 	/* __IMuxInputPin_FWD_DEFINED__ */
 
 
+#ifndef __IMuxFilterSite_FWD_DEFINED__
+#define __IMuxFilterSite_FWD_DEFINED__
+typedef interface IMuxFilterSite IMuxFilterSite;
+
+#endif 	/* __IMuxFilterSite_FWD_DEFINED__ */
+
+
 #ifndef __IMuxFilter_FWD_DEFINED__
 #define __IMuxFilter_FWD_DEFINED__
 typedef interface IMuxFilter IMuxFilter;
@@ -318,6 +325,113 @@ EXTERN_C const IID IID_IMuxInputPin;
 #endif 	/* __IMuxInputPin_INTERFACE_DEFINED__ */
 
 
+#ifndef __IMuxFilterSite_INTERFACE_DEFINED__
+#define __IMuxFilterSite_INTERFACE_DEFINED__
+
+/* interface IMuxFilterSite */
+/* [unique][nonextensible][uuid][object] */ 
+
+
+EXTERN_C const IID IID_IMuxFilterSite;
+
+#if defined(__cplusplus) && !defined(CINTERFACE)
+    
+    MIDL_INTERFACE("67ADDB4B-4CA0-4AEE-A3B2-C516BD32A251")
+    IMuxFilterSite : public IUnknown
+    {
+    public:
+        virtual HRESULT STDMETHODCALLTYPE NotifyMediaSampleReceive( 
+            /* [in] */ IMuxInputPin *InputPin,
+            /* [in] */ UINT32 TrackIndex,
+            /* [in] */ IUnknown *MediaSampleUnknown) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE NotifyMediaSampleWrite( 
+            /* [in] */ UINT32 TrackIndex,
+            INT64 StartTime,
+            INT64 StopTime,
+            UINT64 DataPosition,
+            UINT32 DataSize) = 0;
+        
+    };
+    
+    
+#else 	/* C style interface */
+
+    typedef struct IMuxFilterSiteVtbl
+    {
+        BEGIN_INTERFACE
+        
+        DECLSPEC_XFGVIRT(IUnknown, QueryInterface)
+        HRESULT ( STDMETHODCALLTYPE *QueryInterface )( 
+            IMuxFilterSite * This,
+            /* [in] */ REFIID riid,
+            /* [annotation][iid_is][out] */ 
+            _COM_Outptr_  void **ppvObject);
+        
+        DECLSPEC_XFGVIRT(IUnknown, AddRef)
+        ULONG ( STDMETHODCALLTYPE *AddRef )( 
+            IMuxFilterSite * This);
+        
+        DECLSPEC_XFGVIRT(IUnknown, Release)
+        ULONG ( STDMETHODCALLTYPE *Release )( 
+            IMuxFilterSite * This);
+        
+        DECLSPEC_XFGVIRT(IMuxFilterSite, NotifyMediaSampleReceive)
+        HRESULT ( STDMETHODCALLTYPE *NotifyMediaSampleReceive )( 
+            IMuxFilterSite * This,
+            /* [in] */ IMuxInputPin *InputPin,
+            /* [in] */ UINT32 TrackIndex,
+            /* [in] */ IUnknown *MediaSampleUnknown);
+        
+        DECLSPEC_XFGVIRT(IMuxFilterSite, NotifyMediaSampleWrite)
+        HRESULT ( STDMETHODCALLTYPE *NotifyMediaSampleWrite )( 
+            IMuxFilterSite * This,
+            /* [in] */ UINT32 TrackIndex,
+            INT64 StartTime,
+            INT64 StopTime,
+            UINT64 DataPosition,
+            UINT32 DataSize);
+        
+        END_INTERFACE
+    } IMuxFilterSiteVtbl;
+
+    interface IMuxFilterSite
+    {
+        CONST_VTBL struct IMuxFilterSiteVtbl *lpVtbl;
+    };
+
+    
+
+#ifdef COBJMACROS
+
+
+#define IMuxFilterSite_QueryInterface(This,riid,ppvObject)	\
+    ( (This)->lpVtbl -> QueryInterface(This,riid,ppvObject) ) 
+
+#define IMuxFilterSite_AddRef(This)	\
+    ( (This)->lpVtbl -> AddRef(This) ) 
+
+#define IMuxFilterSite_Release(This)	\
+    ( (This)->lpVtbl -> Release(This) ) 
+
+
+#define IMuxFilterSite_NotifyMediaSampleReceive(This,InputPin,TrackIndex,MediaSampleUnknown)	\
+    ( (This)->lpVtbl -> NotifyMediaSampleReceive(This,InputPin,TrackIndex,MediaSampleUnknown) ) 
+
+#define IMuxFilterSite_NotifyMediaSampleWrite(This,TrackIndex,StartTime,StopTime,DataPosition,DataSize)	\
+    ( (This)->lpVtbl -> NotifyMediaSampleWrite(This,TrackIndex,StartTime,StopTime,DataPosition,DataSize) ) 
+
+#endif /* COBJMACROS */
+
+
+#endif 	/* C style interface */
+
+
+
+
+#endif 	/* __IMuxFilterSite_INTERFACE_DEFINED__ */
+
+
 #ifndef __IMuxFilter_INTERFACE_DEFINED__
 #define __IMuxFilter_INTERFACE_DEFINED__
 
@@ -357,6 +471,9 @@ EXTERN_C const IID IID_IMuxFilter;
         
         virtual HRESULT STDMETHODCALLTYPE SetCombineOutputCapacity( 
             /* [in] */ ULONG CombineOutputCapacity) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE SetSite( 
+            /* [in] */ IMuxFilterSite *Site) = 0;
         
     };
     
@@ -425,6 +542,11 @@ EXTERN_C const IID IID_IMuxFilter;
             IMuxFilter * This,
             /* [in] */ ULONG CombineOutputCapacity);
         
+        DECLSPEC_XFGVIRT(IMuxFilter, SetSite)
+        HRESULT ( STDMETHODCALLTYPE *SetSite )( 
+            IMuxFilter * This,
+            /* [in] */ IMuxFilterSite *Site);
+        
         END_INTERFACE
     } IMuxFilterVtbl;
 
@@ -474,6 +596,9 @@ EXTERN_C const IID IID_IMuxFilter;
 
 #define IMuxFilter_SetCombineOutputCapacity(This,CombineOutputCapacity)	\
     ( (This)->lpVtbl -> SetCombineOutputCapacity(This,CombineOutputCapacity) ) 
+
+#define IMuxFilter_SetSite(This,Site)	\
+    ( (This)->lpVtbl -> SetSite(This,Site) ) 
 
 #endif /* COBJMACROS */
 
