@@ -390,7 +390,7 @@ public:
     void OnDisconnect(int index);
     void OnConnect(int index);
     bool CanReceive(const CMediaType* pmt);
-    std::shared_ptr<TrackWriter> MakeTrack(int index, const CMediaType* pmt);
+    std::shared_ptr<TrackWriter> MakeTrack(uint32_t index, const CMediaType* pmt);
     void OnEOS();
     REFERENCE_TIME Start() { return m_tStart;}
 

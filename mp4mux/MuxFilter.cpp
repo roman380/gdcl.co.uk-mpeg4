@@ -190,11 +190,10 @@ Mpeg4Mux::CanReceive(const CMediaType* pmt)
 }
 
 std::shared_ptr<TrackWriter>
-Mpeg4Mux::MakeTrack(int index, const CMediaType* pmt)
+Mpeg4Mux::MakeTrack([[maybe_unused]] uint32_t index, const CMediaType* pmt)
 {
     CAutoLock lock(&m_csTracks);
-    UNREFERENCED_PARAMETER(index);
-    return m_pMovie->MakeTrack(pmt, m_TemporaryIndexFile.Active());
+    return m_pMovie->MakeTrack(pmt, m_TemporaryIndexFile.Active() || m_Site != nullptr); // WARN: m_Site thread safety
 }
 
 void 
@@ -422,15 +421,17 @@ MuxInput::Receive(IMediaSample* pSample)
     RETURN_HR_IF_NULL(E_FAIL, m_pTrack); // WARN: m_pTrack needs m_pLock protection for thread safety (see #2)
     RETURN_HR_IF_EXPECTED(S_OK, ShouldDiscard(pSample));
 
+    wil::com_ptr<IMediaSample> MediaSample = pSample;
+    static_assert(sizeof MediaSample == sizeof pSample);
     auto const Site = m_pMux->Site();
     if(Site)
-        LOG_IF_FAILED(Site->NotifyMediaSampleReceive(this, m_index, pSample));
+        LOG_IF_FAILED(Site->NotifyMediaSampleReceive(this, m_index, reinterpret_cast<IUnknown**>(MediaSample.addressof())));
 
     if(m_pCopyAlloc)
     {
-        auto const CopyMediaSample = m_pCopyAlloc->AppendAndWrap(pSample);
+        auto const CopyMediaSample = m_pCopyAlloc->AppendAndWrap(MediaSample.get());
         RETURN_HR_IF_NULL(E_FAIL, CopyMediaSample);
-        RETURN_IF_FAILED(CopySampleProps(pSample, CopyMediaSample.get()));
+        RETURN_IF_FAILED(CopySampleProps(MediaSample.get(), CopyMediaSample.get()));
         CAutoLock Lock(m_pLock);
         RETURN_HR_IF_NULL(E_FAIL, m_pTrack); // HOTFIX: m_pTrack needs m_pLock protection for thread safety, we have to make sure m_pTrack is still valid (see #2)
         return m_pTrack->Add(CopyMediaSample.get());
@@ -438,7 +439,7 @@ MuxInput::Receive(IMediaSample* pSample)
    
     CAutoLock Lock(m_pLock);
     RETURN_HR_IF_NULL(E_FAIL, m_pTrack); // HOTFIX: m_pTrack needs m_pLock protection for thread safety, we have to make sure m_pTrack is still valid (see #2)
-    return m_pTrack->Add(pSample);
+    return m_pTrack->Add(MediaSample.get());
 }
 
 // copy the input buffer to the output

@@ -343,14 +343,14 @@ EXTERN_C const IID IID_IMuxFilterSite;
         virtual HRESULT STDMETHODCALLTYPE NotifyMediaSampleReceive( 
             /* [in] */ IMuxInputPin *InputPin,
             /* [in] */ UINT32 TrackIndex,
-            /* [in] */ IUnknown *MediaSampleUnknown) = 0;
+            /* [out][in] */ IUnknown **MediaSampleUnknown) = 0;
         
         virtual HRESULT STDMETHODCALLTYPE NotifyMediaSampleWrite( 
             /* [in] */ UINT32 TrackIndex,
-            INT64 StartTime,
-            INT64 StopTime,
-            UINT64 DataPosition,
-            UINT32 DataSize) = 0;
+            /* [in] */ INT64 StartTime,
+            /* [in] */ INT64 StopTime,
+            /* [in] */ UINT64 DataPosition,
+            /* [in] */ UINT32 DataSize) = 0;
         
     };
     
@@ -381,16 +381,16 @@ EXTERN_C const IID IID_IMuxFilterSite;
             IMuxFilterSite * This,
             /* [in] */ IMuxInputPin *InputPin,
             /* [in] */ UINT32 TrackIndex,
-            /* [in] */ IUnknown *MediaSampleUnknown);
+            /* [out][in] */ IUnknown **MediaSampleUnknown);
         
         DECLSPEC_XFGVIRT(IMuxFilterSite, NotifyMediaSampleWrite)
         HRESULT ( STDMETHODCALLTYPE *NotifyMediaSampleWrite )( 
             IMuxFilterSite * This,
             /* [in] */ UINT32 TrackIndex,
-            INT64 StartTime,
-            INT64 StopTime,
-            UINT64 DataPosition,
-            UINT32 DataSize);
+            /* [in] */ INT64 StartTime,
+            /* [in] */ INT64 StopTime,
+            /* [in] */ UINT64 DataPosition,
+            /* [in] */ UINT32 DataSize);
         
         END_INTERFACE
     } IMuxFilterSiteVtbl;
