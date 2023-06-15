@@ -66,9 +66,8 @@ public:
     virtual HRESULT Replace(int64_t Position, uint8_t const* Data, size_t DataSize) = 0;
     virtual HRESULT Append(uint8_t const* Data, size_t DataSize) = 0;
 
-    virtual void NotifyMediaSampleWrite(int TrackIndex, wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize)
+    virtual void NotifyMediaSampleWrite([[maybe_unused]] uint32_t TrackIndex, [[maybe_unused]] wil::com_ptr<IMediaSample> const& MediaSample, [[maybe_unused]] size_t DataSize)
     { 
-        TrackIndex; MediaSample; DataSize;
     }
 };
 
@@ -82,6 +81,9 @@ public:
         m_Container(Container),
         m_Offset(Offset)
     {
+    #if !defined(NDEBUG)
+        m_Type = Type;
+    #endif
         // write the initial length and type dwords
         BYTE b[8];
         Write32(8, b);
@@ -135,10 +137,14 @@ public:
         return m_Container->Append(Data, DataSize);
     }
 
+    #if !defined(NDEBUG)
+        uint32_t m_Type;
+    #endif
+
 private:
     AtomWriter* m_Container;
-    bool m_Closed = false;
     int64_t m_Offset;
+    bool m_Closed = false;
     uint64_t m_DataSize = 0;
 };
 
@@ -676,7 +682,7 @@ private:
 class TrackWriter
 {
 public:
-    TrackWriter(MovieWriter* pMovie, int index, std::unique_ptr<TypeHandler>&& TypeHandler, bool NotifyMediaSampleWrite = false);
+    TrackWriter(MovieWriter* pMovie, uint32_t index, std::unique_ptr<TypeHandler>&& TypeHandler, bool NotifyMediaSampleWrite = false);
 
     HRESULT Add(IMediaSample* pSample);
 
@@ -693,7 +699,7 @@ public:
     void Stop(bool bFlush);
 
     bool GetHeadTime(LONGLONG* ptHead) const;
-    HRESULT WriteHead(std::shared_ptr<Atom> const& Atom);
+    void WriteHead(std::shared_ptr<Atom> const& Atom);
     REFERENCE_TIME LastWrite() const
     {
         CAutoLock lock(&m_csQueue);
@@ -737,7 +743,7 @@ public:
     {
         return m_pType;
     }
-    long ID() const
+    uint32_t ID() const
     {
         return m_index + 1;
     }
@@ -769,7 +775,7 @@ public:
 
 private:
     MovieWriter* m_pMovie;
-    int m_index;
+    uint32_t m_index;
     std::unique_ptr<TypeHandler> m_pType;
     bool m_NotifyMediaSampleWrite;
 
@@ -847,7 +853,7 @@ public:
     }
     void RecordBitrate(size_t index, long bitrate);
 
-    void NotifyMediaSampleWrite(INT TrackIndex, wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize);
+    void NotifyMediaSampleWrite(uint32_t TrackIndex, wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize);
 
 private:
     void MakeIODS(std::shared_ptr<Atom> const& pmoov);

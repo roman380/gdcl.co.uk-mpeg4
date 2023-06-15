@@ -190,11 +190,10 @@ Mpeg4Mux::CanReceive(const CMediaType* pmt)
 }
 
 std::shared_ptr<TrackWriter>
-Mpeg4Mux::MakeTrack(int index, const CMediaType* pmt)
+Mpeg4Mux::MakeTrack([[maybe_unused]] uint32_t index, const CMediaType* pmt)
 {
     CAutoLock lock(&m_csTracks);
-    UNREFERENCED_PARAMETER(index);
-    return m_pMovie->MakeTrack(pmt, m_TemporaryIndexFile.Active());
+    return m_pMovie->MakeTrack(pmt, m_TemporaryIndexFile.Active() || m_Site != nullptr); // WARN: m_Site thread safety
 }
 
 void 
@@ -304,11 +303,20 @@ Mpeg4Mux::Pause()
     return CBaseFilter::Pause();
 }
 
-void Mpeg4Mux::NotifyMediaSampleWrite(int TrackIndex, uint64_t DataPosition, size_t DataSize, wil::com_ptr<IMediaSample> const& MediaSample)
+void Mpeg4Mux::NotifyMediaSampleWrite(uint32_t TrackIndex, uint64_t DataPosition, size_t DataSize, wil::com_ptr<IMediaSample> const& MediaSample)
 { 
     WI_ASSERT(MediaSample);
     if(!MediaSample)
         return; // No Media Sample
+    {
+        // WARN: m_csFilter is locked here, not sure by whome exactly
+        if(m_Site)
+        {
+            REFERENCE_TIME StartTime, StopTime;
+            WI_VERIFY_SUCCEEDED(MediaSample->GetTime(&StartTime, &StopTime));
+            WI_VERIFY_SUCCEEDED(m_Site->NotifyMediaSampleWrite(TrackIndex, StartTime, StopTime, DataPosition, static_cast<uint32_t>(DataSize)));
+        }
+    }
     CAutoLock TemporaryIndexFileLock(&m_TemporaryIndexFileCriticalSection);
     if(!m_TemporaryIndexFile.Active())
         return; // No Index File
@@ -328,24 +336,19 @@ void Mpeg4Mux::NotifyMediaSampleWrite(int TrackIndex, uint64_t DataPosition, siz
 
 // ------- input pin -------------------------------------------------------
 
-MuxInput::MuxInput(Mpeg4Mux* pFilter, CCritSec* pLock, HRESULT* phr, LPCWSTR pName, int index)
+MuxInput::MuxInput(Mpeg4Mux* pFilter, CCritSec* pLock, HRESULT* phr, LPCWSTR pName, uint32_t index)
 : m_pMux(pFilter),
   m_index(index),
-  m_pTrack(NULL),
-  m_pCopyAlloc(NULL),
-  m_nMaximalCopyBufferCapacity(200 << 20), // 200 MB
+  m_nMaximalCopyBufferCapacity(200u << 20), // 200 MB
   CBaseInputPin(NAME("MuxInput"), pFilter, pLock, phr, pName)
 {
-    ZeroMemory(&m_StreamInfo, sizeof(m_StreamInfo));
 }
 
 MuxInput::~MuxInput()
 {
     ASSERT(!m_pAllocator);
     if (m_pCopyAlloc)
-    {
         m_pCopyAlloc->Release();
-    }
 }
 
 HRESULT 
@@ -412,47 +415,31 @@ MuxInput::Receive(IMediaSample* pSample)
         }
     #endif // defined(WITH_DIRECTSHOWSPY)
 
-    if(pSample->IsPreroll() != S_FALSE)
-        return S_OK;
-    HRESULT hr = CBaseInputPin::Receive(pSample);
-    if (hr != S_OK)
-    {
-        return hr;
-    }
-    // WARN: m_pTrack needs m_pLock protection for thread safety (see #2)
-    if (!m_pTrack)
-        return E_FAIL;
+    RETURN_HR_IF_EXPECTED(S_OK, pSample->IsPreroll() != S_FALSE);
+    auto const ReceiveResult = CBaseInputPin::Receive(pSample);
+    RETURN_HR_IF_EXPECTED(ReceiveResult, ReceiveResult != S_OK);
+    RETURN_HR_IF_NULL(E_FAIL, m_pTrack); // WARN: m_pTrack needs m_pLock protection for thread safety (see #2)
+    RETURN_HR_IF_EXPECTED(S_OK, ShouldDiscard(pSample));
 
-    if (ShouldDiscard(pSample))
-    {
-        return S_OK;
-    }
-    if (m_pCopyAlloc)
-    {
-        BYTE* pSrc;
-        pSample->GetPointer(&pSrc);
-        IMediaSamplePtr pOurs;
-        hr = m_pCopyAlloc->AppendAndWrap(pSrc, pSample->GetActualDataLength(), &pOurs);
-        if (SUCCEEDED(hr))
-        {
-            hr = CopySampleProps(pSample, pOurs);
-        }
-        if (SUCCEEDED(hr))
-        {
-            // HOTFIX: m_pTrack needs m_pLock protection for thread safety, we have to make sure m_pTrack is still valid (see #2)
-            CAutoLock Lock(m_pLock);
-            if(!m_pTrack)
-                return E_FAIL;
-            hr = m_pTrack->Add(pOurs);
-        }
-        return hr;
-    }
+    wil::com_ptr<IMediaSample> MediaSample = pSample;
+    static_assert(sizeof MediaSample == sizeof pSample);
+    auto const Site = m_pMux->Site();
+    if(Site)
+        LOG_IF_FAILED(Site->NotifyMediaSampleReceive(this, m_index, reinterpret_cast<IUnknown**>(MediaSample.addressof())));
 
-    // HOTFIX: m_pTrack needs m_pLock protection for thread safety, we have to make sure m_pTrack is still valid (see #2)
+    if(m_pCopyAlloc)
+    {
+        auto const CopyMediaSample = m_pCopyAlloc->AppendAndWrap(MediaSample.get());
+        RETURN_HR_IF_NULL(E_FAIL, CopyMediaSample);
+        RETURN_IF_FAILED(CopySampleProps(MediaSample.get(), CopyMediaSample.get()));
+        CAutoLock Lock(m_pLock);
+        RETURN_HR_IF_NULL(E_FAIL, m_pTrack); // HOTFIX: m_pTrack needs m_pLock protection for thread safety, we have to make sure m_pTrack is still valid (see #2)
+        return m_pTrack->Add(CopyMediaSample.get());
+    }
+   
     CAutoLock Lock(m_pLock);
-    if(!m_pTrack)
-        return E_FAIL;
-    return m_pTrack->Add(pSample);
+    RETURN_HR_IF_NULL(E_FAIL, m_pTrack); // HOTFIX: m_pTrack needs m_pLock protection for thread safety, we have to make sure m_pTrack is still valid (see #2)
+    return m_pTrack->Add(MediaSample.get());
 }
 
 // copy the input buffer to the output
@@ -925,7 +912,7 @@ MuxOutput::Replace(int64_t Position, uint8_t const* Data, size_t DataSize)
     return S_OK;
 }
     
-void MuxOutput::NotifyMediaSampleWrite(int TrackIndex, wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize)
+void MuxOutput::NotifyMediaSampleWrite(uint32_t TrackIndex, wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize)
 { 
     WI_ASSERT(MediaSample);
     // NOTE: nDataSize is effectively written number of bytes, which might be different from media sample data in case respective handler added certain formatting

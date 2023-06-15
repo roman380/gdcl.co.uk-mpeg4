@@ -89,10 +89,10 @@ class MuxInput
   public IMuxInputPin
 {
 public:
-    MuxInput(Mpeg4Mux* pFilter, CCritSec* pLock, HRESULT* phr, LPCWSTR pName, int index);
+    MuxInput(Mpeg4Mux* pFilter, CCritSec* pLock, HRESULT* phr, LPCWSTR pName, uint32_t index);
     ~MuxInput();
 
-    INT GetIndex() const
+    uint32_t GetIndex() const
     {
         return m_index;
     }
@@ -178,15 +178,15 @@ private:
 
 private:
     Mpeg4Mux* m_pMux;
-    int m_index;
+    uint32_t m_index;
     std::shared_ptr<TrackWriter> m_pTrack;
 
     CCritSec m_csStreamControl;
-    AM_STREAM_INFO m_StreamInfo;
+    AM_STREAM_INFO m_StreamInfo { };
 
-    SIZE_T m_nMaximalCopyBufferCapacity;
+    size_t m_nMaximalCopyBufferCapacity;
     ContigBuffer m_CopyBuffer;
-    Suballocator* m_pCopyAlloc;
+    Suballocator* m_pCopyAlloc = nullptr;
 
     #if defined(WITH_DIRECTSHOWSPY)
         QzCComPtr<AlaxInfoDirectShowSpy::IMediaSampleTrace> m_pMediaSampleTrace;
@@ -291,7 +291,7 @@ public:
         m_DataSize += DataSize;
         return S_OK;
     }
-    void NotifyMediaSampleWrite(int TrackIndex, wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize) override;
+    void NotifyMediaSampleWrite(uint32_t TrackIndex, wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize) override;
 
 private:
     HRESULT WriteCombineData()
@@ -390,11 +390,17 @@ public:
     void OnDisconnect(int index);
     void OnConnect(int index);
     bool CanReceive(const CMediaType* pmt);
-    std::shared_ptr<TrackWriter> MakeTrack(int index, const CMediaType* pmt);
+    std::shared_ptr<TrackWriter> MakeTrack(uint32_t index, const CMediaType* pmt);
     void OnEOS();
     REFERENCE_TIME Start() { return m_tStart;}
 
-    void NotifyMediaSampleWrite(int TrackIndex, uint64_t DataPosition, size_t DataSize, wil::com_ptr<IMediaSample> const& MediaSample);
+    wil::com_ptr<IMuxFilterSite> Site() const
+    {
+        CAutoLock Lock(&m_csFilter);
+        return m_Site;
+    }
+
+    void NotifyMediaSampleWrite(uint32_t TrackIndex, uint64_t DataPosition, size_t DataSize, wil::com_ptr<IMediaSample> const& MediaSample);
 
     // we implement IMediaSeeking to allow encoding
     // of specific portions of an input clip, and
@@ -544,6 +550,17 @@ public:
         CATCH_RETURN();
         return S_OK;
     }
+    IFACEMETHOD(SetSite)(IMuxFilterSite* Site) override
+    {
+        //TRACE(L"this 0x%p, CombineOutputCapacity %u\n", this, CombineOutputCapacity);
+        try
+        {
+            CAutoLock lock(&m_csFilter);
+            m_Site = Site;
+        }
+        CATCH_RETURN();
+        return S_OK;
+    }
     #if !defined(NDEBUG) || defined(DEVELOPMENT)
         STDMETHOD(SetSkipClose)(BOOL SkipClose) override
         {
@@ -566,6 +583,7 @@ private:
 
 private:
     mutable CCritSec m_csFilter;
+    wil::com_ptr<IMuxFilterSite> m_Site;
     std::string m_Comment;
     mutable CCritSec m_csTracks;
     MuxOutput* m_pOutput;

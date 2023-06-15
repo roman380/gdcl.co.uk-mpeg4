@@ -194,15 +194,11 @@ public:
 	BYTE* AppendAndLock(const BYTE* p, SSIZE_T cActual, SSIZE_T cMaxBytes)
 	{
 		BYTE* pDest = Append(p, cActual, cMaxBytes);
-		if (!pDest)
-		{
+		if(!pDest)
 			return pDest;
-		}
 		HRESULT hr = Lock(pDest, cMaxBytes);
-		if (FAILED(hr))
-		{
-			return NULL;
-		}
+		if(FAILED(hr))
+			return nullptr;
 		Consume(pDest, cMaxBytes);
 		return pDest;
 	}
@@ -265,29 +261,35 @@ class Suballocator :
 	public CBaseAllocator
 {
 public:
-// Suballocator
-	Suballocator(ContigBuffer* pSource, HRESULT* phr) : 
+	Suballocator(ContigBuffer* pSource, HRESULT* Result) : 
 		m_pSource(pSource),
-		CBaseAllocator(NAME("Suballocator"), NULL, phr)
+		CBaseAllocator(NAME("Suballocator"), nullptr, Result)
 	{
 		ASSERT(m_pSource);
 	}
-	HRESULT AppendAndWrap(BYTE* pnData, SSIZE_T nDataSize, SSIZE_T nDataCapacity, IMediaSample** ppSample)
+
+	wil::com_ptr<IMediaSample> AppendAndWrap(BYTE* Data, size_t DataSize, size_t DataCapacity)
 	{
-		BYTE* pDest = m_pSource->AppendAndLock(pnData, nDataSize, nDataCapacity);
-		if(!pDest)
-			return E_FAIL;
-		HRESULT hr = S_OK;
-		CMediaSample* pS = new CMediaSample(NAME("CMediaSample"), this, &hr);
-		pS->SetPointer(pDest, (LONG) nDataCapacity);
-		pS->SetActualDataLength((LONG) nDataSize);
-		IMediaSamplePtr pSample = pS;
-		*ppSample = pSample.Detach();
-		return S_OK;
+		auto DestinationData = m_pSource->AppendAndLock(Data, static_cast<SSIZE_T>(DataSize), static_cast<SSIZE_T>(DataCapacity));
+		if(!DestinationData)
+			return nullptr;
+		HRESULT Result = S_OK;
+		CMediaSample* MediaSample = new CMediaSample(NAME("CMediaSample"), this, &Result);
+		WI_ASSERT(Result == S_OK);
+		WI_VERIFY_SUCCEEDED(MediaSample->SetPointer(DestinationData, static_cast<LONG>(DataCapacity)));
+		WI_VERIFY_SUCCEEDED(MediaSample->SetActualDataLength(static_cast<LONG>(DataSize)));
+		return MediaSample;
 	}
-	HRESULT AppendAndWrap(BYTE* pnData, SSIZE_T nDataSize, IMediaSample** ppSample)
+	wil::com_ptr<IMediaSample> AppendAndWrap(BYTE* Data, size_t DataSize)
 	{
-		return AppendAndWrap(pnData, nDataSize, nDataSize, ppSample);
+		return AppendAndWrap(Data, DataSize, DataSize);
+	}
+	wil::com_ptr<IMediaSample> AppendAndWrap(IMediaSample* MediaSample)
+	{
+		WI_ASSERT(MediaSample);
+        BYTE* Data;
+        WI_VERIFY_SUCCEEDED(MediaSample->GetPointer(&Data));
+        return AppendAndWrap(Data, static_cast<size_t>(MediaSample->GetActualDataLength()));
 	}
 
 // IMemAllocator
