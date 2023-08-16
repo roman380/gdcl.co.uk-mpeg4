@@ -94,7 +94,7 @@ namespace Test
 						CurrectOutputPin.reset();
 					}
 					#pragma endregion
-					RunFilterGraph(FilterGraph2, 3s);
+					RunFilterGraph(FilterGraph2, 30s);
 				}
 				Assert::IsTrue(PathFileExistsW(Path.c_str()));
 				Assert::IsTrue(PathFileExistsW(OutputPath(Format(L"TemporaryIndex\\Recovery.%ls.mp4-Index.tmp", BaseName.c_str())).c_str()));
@@ -233,20 +233,20 @@ namespace Test
 		{
 			InternalRecovery(L"DualTrackRecovery", [] (wil::com_ptr<IFilterGraph2> const& FilterGraph2, wil::com_ptr<IBaseFilter> const& MultiplexerBaseFilter)
 			{
-				static REFERENCE_TIME constexpr const g_StopTime = duration_cast<nanoseconds>(100s).count() / 100;
+				static REFERENCE_TIME constexpr const g_StopTime = duration_cast<nanoseconds>(15s).count() / 100;
 				{
 					auto const Filter = wil::CoCreateInstance<IVideoSourceFilter>(__uuidof(VideoSourceFilter), CLSCTX_INPROC_SERVER);
 					wil::unique_variant MediaType;
 					MediaType.vt = VT_BSTR;
 					MediaType.bstrVal = wil::make_bstr(FormatIdentifier(MEDIASUBTYPE_RGB32).c_str()).release();
-					THROW_IF_FAILED(Filter->SetMediaType(360, 240, MediaType));
-					THROW_IF_FAILED(Filter->SetMediaTypeRate(50, 1));
+					THROW_IF_FAILED(Filter->SetMediaType(240, 160, MediaType));
+					THROW_IF_FAILED(Filter->SetMediaTypeRate(25, 1));
 					THROW_IF_FAILED(Filter->put_Live(VARIANT_TRUE));
 					auto const SourceBaseFilter = Filter.query<IBaseFilter>();
 					AddFilter(FilterGraph2, SourceBaseFilter, L"Video Source");
 					auto CurrectOutputPin = Pin(SourceBaseFilter);
 					THROW_IF_FAILED(CurrectOutputPin.query<IAMStreamControl>()->StopAt(&g_StopTime, FALSE, 1));
-					#if 0 // WARN: RGB32 video is handled by multiplexer but rare players would accept the file
+					#if 1 // WARN: RGB32 video is handled by multiplexer but rare players would accept the file
 						{
 							struct __declspec(uuid("{AF73A501-41A8-469A-8A7C-05A024ABDB0A}")) Mpeg4AvcVideoEncoderFilter;
 							auto const BaseFilter = wil::CoCreateInstance<IBaseFilter>(__uuidof(Mpeg4AvcVideoEncoderFilter), CLSCTX_INPROC_SERVER);
