@@ -244,8 +244,17 @@ namespace Test
 					THROW_IF_FAILED(Filter->put_Live(VARIANT_TRUE));
 					auto const SourceBaseFilter = Filter.query<IBaseFilter>();
 					AddFilter(FilterGraph2, SourceBaseFilter, L"Video Source");
-					auto const CurrectOutputPin = Pin(SourceBaseFilter);
+					auto CurrectOutputPin = Pin(SourceBaseFilter);
 					THROW_IF_FAILED(CurrectOutputPin.query<IAMStreamControl>()->StopAt(&g_StopTime, FALSE, 1));
+					#if 0 // WARN: RGB32 video is handled by multiplexer but rare players would accept the file
+						{
+							struct __declspec(uuid("{AF73A501-41A8-469A-8A7C-05A024ABDB0A}")) Mpeg4AvcVideoEncoderFilter;
+							auto const BaseFilter = wil::CoCreateInstance<IBaseFilter>(__uuidof(Mpeg4AvcVideoEncoderFilter), CLSCTX_INPROC_SERVER);
+							AddFilter(FilterGraph2, BaseFilter, L"Video Encoder");
+							THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
+							CurrectOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
+						}
+					#endif
 					THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(MultiplexerBaseFilter, PINDIR_INPUT, 0).get()));
 				}
 				{
@@ -261,7 +270,7 @@ namespace Test
 						{
 							struct __declspec(uuid("{8946E78B-FC60-4A6C-9CCF-A7A3C9CF5E31}")) Mpeg4AacAudioEncoderFilter;
 							auto const BaseFilter = wil::CoCreateInstance<IBaseFilter>(__uuidof(Mpeg4AacAudioEncoderFilter), CLSCTX_INPROC_SERVER);
-							AddFilter(FilterGraph2, BaseFilter, L"Encoder");
+							AddFilter(FilterGraph2, BaseFilter, L"Audio Encoder");
 							THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
 							CurrectOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
 						}

@@ -168,47 +168,6 @@ MovieWriter::Stop()
     m_bStopped = true;
 }
     
-void 
-MovieWriter::InsertFTYP(AtomWriter* pFile)
-{
-    if (!m_bFTYPInserted)
-    {
-        bool bHasOld = false;
-        for(auto&& pTrack: m_Tracks)
-            if (pTrack->IsNonMP4())
-            {
-                bHasOld = true;
-                break;
-            }
-        auto const pFTYP = std::make_shared<Atom>(pFile, pFile->Length(), DWORD('ftyp'));
-        // file type
-        BYTE b[8];
-        if (bHasOld)
-        {
-            Write32(DWORD('qt  '), b);
-            // minor version
-            b[4] = 0x20;
-            b[5] = 0x04;
-            b[6] = 0x06;
-            b[7] = 0x00;
-        }
-        else
-        {
-            Write32(DWORD('mp42'), b);
-            // minor version
-            Write32(0, b+4);
-        }
-        pFTYP->Append(b, 8);
-        // additional compatible specs
-        Write32(DWORD('mp42'), b);
-        pFTYP->Append(b, 4);
-        Write32(DWORD('isom'), b);
-        pFTYP->Append(b, 4);
-        pFTYP->Close();
-        m_bFTYPInserted = true;
-    }
-}
-
 bool 
 MovieWriter::CheckQueues()
 {
@@ -296,23 +255,42 @@ MovieWriter::CheckQueues()
 void
 MovieWriter::WriteTrack(int indexReady)
 {
-    // make sure we have space in an mdat atom
-    // -- make a new atom every 1Gb
-    if ((m_patmMDAT) && (m_patmMDAT->Length() >= 1024*1024*1024))
+    static uint64_t constexpr const g_MaximalMdatSize = 1llu << 30; // 1 GB
+    if(m_patmMDAT && m_patmMDAT->Length() >= g_MaximalMdatSize)
+        std::exchange(m_patmMDAT, nullptr)->Close();
+    if(!m_patmMDAT)
     {
-        m_patmMDAT->Close();
-        m_patmMDAT = NULL;
-    }
-    if (m_patmMDAT == NULL)
-    {
-        if (!m_bFTYPInserted)
+        if(!std::exchange(m_bFTYPInserted, true))
         {
-            InsertFTYP(m_Container);
+            auto const AnyNonMp4 = std::any_of(m_Tracks.cbegin(), m_Tracks.cend(), [] (auto&& Track) { return Track->IsNonMP4(); });
+            auto const Ftyp = std::make_shared<Atom>(m_Container, m_Container->Length(), DWORD('ftyp'));
+            // file type
+            BYTE b[8];
+            if (AnyNonMp4)
+            {
+                Write32(DWORD('qt  '), b);
+                // minor version
+                b[4] = 0x20;
+                b[5] = 0x04;
+                b[6] = 0x06;
+                b[7] = 0x00;
+            }
+            else
+            {
+                Write32(DWORD('mp42'), b);
+                // minor version
+                Write32(0, b+4);
+            }
+            Ftyp->Append(b, 8);
+            // additional compatible specs
+            Write32(DWORD('mp42'), b);
+            Ftyp->Append(b, 4);
+            Write32(DWORD('isom'), b);
+            Ftyp->Append(b, 4);
+            Ftyp->Close();
         }
         m_patmMDAT = std::make_shared<Atom>(m_Container, m_Container->Length(), DWORD('mdat'));
     }
-
-    // write earliest block
     m_Tracks[indexReady]->WriteHead(m_patmMDAT);
 }
 
