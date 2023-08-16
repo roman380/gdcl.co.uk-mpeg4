@@ -857,7 +857,6 @@ public:
 
 private:
     void MakeIODS(std::shared_ptr<Atom> const& pmoov);
-    void InsertFTYP(AtomWriter* pFile);
     void WriteTrack(int indexReady);
 
 private:
