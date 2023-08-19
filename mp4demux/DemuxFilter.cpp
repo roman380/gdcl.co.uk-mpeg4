@@ -901,7 +901,7 @@ DemuxOutputPin::ThreadProc()
 				while (late > (perFrame / 2))
 				{
 					// we are more than 3/4 frame late. Should we skip?
-					int next = m_pTrack->GetKeyMap()->Next(nSample);
+					auto const next = m_pTrack->GetKeyMap()->Next(nSample);
 					if (next && (next <= nStop))
 					{
 						REFERENCE_TIME tDiff = m_pTrack->TimesIndex()->SampleToCTS(next) - m_pTrack->TimesIndex()->SampleToCTS(nSample);

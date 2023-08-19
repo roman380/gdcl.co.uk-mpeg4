@@ -458,22 +458,15 @@ SampleTimes::SampleToCTS(long nSample)
     }
     for (; m_idx < m_nSTTS; m_idx++)
     {
-        long nEntries = SwapLong(m_pSTTS + 8 + (m_idx * 8));
-        long nDuration = SwapLong(m_pSTTS + 8 + 4 + (m_idx * 8));
-        if (nSample < (m_nBaseSample + nEntries))
-        {
-            LONGLONG tThis = m_tAtBase + TrackToReftime((nSample - m_nBaseSample) * nDuration);
-
-            // allow for CTS Offset
-            tThis += CTSOffset(nSample);
-
-            return tThis;
-        }
-        m_tAtBase += TrackToReftime(nEntries * nDuration);
-        m_nBaseSample += nEntries;
+        auto const SampleCount = static_cast<long>(SwapLong(m_pSTTS + 8 + (m_idx * 8)));
+        auto const Duration = static_cast<long>(SwapLong(m_pSTTS + 8 + 4 + (m_idx * 8)));
+        if (nSample < (m_nBaseSample + SampleCount))
+            return m_tAtBase + TrackToReftime(static_cast<LONGLONG>(nSample - m_nBaseSample) * Duration) + CTSOffset(nSample);
+        m_tAtBase += TrackToReftime(SampleCount * Duration);
+        m_nBaseSample += SampleCount;
     }
 
-    // should not get here
+    ASSERT(false); // should not get here
     return 0;
 }
 
