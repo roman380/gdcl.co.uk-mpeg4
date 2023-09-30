@@ -569,24 +569,23 @@ void TrackWriter::Close(std::shared_ptr<Atom> const& Atom)
     auto const ptkhd = ptrak->CreateAtom('tkhd');
     BYTE b[24*4] { };
 
-    // duration in movie timescale
-    LONGLONG scaledur = long(Duration() * m_pMovie->MovieScale() / UNITS);
     int cHdr = 6 * 4;
-    if (scaledur > 0x7fffffff)
     {
-        // use 64-bit version (64-bit create/modify and duration
-        cHdr = 9*4;
-        b[0] = 1;
-        Write32(ID(), b+(5*4));
-        Write64(scaledur, b+(7*4));
+        auto const scaledur = MFllMulDiv(Duration(), m_pMovie->MovieScale(), UNITS, 0); // duration in movie timescale
+        if (scaledur > 0x7fffffff) // use 64-bit version (64-bit create/modify and duration
+        {
+            b[0] = 1;
+            Write32(ID(), b+(5*4));
+            Write64(scaledur, b+(7*4));
+            cHdr = 9*4;
+        } else
+        {
+            Write32(ID(), b+(3*4));     // 1-base track id
+            Write32(long(scaledur), b+(5*4));
+            cHdr = 6*4;
+        }
+        b[3] = 7;   // enabled, in movie and in preview
     }
-    else
-    {
-        Write32(ID(), b+(3*4));     // 1-base track id
-        Write32(long(scaledur), b+(5*4));
-        cHdr = 6*4;
-    }
-    b[3] = 7;   // enabled, in movie and in preview
 
     if (IsAudio())
     {
@@ -617,24 +616,24 @@ void TrackWriter::Close(std::shared_ptr<Atom> const& Atom)
     auto const pmdhd = pmdia->CreateAtom('mdhd');
     ZeroMemory(b, 9*4);
     
-    // duration now in track timescale
-    scaledur = m_Durations.Duration() * m_Durations.Scale() / UNITS;
-    if (scaledur > 0x7fffffff)
     {
-        b[0] = 1;       // 64-bit
-        Write32(m_Durations.Scale(), b+20);
-        Write64(scaledur, b+24);         
-        cHdr = 8*4;
+        auto const scaledur = MFllMulDiv(m_Durations.Duration(), m_Durations.Scale(), UNITS, 0); // duration now in track timescale
+        if (scaledur > 0x7fffffff)
+        {
+            b[0] = 1;       // 64-bit
+            Write32(m_Durations.Scale(), b+20);
+            Write64(scaledur, b+24);         
+            cHdr = 8*4;
+        } else
+        {
+            Write32(m_Durations.Scale(), b+12);
+            Write32(long(scaledur), b+16);         
+            cHdr = 5*4;
+        }
+        // 'eng' as offset from 0x60 in 0 pad bit plus 3x5-bit (05 0xe 07)
+        b[cHdr] = 0x15;
+        b[cHdr+1] = 0xc7;
     }
-    else
-    {
-        Write32(m_Durations.Scale(), b+12);
-        Write32(long(scaledur), b+16);         
-        cHdr = 5*4;
-    }
-    // 'eng' as offset from 0x60 in 0 pad bit plus 3x5-bit (05 0xe 07)
-    b[cHdr] = 0x15;
-    b[cHdr+1] = 0xc7;
     pmdhd->Append(b, cHdr + 4);
     pmdhd->Close();
 
