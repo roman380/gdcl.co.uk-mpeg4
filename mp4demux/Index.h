@@ -131,8 +131,6 @@ public:
 	};
 
 public:
-    SampleTimes();
-
 	bool Parse(long scale, LONGLONG CTOffset, Atom* patmSTBL);
 
     long DTSToSample(LONGLONG tStart);
@@ -152,19 +150,19 @@ private:
     long m_scale;               // track scale units
     LONGLONG m_CTOffset;        // CT offset of first sample
 
-    Atom* m_patmSTTS;
-    Atom* m_patmCTTS;
+    Atom* m_patmSTTS = nullptr;
+    Atom* m_patmCTTS = nullptr;
     AtomCache m_pSTTS;
     AtomCache m_pCTTS;
 
-    long m_nSTTS;
-    long m_nCTTS;
+    size_t m_nSTTS;
+    size_t m_nCTTS;
 
     // Duration, DTSToSample and SampleToCTS need to
     // add up durations from the start of the table. We
     // cache the current position to reduce effort
     long m_nBaseSample;     // sample number at m_idx
-    long m_idx;             // table index corresponding to m_nBaseSample
+    size_t m_idx;             // table index corresponding to m_nBaseSample
 
     LONGLONG m_total;       // sum of durations, in reftime
     LONGLONG m_tAtBase;     // total of durations at m_nBaseSample
