@@ -34,6 +34,8 @@ _COM_SMARTPTR_TYPEDEF(IMemAllocator, IID_IMemAllocator);
 #include <utility>
 #include <string>
 
+#include <mfapi.h> // MFllMulDiv
+
 using namespace std;
 
 #pragma warning(pop)
