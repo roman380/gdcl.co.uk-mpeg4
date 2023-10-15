@@ -73,8 +73,8 @@ namespace Test
 		END_TEST_METHOD_ATTRIBUTE()
 		TEST_METHOD(SetComment)
 		{
-			static wchar_t constexpr const* g_Path = L"C:\\....mp4";
-			FilePropertyStore PropertyStore { g_Path };
+			auto const Path = OutputPath(L"Mp4File.SetComment.mp4");
+			FilePropertyStore PropertyStore(Path.c_str());
 			// NOTE: Metadata Properties for Media Files https://msdn.microsoft.com/en-us/library/windows/desktop/ff384862
 			// NOTE: Attempt to set PKEY_Media_DateEncoded results in MF_E_PROPERTY_READ_ONLY in Commit below since certain Windows update...
 			PropertyStore.Set(PKEY_Comment, L"Test Comment 1");
