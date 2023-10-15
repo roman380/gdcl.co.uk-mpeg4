@@ -71,6 +71,7 @@ library GdclMp4Mux
 		HRESULT SetTemporaryIndexFileDirectory([in] BSTR TemporaryIndexFileDirectory);
 		HRESULT SetCombineOutputCapacity([in] ULONG CombineOutputCapacity);
 		HRESULT SetSite([in] IMuxFilterSite* Site);
+		HRESULT AddAttribute([in] BSTR Name, [in] VARIANT Value);
 		#if !defined(NDEBUG) || defined(DEVELOPMENT)
 			HRESULT SetSkipClose([in] BOOL SkipClose);
 		#endif

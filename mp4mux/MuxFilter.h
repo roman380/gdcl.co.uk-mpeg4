@@ -561,6 +561,28 @@ public:
         CATCH_RETURN();
         return S_OK;
     }
+    IFACEMETHOD(AddAttribute)(BSTR Name, VARIANT Value) override
+    {
+        //TRACE(L"this 0x%p\n", this);
+        try
+        {
+            THROW_HR_IF_NULL_MSG(E_INVALIDARG, Name, "Missing mandatory Name argument");
+            THROW_HR_IF_MSG(E_INVALIDARG, Value.vt != VT_BSTR, "Unsupported value type, only VT_BSTR attributes are currently supported");
+            THROW_HR_IF_NULL_MSG(E_INVALIDARG, Value.bstrVal, "Unsupported value, stings values must be non-null");
+            auto const NameLength = SysStringLen(Name);
+            std::string LocalName;
+            LocalName.resize(WideCharToMultiByte(CP_UTF8, 0, Name, static_cast<int>(NameLength), nullptr, 0, nullptr, nullptr) + 1);
+            LocalName.resize(WideCharToMultiByte(CP_UTF8, 0, Name, static_cast<int>(NameLength), const_cast<char*>(LocalName.data()), static_cast<int>(LocalName.size()), nullptr, nullptr));
+            wil::unique_prop_variant LocalValue;
+            LocalValue.vt = VT_BSTR;
+            LocalValue.bstrVal = SysAllocStringLen(Value.bstrVal, SysStringLen(Value.bstrVal));
+            CAutoLock lock(&m_csFilter);
+            if(m_pMovie)
+                m_pMovie->AddAttribute(LocalName, std::move(LocalValue));
+        }
+        CATCH_RETURN();
+        return S_OK;
+    }
     #if !defined(NDEBUG) || defined(DEVELOPMENT)
         STDMETHOD(SetSkipClose)(BOOL SkipClose) override
         {

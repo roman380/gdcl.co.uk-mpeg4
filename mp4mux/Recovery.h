@@ -474,6 +474,7 @@ public:
 
             THROW_HR_IF_MSG(HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND), !PathFileExistsW(IndexPath), "Index file required for recovery was not found, %ls", IndexPath);
             wil::com_ptr<IFilterGraph2> FilterGraph2;
+            wil::com_ptr<IMuxFilter> MuxFilter; 
             HRESULT Result = S_OK;
             SampleSource* Source = static_cast<SampleSource*>(SampleSource::CreateInstance(nullptr, &Result));
             THROW_IF_FAILED(Result);
@@ -491,10 +492,10 @@ public:
                     wil::com_ptr<IBaseFilter> BaseFilter;
                     {
                         wil::com_ptr<IClassFactory> ClassFactory;
-                        THROW_IF_FAILED(DllGetClassObject(__uuidof(MuxFilter), IID_PPV_ARGS(ClassFactory.put())));
+                        THROW_IF_FAILED(DllGetClassObject(__uuidof(::MuxFilter), IID_PPV_ARGS(ClassFactory.put())));
                         ClassFactory->CreateInstance(nullptr, IID_PPV_ARGS(BaseFilter.put()));
                     }
-                    auto const MuxFilter = BaseFilter.query<IMuxFilter>(); 
+                    MuxFilter = BaseFilter.query<IMuxFilter>(); 
                     THROW_IF_FAILED(MuxFilter->SetCombineOutputCapacity(32u << 20));
                     THROW_IF_FAILED(FilterGraph2->AddFilter(BaseFilter.get(), L"Multiplexer"));
                     unsigned int Index = 0;
@@ -649,6 +650,13 @@ public:
                     }
                 }
                 CATCH_LOG_MSG("Failure while reading from broken and/or index file");
+                if(false)
+                {
+                    wil::unique_variant Value;
+                    Value.vt = VT_BSTR;
+                    Value.bstrVal = wil::make_bstr(L"MuxFilterRecovery").release();
+                    THROW_IF_FAILED(MuxFilter->AddAttribute(wil::make_bstr(L"WM/EncodedBy").get(), Value));
+                }
                 Source->AddEndOfStream();
                 ThreadAbort = m_ThreadTermination;
                 RunEvent.SetEvent();
