@@ -475,6 +475,10 @@ EXTERN_C const IID IID_IMuxFilter;
         virtual HRESULT STDMETHODCALLTYPE SetSite( 
             /* [in] */ IMuxFilterSite *Site) = 0;
         
+        virtual HRESULT STDMETHODCALLTYPE AddAttribute( 
+            /* [in] */ BSTR Name,
+            /* [in] */ VARIANT Value) = 0;
+        
     };
     
     
@@ -547,6 +551,12 @@ EXTERN_C const IID IID_IMuxFilter;
             IMuxFilter * This,
             /* [in] */ IMuxFilterSite *Site);
         
+        DECLSPEC_XFGVIRT(IMuxFilter, AddAttribute)
+        HRESULT ( STDMETHODCALLTYPE *AddAttribute )( 
+            IMuxFilter * This,
+            /* [in] */ BSTR Name,
+            /* [in] */ VARIANT Value);
+        
         END_INTERFACE
     } IMuxFilterVtbl;
 
@@ -599,6 +609,9 @@ EXTERN_C const IID IID_IMuxFilter;
 
 #define IMuxFilter_SetSite(This,Site)	\
     ( (This)->lpVtbl -> SetSite(This,Site) ) 
+
+#define IMuxFilter_AddAttribute(This,Name,Value)	\
+    ( (This)->lpVtbl -> AddAttribute(This,Name,Value) ) 
 
 #endif /* COBJMACROS */
 
