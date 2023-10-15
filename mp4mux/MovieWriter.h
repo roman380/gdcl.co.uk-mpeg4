@@ -813,6 +813,10 @@ public:
     {
         m_Comment = Comment;
     }
+    void AddAttribute(std::string Name, wil::unique_prop_variant&& Value)
+    {
+        m_AttributeList.emplace_back(std::make_pair(std::move(Name), std::move(Value)));
+    }
 
     std::shared_ptr<TrackWriter> MakeTrack(const CMediaType* pmt, bool NotifyMediaSampleWrite = false);
     HRESULT Close(REFERENCE_TIME* pDuration);
@@ -876,5 +880,6 @@ private:
     REFERENCE_TIME m_tInterleave;
 
     std::string m_Comment;
+    std::list<std::pair<std::string, wil::unique_prop_variant>> m_AttributeList;
 };
 
