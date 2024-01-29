@@ -1071,67 +1071,51 @@ DurationIndex::ModeDecide()
     }
 }
 
-HRESULT 
-DurationIndex::WriteEDTS(std::shared_ptr<Atom> const& Atom, long scale)
+void DurationIndex::WriteEDTS(std::shared_ptr<Atom> const& Atom, long MovieTimeScale)
 {
-    if (m_tStartFirst > 0)
+    if(m_tStartFirst <= 0)
+        return;
+
+    auto const Edts = Atom->CreateAtom('edts');
+    [[maybe_unused]] auto&& EdtsScope = wil::scope_exit([&] { Edts->Close(); });
+    auto const Elst = Edts->CreateAtom('elst'); // ISO/IEC 14496-12:2012; 8.6.6 Edit List Box
+    [[maybe_unused]] auto&& ElstScope = wil::scope_exit([&] { Elst->Close(); });
+
+    WI_ASSERT(MovieTimeScale == DEFAULT_TIMESCALE);
+    auto const media_time = static_cast<int64_t>(MFllMulDiv(m_tStartFirst, MovieTimeScale, 1'000'0000ll, 0));
+    auto const segment_duration = static_cast<uint64_t>(MFllMulDiv(m_tStopLast - m_tStartFirst, MovieTimeScale, 1'000'0000ll, 0));
+
+    if(segment_duration > std::numeric_limits<uint32_t>::max() || media_time > std::numeric_limits<int32_t>::max())
     {
-        // structure is 8 x 32-bit values
-        //  flags/ver
-        //  nr of entries
-        //     duration : offset of first sample
-        //     -1 : media time -- no media
-        //     media rate: 1 (16 bit + 16-bit 0)
-        //     duration : duration of whole track
-        //     0 : start of media
-        //     media rate 1
+        uint8_t Data[48] { 1 }; // version
+        Write32(2, Data + 4); // entry_count
 
-        auto const pedts = Atom->CreateAtom('edts');
-        auto const pelst = pedts->CreateAtom('elst');
+        Write64(media_time, Data + 8); // segment_duration
+        Write64(static_cast<uint64_t>(-1), Data + 16); // media_time (empty edit)
+        Write16(1, Data + 24); // media_rate_integer
+        Write16(0, Data + 26); // media_rate_fraction
 
-        BYTE b[48] { };
+        Write64(segment_duration, Data + 28); // segment_duration
+        Write64(0u, Data + 36); // media_time
+        Write16(1, Data + 44); // media_rate_integer
+        Write16(0, Data + 46); // media_rate_fraction
 
-        // values are in movie scale
-        LONGLONG offset = long(m_tStartFirst * scale / UNITS);
-        LONGLONG dur  = long((m_tStopLast - m_tStartFirst) * scale / UNITS);
+        Elst->Append(Data, std::size(Data));
+    } else
+    {
+        uint8_t Data[32] { };
+        Write32(2, Data + 4); // entry_count
 
-        int cSz;
-        if ((offset > 0x7fffffff) || (dur > 0x7fffffff))
-        {
-            b[0] = 1;   // version 1 = 64-bit entries
+        Write32(static_cast<int32_t>(media_time), Data + 8); // segment_duration
+        Write32(static_cast<uint32_t>(-1), Data + 12); // media_time (empty edit)
+        Write16(1, Data + 16); // media_rate_integer
+        Write16(0, Data + 18); // media_rate_fraction
 
-            // create an offset for the first sample
-            // using an "empty" edit
-            Write32(2, b+4);
-            Write64(offset, b+8);
-            Write64(0xFFFF, b+16);        // no media used
-            b[25] = 1;
+        Write32(static_cast<uint32_t>(segment_duration), Data + 20); // segment_duration
+        Write32(0u, Data + 24); // media_time
+        Write16(1, Data + 28); // media_rate_integer
+        Write16(0, Data + 30); // media_rate_fraction
 
-            // whole track as next edit
-            Write64(dur, b+28);
-            Write64(0, b+36);
-            b[45] = 1;
-            cSz = 48;
-        }
-        else
-        {
-            // create an offset for the first sample
-            // using an "empty" edit
-            Write32(2, b+4);
-            Write32(long(offset), b+8);
-            Write32(0xFFFF, b+12);        // no media used
-            b[17] = 1;
-
-            // whole track as next edit
-            Write32(long(dur), b+20);
-            Write32(0, b+24);
-            b[29] = 1;
-            cSz = 32;
-        }
-        pelst->Append(b, cSz);
-
-        pelst->Close();
-        pedts->Close();
+        Elst->Append(Data, std::size(Data));
     }
-    return S_OK;
 }

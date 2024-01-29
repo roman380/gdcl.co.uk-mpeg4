@@ -436,7 +436,7 @@ public:
     void Add(REFERENCE_TIME tStart, REFERENCE_TIME tEnd);
     void AddOldFormat(int count);
     void SetOldIndexStart(REFERENCE_TIME tStart);
-    HRESULT WriteEDTS(std::shared_ptr<Atom> const& Atom, long scale);
+    void WriteEDTS(std::shared_ptr<Atom> const& Atom, long scale);
     void WriteTable(std::shared_ptr<Atom> const& Atom)
     {
         if(m_nSamples <= 0)
