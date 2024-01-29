@@ -72,50 +72,50 @@ MovieWriter::Close(REFERENCE_TIME* pDuration)
         m_patmMDAT = nullptr;
     }
 
-    auto const Moov = std::make_shared<Atom>(m_Container, m_Container->Length(), DWORD('moov'));
-    {
-        auto const Mvhd = Moov->CreateAtom('mvhd'); // ISO/IEC 14496-12:2012; 8.2.2 Movie Header Box
-        [[maybe_unused]] auto&& MvhdScope = wil::scope_exit([&] { Mvhd->Close(); });
-
-        WI_ASSERT(MovieScale() == DEFAULT_TIMESCALE);
-        auto const duration = static_cast<uint64_t>(MFllMulDiv(MovieDuration, MovieScale(), 1'000'0000ll, 0));
-        DbgLog((LOG_TRACE, 2, "mvhd duration %llu at %d time scale", duration, MovieScale()));
-
-        uint8_t const version = (duration > std::numeric_limits<uint32_t>::max()) ? 1 : 0;
-
-        std::vector<uint8_t> Data;
-        Write8(version, Data); // version
-        Write24(0, Data); // flags
-        if(version > 0)
-        {
-            Write64(0u, Data); // creation_time
-            Write64(0u, Data); // modification_time
-            Write32(MovieScale(), Data); // timescale
-            Write64(duration, Data); // duration
-        } else
-        {
-            Write32(0u, Data); // creation_time
-            Write32(0u, Data); // modification_time
-            Write32(MovieScale(), Data); // timescale
-            Write32(static_cast<uint32_t>(duration), Data); // duration
-        }
-        Write32(0x00010000u, Data); // rate
-        Write16(0x0100u, Data); // volume
-        Write16(0u, Data); // reserved
-        for(uint32_t value: { 0u, 0u })
-            Write32(value, Data); // reserved
-        static int32_t constexpr const matrix[9] { 0x00010000, 0, 0, 0, 0x00010000, 0, 0, 0, 0x40000000 }; 
-        for(auto&& value: matrix)
-            Write32(value, Data); // matrix
-        for(uint32_t value: { 0u, 0u, 0u, 0u, 0u, 0u })
-            Write32(value, Data); // pre_defined
-        Write32(static_cast<uint32_t>(m_Tracks.size() + 1), Data); // next_track_ID
- 
-        Mvhd->Append(Data);
-    }
-
     try
     {
+        auto const Moov = std::make_shared<Atom>(m_Container, m_Container->Length(), DWORD('moov'));
+        {
+            auto const Mvhd = Moov->CreateAtom('mvhd'); // ISO/IEC 14496-12:2012; 8.2.2 Movie Header Box
+            [[maybe_unused]] auto&& MvhdScope = wil::scope_exit([&] { THROW_IF_FAILED(Mvhd->Close()); });
+
+            WI_ASSERT(MovieScale() == DEFAULT_TIMESCALE);
+            auto const duration = static_cast<uint64_t>(MFllMulDiv(MovieDuration, MovieScale(), 1'000'0000ll, 0));
+            DbgLog((LOG_TRACE, 2, "mvhd duration %llu at %d time scale", duration, MovieScale()));
+
+            uint8_t const version = (duration > std::numeric_limits<uint32_t>::max()) ? 1 : 0;
+
+            std::vector<uint8_t> Data;
+            Write8(version, Data); // version
+            Write24(0, Data); // flags
+            if(version > 0)
+            {
+                Write64(0u, Data); // creation_time
+                Write64(0u, Data); // modification_time
+                Write32(MovieScale(), Data); // timescale
+                Write64(duration, Data); // duration
+            } else
+            {
+                Write32(0u, Data); // creation_time
+                Write32(0u, Data); // modification_time
+                Write32(MovieScale(), Data); // timescale
+                Write32(static_cast<uint32_t>(duration), Data); // duration
+            }
+            Write32(0x00010000u, Data); // rate
+            Write16(0x0100u, Data); // volume
+            Write16(0u, Data); // reserved
+            for(uint32_t value: { 0u, 0u })
+                Write32(value, Data); // reserved
+            static int32_t constexpr const matrix[9] { 0x00010000, 0, 0, 0, 0x00010000, 0, 0, 0, 0x40000000 }; 
+            for(auto&& value: matrix)
+                Write32(value, Data); // matrix
+            for(uint32_t value: { 0u, 0u, 0u, 0u, 0u, 0u })
+                Write32(value, Data); // pre_defined
+            Write32(static_cast<uint32_t>(m_Tracks.size() + 1), Data); // next_track_ID
+ 
+            Mvhd->Append(Data);
+        }
+
         MakeIODS(Moov);
         for(auto&& Track: m_Tracks)
             Track->Close(Moov);
@@ -607,57 +607,64 @@ TrackWriter::OldIndex(uint64_t ChunkPosition, size_t DataSize)
 
 void TrackWriter::Close(std::shared_ptr<Atom> const& Atom)
 {
-    auto const ptrak = Atom->CreateAtom('trak');
-
-    // track header tkhd
-    auto const ptkhd = ptrak->CreateAtom('tkhd');
-    BYTE b[24*4] { };
-
-    int cHdr = 6 * 4;
+    auto const Trak = Atom->CreateAtom('trak');
+    [[maybe_unused]] auto&& TrakScope = wil::scope_exit([&] { THROW_IF_FAILED(Trak->Close()); });
     {
-        auto const scaledur = MFllMulDiv(Duration(), m_pMovie->MovieScale(), UNITS, 0); // duration in movie timescale
-        if (scaledur > 0x7fffffff) // use 64-bit version (64-bit create/modify and duration
+        auto const Tkhd = Trak->CreateAtom('tkhd'); // ISO/IEC 14496-12:2012; 8.3.2 Track Header Box
+        [[maybe_unused]] auto&& TkhdScope = wil::scope_exit([&] { THROW_IF_FAILED(Tkhd->Close()); });
+
+        auto const duration = static_cast<uint64_t>(MFllMulDiv(Duration(), m_pMovie->MovieScale(), 1'000'0000ll, 0));
+        DbgLog((LOG_TRACE, 2, "tkhd duration %llu at %d time scale", duration, m_pMovie->MovieScale()));
+
+        uint8_t const version = (duration > std::numeric_limits<uint32_t>::max()) ? 1 : 0;
+
+        std::vector<uint8_t> Data;
+        Write8(version, Data); // version
+        Write24(7u, Data); // flags: enabled, in movie and in preview
+        if(version > 0)
         {
-            b[0] = 1;
-            Write32(ID(), b+(5*4));
-            Write64(scaledur, b+(7*4));
-            cHdr = 9*4;
+            Write64(0u, Data); // creation_time
+            Write64(0u, Data); // modification_time
+            Write32(ID(), Data); // track_ID
+            Write32(0, Data); // reserved
+            Write64(duration, Data); // duration
         } else
         {
-            Write32(ID(), b+(3*4));     // 1-base track id
-            Write32(long(scaledur), b+(5*4));
-            cHdr = 6*4;
+            Write32(0u, Data); // creation_time
+            Write32(0u, Data); // modification_time
+            Write32(ID(), Data); // track_ID
+            Write32(0, Data); // reserved
+            Write32(static_cast<uint32_t>(duration), Data); // duration
         }
-        b[3] = 7;   // enabled, in movie and in preview
-    }
+        for(uint32_t value: { 0u, 0u })
+            Write32(value, Data); // reserved
+        Write16(0u, Data); // layer
+        Write16(0u, Data); // alternate_group
+        Write16(IsAudio() ? 0x0100u : 0u, Data); // volume
+        Write16(0u, Data); // reserved
+        static int32_t constexpr const matrix[9] { 0x00010000, 0, 0, 0, 0x00010000, 0, 0, 0, 0x40000000 }; 
+        for(auto&& value: matrix)
+            Write32(value, Data); // matrix
+        Write32(IsVideo() ? static_cast<uint16_t>(m_pType->Width()) : 0u, Data);
+        Write32(IsVideo() ? static_cast<uint16_t>(m_pType->Height()) : 0u, Data);
 
-    if (IsAudio())
-    {
-        b[cHdr + 12] = 0x01;
+        Tkhd->Append(Data);
     }
-    b[cHdr + 17] = 1;
-    b[cHdr + 33] = 1;
-    b[cHdr + 48] = 0x40;
-    if (IsVideo())
-    {
-        Write16(static_cast<uint16_t>(m_pType->Width()), &b[cHdr + 52]);
-        Write16(static_cast<uint16_t>(m_pType->Height()), &b[cHdr + 56]);
-    }
-
-    ptkhd->Append(b, cHdr + 60);
-    ptkhd->Close();
 
     // track ref tref
-    Handler()->WriteTREF(ptrak);
+    Handler()->WriteTREF(Trak);
 
     // edts -- used for first-sample offet
     // -- note, this is in movie timescale, not track
-    m_Durations.WriteEDTS(ptrak, m_pMovie->MovieScale());
+    m_Durations.WriteEDTS(Trak, m_pMovie->MovieScale());
 
-    auto const pmdia = ptrak->CreateAtom('mdia');
+    auto const pmdia = Trak->CreateAtom('mdia');
 
     // Media Header mdhd
     auto const pmdhd = pmdia->CreateAtom('mdhd');
+
+    BYTE b[24*4] { };
+    int cHdr = 6 * 4;
     ZeroMemory(b, 9*4);
     
     {
@@ -745,7 +752,6 @@ void TrackWriter::Close(std::shared_ptr<Atom> const& Atom)
     THROW_IF_FAILED(StblAtom->Close());
     THROW_IF_FAILED(pminf->Close());
     THROW_IF_FAILED(pmdia->Close());
-    THROW_IF_FAILED(ptrak->Close());
 }
 
 void TrackWriter::NotifyMediaSampleWrite(wil::com_ptr<IMediaSample> const& MediaSample, size_t DataSize)
@@ -1081,9 +1087,9 @@ void DurationIndex::WriteEDTS(std::shared_ptr<Atom> const& Atom, long MovieTimeS
         return;
 
     auto const Edts = Atom->CreateAtom('edts');
-    [[maybe_unused]] auto&& EdtsScope = wil::scope_exit([&] { Edts->Close(); });
+    [[maybe_unused]] auto&& EdtsScope = wil::scope_exit([&] { THROW_IF_FAILED(Edts->Close()); });
     auto const Elst = Edts->CreateAtom('elst'); // ISO/IEC 14496-12:2012; 8.6.6 Edit List Box
-    [[maybe_unused]] auto&& ElstScope = wil::scope_exit([&] { Elst->Close(); });
+    [[maybe_unused]] auto&& ElstScope = wil::scope_exit([&] { THROW_IF_FAILED(Elst->Close()); });
 
     WI_ASSERT(MovieTimeScale == DEFAULT_TIMESCALE);
     auto const media_time = static_cast<int64_t>(MFllMulDiv(m_tStartFirst, MovieTimeScale, 1'000'0000ll, 0));
