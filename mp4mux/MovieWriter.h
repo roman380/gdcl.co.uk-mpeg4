@@ -47,6 +47,31 @@ inline uint64_t Read64(uint8_t const* Data)
     return _byteswap_uint64(*reinterpret_cast<uint64_t const*>(Data));
 }
 
+inline void Write8(uint8_t Value, std::vector<uint8_t>& Data)
+{
+    Data.emplace_back(Value);
+}
+inline void Write16(uint16_t Value, std::vector<uint8_t>& Data)
+{
+    auto const NetworkValue = _byteswap_ushort(Value);
+    std::copy(reinterpret_cast<uint8_t const*>(&NetworkValue), reinterpret_cast<uint8_t const*>(&NetworkValue) + sizeof NetworkValue, std::back_inserter(Data));
+}
+inline void Write24(uint32_t Value, std::vector<uint8_t>& Data)
+{
+    auto const NetworkValue = _byteswap_ulong(Value);
+    std::copy(reinterpret_cast<uint8_t const*>(&NetworkValue) + 1, reinterpret_cast<uint8_t const*>(&NetworkValue) + sizeof NetworkValue, std::back_inserter(Data));
+}
+inline void Write32(uint32_t Value, std::vector<uint8_t>& Data)
+{
+    auto const NetworkValue = _byteswap_ulong(Value);
+    std::copy(reinterpret_cast<uint8_t const*>(&NetworkValue), reinterpret_cast<uint8_t const*>(&NetworkValue) + sizeof NetworkValue, std::back_inserter(Data));
+}
+inline void Write64(uint64_t Value, std::vector<uint8_t>& Data)
+{
+    auto const NetworkValue = _byteswap_uint64(Value);
+    std::copy(reinterpret_cast<uint8_t const*>(&NetworkValue), reinterpret_cast<uint8_t const*>(&NetworkValue) + sizeof NetworkValue, std::back_inserter(Data));
+}
+
 // forward references
 class Atom;
 class AtomWriter;
