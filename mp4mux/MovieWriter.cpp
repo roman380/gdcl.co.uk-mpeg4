@@ -122,48 +122,53 @@ MovieWriter::Close(REFERENCE_TIME* pDuration)
 
         if(!m_Comment.empty() || !m_AttributeList.empty())
         {
-            auto const udta = Moov->CreateAtom('udta'); // ISO/IEC 14496-12:2012 8.10.1 User Data Box
+            auto const Udta = Moov->CreateAtom('udta'); // ISO/IEC 14496-12:2012; 8.10.1 User Data Box
+            [[maybe_unused]] auto&& UdtaScope = wil::scope_exit([&] { THROW_IF_FAILED(Udta->Close()); });
+
             if(!m_Comment.empty())
             {
-                auto const meta = udta->CreateAtom('meta'); // https://developer.apple.com/library/archive/documentation/QuickTime/QTFF/Metadata/Metadata.html
+                auto const Meta = Udta->CreateAtom('meta'); // https://developer.apple.com/library/archive/documentation/QuickTime/QTFF/Metadata/Metadata.html
+                [[maybe_unused]] auto&& MetaScope = wil::scope_exit([&] { THROW_IF_FAILED(Meta->Close()); });
+
+                uint8_t MetaData[44];
+                uint8_t* MetaDataPointer = MetaData;
+                Write32(0, MetaDataPointer); MetaDataPointer += 4;
+                Write32(32, MetaDataPointer); MetaDataPointer += 4;
+                Write32('hdlr', MetaDataPointer); MetaDataPointer += 4;
+                Write32(0, MetaDataPointer); MetaDataPointer += 4; // Version, Flags
+                Write32(0, MetaDataPointer); MetaDataPointer += 4; // Predefined
+                Write32('mdir', MetaDataPointer); MetaDataPointer += 4;
+                Write32(0, MetaDataPointer); MetaDataPointer += 4;
+                Write32(0, MetaDataPointer); MetaDataPointer += 4;
+                Write32(0, MetaDataPointer); MetaDataPointer += 4;
+                ASSERT(static_cast<size_t>(MetaDataPointer - MetaData) <= std::size(MetaData));
+                Meta->Append(MetaData, static_cast<long>(MetaDataPointer - MetaData));
+
+                auto const Ilst = Meta->CreateAtom('ilst');
+                [[maybe_unused]] auto&& IlstScope = wil::scope_exit([&] { THROW_IF_FAILED(Ilst->Close()); });
+                auto const Cmt = Ilst->CreateAtom(0xA9000000 | 'cmt');
+                [[maybe_unused]] auto&& CmtScope = wil::scope_exit([&] { THROW_IF_FAILED(Cmt->Close()); });
                 {
-                    uint8_t MetaData[44];
-                    uint8_t* MetaDataPointer = MetaData;
-                    Write32(0, MetaDataPointer); MetaDataPointer += 4;
-                    Write32(32, MetaDataPointer); MetaDataPointer += 4;
-                    Write32('hdlr', MetaDataPointer); MetaDataPointer += 4;
-                    Write32(0, MetaDataPointer); MetaDataPointer += 4; // Version, Flags
-                    Write32(0, MetaDataPointer); MetaDataPointer += 4; // Predefined
-                    Write32('mdir', MetaDataPointer); MetaDataPointer += 4;
-                    Write32(0, MetaDataPointer); MetaDataPointer += 4;
-                    Write32(0, MetaDataPointer); MetaDataPointer += 4;
-                    Write32(0, MetaDataPointer); MetaDataPointer += 4;
-                    ASSERT(static_cast<size_t>(MetaDataPointer - MetaData) <= std::size(MetaData));
-                    meta->Append(MetaData, static_cast<long>(MetaDataPointer - MetaData));
-                    auto const ilst = meta->CreateAtom('ilst');
-                    auto const cmt = ilst->CreateAtom(0xA9000000 | 'cmt');
-                    {
-                        auto const data = cmt->CreateAtom('data');
-                        uint8_t Data[8];
-                        uint8_t* DataPointer = Data;
-                        Write32(0x00000001, DataPointer); DataPointer += 4; // Version, Flags
-                        Write32(0, DataPointer); DataPointer += 4;
-                        ASSERT(static_cast<size_t>(DataPointer - Data) <= std::size(Data));
-                        data->Append(Data, static_cast<long>(DataPointer - Data));
-                        data->Append(reinterpret_cast<uint8_t const*>(m_Comment.data()), static_cast<long>(m_Comment.size()));
-                        THROW_IF_FAILED(data->Close());
-                    }
-                    THROW_IF_FAILED(cmt->Close());
-                    THROW_IF_FAILED(ilst->Close());
+                    auto const Data = Cmt->CreateAtom('data');
+                    [[maybe_unused]] auto&& DataScope = wil::scope_exit([&] { THROW_IF_FAILED(Data->Close()); });
+
+                    uint8_t Data_[8];
+                    uint8_t* DataPointer = Data_;
+                    Write32(0x00000001, DataPointer); DataPointer += 4; // Version, Flags
+                    Write32(0, DataPointer); DataPointer += 4;
+                    ASSERT(static_cast<size_t>(DataPointer - Data_) <= std::size(Data_));
+                    Data->Append(Data_, static_cast<long>(DataPointer - Data_));
+                    Data->Append(reinterpret_cast<uint8_t const*>(m_Comment.data()), static_cast<long>(m_Comment.size()));
                 }
-                THROW_IF_FAILED(meta->Close());
             }
             if(!m_AttributeList.empty())
             {
                 // NOTE: Attribute List https://learn.microsoft.com/en-us/windows/win32/wmformat/attribute-list
                 //       WMT_ATTR_DATATYPE https://learn.microsoft.com/en-us/previous-versions/windows/desktop/api/Wmsdkidl/ne-wmsdkidl-wmt_attr_datatype
                 //       Windows Media Format SDK Mappings https://learn.microsoft.com/en-us/windows/win32/medfound/metadata-properties-for-media-files#windows-media-format-sdk-mappings
-                auto const Xtra = udta->CreateAtom('Xtra');
+                auto const Xtra = Udta->CreateAtom('Xtra');
+                [[maybe_unused]] auto&& XtraScope = wil::scope_exit([&] { THROW_IF_FAILED(Xtra->Close()); });
+
                 std::vector<uint8_t> Data;
                 for(auto&& Attribute: m_AttributeList)
                 {
@@ -190,12 +195,10 @@ MovieWriter::Close(REFERENCE_TIME* pDuration)
                     uint8_t AttributeSize[4];
                     Write32(static_cast<uint32_t>(sizeof (uint32_t) + Data.size() - DataPosition), AttributeSize);
                     Data.insert(Data.begin() + DataPosition, AttributeSize, AttributeSize + std::size(AttributeSize));
-                         
                 }
                 Xtra->Append(Data.data(), static_cast<long>(Data.size()));
-                THROW_IF_FAILED(Xtra->Close());
             }
-            THROW_IF_FAILED(udta->Close());
+
             // NOTE: Online structure viewer https://gpac.github.io/mp4box.js/test/filereader.html
         }
     
