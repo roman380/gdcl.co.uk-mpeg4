@@ -14,7 +14,6 @@
 #include "Mpeg4.h"
 #include "ElemType.h"
 #include "Index.h"
-#include <sstream>
 
 Atom::Atom(AtomReader* pReader, LONGLONG llOffset, LONGLONG llLength, DWORD type, long cHeader)
 : m_pSource(pReader),
@@ -173,44 +172,99 @@ Atom::BufferRelease()
 
 // -- main movie header, contains list of tracks ---------------
 
-Movie::Movie(Atom* pRoot)
-: m_pRoot(pRoot), m_invalidTrackCount(0)
+Movie::Movie(Atom* pRoot) : 
+    m_pRoot(pRoot)
 {
     Atom* pMovie = m_pRoot->FindChild(FOURCC("moov"));
-    if (pMovie != NULL)
+    if(!pMovie)
+        return;
+    Atom* patmHdr = pMovie->FindChild(FOURCC("mvhd"));
+    if (patmHdr)
     {
-        Atom* patmHdr = pMovie->FindChild(FOURCC("mvhd"));
-        if (patmHdr)
+        AtomCache phdr(patmHdr);
+        if (phdr[0] == 1)   // version 0 or 1
         {
-            AtomCache phdr(patmHdr);
-
-            if (phdr[0] == 1)   // version 0 or 1
-            {
-                m_scale = SwapLong(phdr + 20);
-                m_duration = SwapI64(phdr + 24);
-            } else {
-                m_scale = SwapLong(phdr + 12);
-                m_duration = SwapLong(phdr + 16);
-            }
-            m_tDuration = REFERENCE_TIME(m_duration) * UNITS / LONGLONG(m_scale);
+            m_scale = SwapLong(phdr + 20);
+            m_duration = SwapI64(phdr + 24);
+        } else {
+            m_scale = SwapLong(phdr + 12);
+            m_duration = SwapLong(phdr + 16);
         }
-
-        // list tracks
-        long idxTrack = 0;
-        for (int i = 0; i < pMovie->ChildCount(); i++)
+        m_tDuration = MFllMulDiv(m_duration, 1'000'0000ll, m_scale, 0);
+    }
+    long TrackIndexEx = 0;
+    for(long TrackIndex = 0; TrackIndex < pMovie->ChildCount(); TrackIndex++)
+    {
+        Atom* patm = pMovie->Child(TrackIndex);
+        if(patm->Type() != FOURCC("trak") && patm->Type() != FOURCC("cctk"))
+            continue;
+        MovieTrackPtr pTrack = new MovieTrack(patm, this, TrackIndexEx++);
+        if(pTrack->Valid())
+            m_Tracks.push_back(pTrack);
+        else
+			m_invalidTrackCount++;
+    }
+    Atom* UdtaHeader = pMovie->FindChild(FOURCC("udta"));
+    if(UdtaHeader)
+    {
+        try
         {
-            Atom* patm = pMovie->Child(i);
-            if ((patm->Type() == FOURCC("trak")) ||
-				(patm->Type() == FOURCC("cctk")))
+            AtomCache Udta(UdtaHeader);
+            // TODO: Meta atom and comment; see mp4mux\MovieWriter.cpp#L130
+            Atom* XtraHeader = UdtaHeader->FindChild(FOURCC("Xtra"));
+            if(XtraHeader)
             {
-                MovieTrackPtr pTrack = new MovieTrack(patm, this, idxTrack++);
-                if (pTrack->Valid())
+                std::vector<uint8_t> Data;
+                Data.resize(static_cast<size_t>(XtraHeader->Length() - XtraHeader->HeaderSize()));
+                THROW_IF_FAILED(XtraHeader->Read(XtraHeader->HeaderSize(), static_cast<long>(Data.size()), Data.data()));
+                for(size_t Position = 0; Position < Data.size(); )
                 {
-                    m_Tracks.push_back(pTrack);
-                } else
-					m_invalidTrackCount++;
+                    auto const AttributePosition = Position;
+                    uint32_t AttributeSize;
+                    THROW_HR_IF(HRESULT_FROM_WIN32(ERROR_FILE_CORRUPT), Position + sizeof AttributeSize > Data.size());
+                    AttributeSize = SwapLong(Data.data() + Position);
+                    Position += sizeof AttributeSize;
+                    THROW_HR_IF(HRESULT_FROM_WIN32(ERROR_FILE_CORRUPT), Position + AttributeSize - sizeof AttributeSize > Data.size());
+                    THROW_HR_IF(HRESULT_FROM_WIN32(ERROR_FILE_CORRUPT), AttributeSize < 4 + 10);
+                    uint32_t NameLength;
+                    THROW_HR_IF(HRESULT_FROM_WIN32(ERROR_FILE_CORRUPT), Position + sizeof NameLength > Data.size());
+                    NameLength = SwapLong(Data.data() + Position);
+                    Position += sizeof NameLength;
+                    THROW_HR_IF(HRESULT_FROM_WIN32(ERROR_FILE_CORRUPT), Position + NameLength * sizeof (char) > Data.size());
+                    std::string Name;
+                    Name.resize(NameLength);
+                    std::memcpy(Name.data(), Data.data() + Position, NameLength * sizeof (char));
+                    Position += NameLength * sizeof (char);
+                    uint32_t One;
+                    uint32_t ValueSize;
+                    uint16_t ValueType;
+                    THROW_HR_IF(HRESULT_FROM_WIN32(ERROR_FILE_CORRUPT), Position + sizeof One + sizeof ValueSize + sizeof ValueType > Data.size());
+                    One = SwapLong(Data.data() + Position);
+                    Position += sizeof One;
+                    if(One == 1u)
+                    {
+                        ValueSize = SwapLong(Data.data() + Position);
+                        Position += sizeof ValueSize;
+                        ValueType = Swap2Bytes(*reinterpret_cast<uint16_t const*>(Data.data() + Position));
+                        Position += sizeof ValueType;
+                        if(ValueType == VT_BSTR)
+                        {
+                            THROW_HR_IF(HRESULT_FROM_WIN32(ERROR_FILE_CORRUPT), Position + ValueSize - (sizeof ValueSize + sizeof ValueType) > Data.size());
+                            std::wstring Value;
+                            Value.resize((ValueSize - (sizeof ValueSize + sizeof ValueType)) / sizeof (wchar_t));
+                            std::memcpy(Value.data(), Data.data() + Position, Value.length() * sizeof (wchar_t));
+                            Position += ValueSize - (sizeof ValueSize + sizeof ValueType);
+                            if(!Value.empty() && Value.back() == 0)
+                                Value.erase(Value.length() - 1);
+                            m_AttributeVector.emplace_back(std::make_pair(Name, Value));
+                            WI_ASSERT(Position == AttributePosition + AttributeSize);
+                        }
+                    }
+                    Position = AttributePosition + AttributeSize;
+                }
             }
         }
+        CATCH_LOG();
     }
 }
     

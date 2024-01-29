@@ -283,13 +283,9 @@ public:
 private:
     smart_ptr<Atom> m_pRoot;
     vector<MovieTrackPtr> m_Tracks;
-	SIZE_T m_invalidTrackCount;
+	size_t m_invalidTrackCount = 0;
     long m_scale;
     LONGLONG m_duration;
     REFERENCE_TIME m_tDuration;
+    std::vector<std::pair<std::string, std::wstring>> m_AttributeVector;
 };
-
-
-
-
-
