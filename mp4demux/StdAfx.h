@@ -21,14 +21,23 @@ _COM_SMARTPTR_TYPEDEF(IAsyncReader, IID_IAsyncReader);
 _COM_SMARTPTR_TYPEDEF(IMemAllocator, IID_IMemAllocator);
 _COM_SMARTPTR_TYPEDEF(IPin, IID_IPin);
 
+#include <mfapi.h> // MFllMulDiv
+
+#pragma comment(lib, "mfplat.lib")
+
 #include "smartptr.h"
-#include <list>
-#include <vector>
 
 #include <string>
+#include <sstream>
+#include <vector>
+#include <list>
+
 using namespace std;
 
 #pragma warning(pop)
+
+#include <wil\resource.h>
+#include <wil\com.h>
 
 #define FOURCC(p)   (DWORD(p[3] | (p[2] << 8) | (p[1] << 16) | (p[0] << 24)))
 
