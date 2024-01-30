@@ -267,17 +267,66 @@ public:
     HRESULT SetStopTime(REFERENCE_TIME tStop);
 
 // IDemuxFilter
-    STDMETHOD(GetInvalidTrackCount)(ULONG* pnInvalidTrackCount) override
-	{
-		if(!pnInvalidTrackCount)
-			return E_POINTER;
-		ULONG nInvalidTrackCount = 0;
-		// WARN: Thread unsafe
-		if(m_pMovie)
-			nInvalidTrackCount = (ULONG) m_pMovie->InvalidTrackCount();
-		*pnInvalidTrackCount = nInvalidTrackCount;
-		return S_OK;
-	}
+    IFACEMETHOD(GetInvalidTrackCount)(ULONG* InvalidTrackCount) override
+    {
+        try
+        {
+            THROW_HR_IF_NULL(E_POINTER, InvalidTrackCount);
+            // WARN: Thread unsafe
+            *InvalidTrackCount = m_pMovie ? static_cast<ULONG>(m_pMovie->InvalidTrackCount()) : 0;
+        }
+        CATCH_RETURN();
+        return S_OK;
+    }
+    IFACEMETHOD(GetComment)(BSTR* Comment) override
+    {
+        try
+        {
+            THROW_HR_IF_NULL(E_POINTER, Comment);
+            *Comment = nullptr;
+            // TODO: Implement IDemuxFilter::GetComment
+            THROW_HR(E_NOTIMPL);
+        }
+        CATCH_RETURN();
+        return S_OK;
+    }
+    IFACEMETHOD(GetAttributes)(VARIANT* Values) override
+    {
+        try
+        {
+            THROW_HR_IF_NULL(E_POINTER, Values);
+            VariantInit(Values);
+            RETURN_HR_IF(S_FALSE, !m_pMovie);
+            // WARN: Thread unsafe?
+            auto const& AttributeVector = m_pMovie->AttributeVector();
+            if(!AttributeVector.empty())
+            {
+                SAFEARRAYBOUND Bounds[] { { static_cast<ULONG>(AttributeVector.size()) } };
+                Values->parray = SafeArrayCreate(VT_VARIANT, static_cast<UINT>(std::size(Bounds)), Bounds);
+                Values->vt = VT_ARRAY | VT_VARIANT;
+                size_t Index = 0;
+                for(auto&& Attribute: AttributeVector)
+                {
+                    LONG ArrayIndices[] { static_cast<LONG>(Index++) };
+                    wil::unique_variant VariantAttribute;
+                    {
+                        SAFEARRAYBOUND AttributeBounds[] { { 2u } };
+                        VariantAttribute.parray = SafeArrayCreate(VT_BSTR, static_cast<UINT>(std::size(AttributeBounds)), AttributeBounds);
+                        VariantAttribute.vt = VT_ARRAY | VT_BSTR;
+                        wchar_t Name[128];
+                        swprintf_s(Name, L"%hs", Attribute.first.c_str());
+                        LONG Indices[] { 0 };
+                        THROW_IF_FAILED(SafeArrayPutElement(VariantAttribute.parray, Indices, wil::make_bstr(Name).get())); 
+                        Indices[0]++;
+                        THROW_IF_FAILED(SafeArrayPutElement(VariantAttribute.parray, Indices, wil::make_bstr(Attribute.second.c_str()).get()));
+                    }
+                    THROW_IF_FAILED(SafeArrayPutElement(Values->parray, ArrayIndices, &VariantAttribute));
+                }
+            }
+        }
+        CATCH_RETURN();
+        return S_OK;
+    }
 
 private:
     // construct only via class factory

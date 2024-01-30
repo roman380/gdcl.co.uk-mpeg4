@@ -53,9 +53,20 @@
   <ItemDefinitionGroup>
     <Midl />
     <ClCompile>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;_USRDLL;mp4demux_EXPORTS</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(Configuration)' == 'Debug'">%(PreprocessorDefinitions);_DEBUG</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(Configuration)' != 'Debug'">%(PreprocessorDefinitions);NDEBUG</PreprocessorDefinitions>
+      <!-- <PreprocessorDefinitions Condition="'$(Configuration)' != 'Debug'">%(PreprocessorDefinitions);DEVELOPMENT</PreprocessorDefinitions> -->
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)submodule\wil\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(IntDir)</AdditionalIncludeDirectories>
+      <WarningLevel>Level4</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
       <RuntimeLibrary Condition="'$(Configuration)'=='Release'">MultiThreaded</RuntimeLibrary>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <ResourceCompile />
     <Link>
