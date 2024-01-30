@@ -172,6 +172,8 @@ Atom::BufferRelease()
 
 // -- main movie header, contains list of tracks ---------------
 
+extern bool g_ElstMediaTimeTruncation;
+
 Movie::Movie(Atom* pRoot) : 
     m_pRoot(pRoot)
 {
@@ -278,10 +280,9 @@ Movie::ReadAbsolute(LONGLONG llPos, BYTE* pBuffer, long cBytes)
 // ------------------------------------------------------------------
 
 
-MovieTrack::MovieTrack(Atom* pAtom, Movie* pMovie, long idx)
-: m_pMovie(pMovie),
-  m_idx(idx),
-  m_bOldFixedAudio(false)
+MovieTrack::MovieTrack(Atom* pAtom, Movie* pMovie, long idx) : 
+    m_pMovie(pMovie),
+    m_idx(idx)
 {
     // check version/flags entry for track header
     Atom* pHdr = pAtom->FindChild(FOURCC("tkhd"));
@@ -345,26 +346,30 @@ MovieTrack::MovieTrack(Atom* pAtom, Movie* pMovie, long idx)
 LONGLONG 
 MovieTrack::ParseEDTS(Atom* patm)
 {
-    Atom* patmELST = patm->FindChild(FOURCC("elst"));
-    if (patmELST != NULL)
+    Atom* Elst = patm->FindChild(FOURCC("elst"));
+    if(Elst)
     {
-		AtomCache pELST = patmELST;
-		const UINT32 cEdits = SwapLong(pELST + 4);
-		for (UINT32 i = 0; i < cEdits; i++)
+		AtomCache ElstCache = Elst;
+		uint32_t const entry_count = SwapLong(ElstCache + 4);
+		for(uint32_t Index = 0; Index < entry_count; Index++)
         {
-			EditEntry e;
-            if (pELST[0] == 0)
+			EditEntry Entry;
+            if(ElstCache[0] == 0)
             {
-				e.duration = SwapLong(pELST + 8 + (i * 12));
+				Entry.duration = SwapLong(ElstCache + 8 + (Index * 12));
 				// WARN: elst atom has an explicitly defined offset -1 for an empty edit, should we still treat the value as signed otherwise?
-				e.offset = (INT32) SwapLong(pELST + 8 + 4 + (i * 12));
-			}
-			else 
+				Entry.offset = (INT32) SwapLong(ElstCache + 8 + 4 + (Index * 12));
+                if(g_ElstMediaTimeTruncation && Entry.offset == 0xFFFF)
+                {
+                    // WARN: Fixing truncated at 16-bit -1 value via explicit compatibility shim; see https://github.com/roman380/gdcl.co.uk-mpeg4/pull/49/files#r1469965874
+                    Entry.offset = -1;
+                }
+			} else 
             {
-				e.duration = SwapI64(pELST + 8 + (i * 20));
-				e.offset = (INT64) SwapI64(pELST + 8 + 8 + (i * 20));
+				Entry.duration = SwapI64(ElstCache + 8 + (Index * 20));
+				Entry.offset = (INT64) SwapI64(ElstCache + 8 + 8 + (Index * 20));
 			}
-			m_Edits.push_back(e);
+			m_Edits.push_back(Entry);
 		}
     }
 	// always return 0 for start offset. We now add the ELST above this layer, so the TimesIndex()

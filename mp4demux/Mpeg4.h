@@ -192,6 +192,7 @@ class MovieTrack
 {
 public:
     MovieTrack(Atom* pAtom, Movie* pMovie, long idx);
+
     bool Valid()
     {
         return (m_pRoot != NULL);
@@ -245,7 +246,7 @@ private:
     smart_ptr<SampleSizes> m_pSizes;
     smart_ptr<KeyMap> m_pKeyMap;
     smart_ptr<SampleTimes> m_pTimes;
-	bool m_bOldFixedAudio;
+	bool m_bOldFixedAudio = false;
 
 	REFERENCE_TIME m_tNext;
 	vector<EditEntry> m_Edits;
