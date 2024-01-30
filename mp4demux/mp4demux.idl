@@ -41,6 +41,7 @@ library GdclMp4Demux
 		HRESULT GetInvalidTrackCount([out] ULONG* InvalidTrackCount);
 		HRESULT GetComment([out] BSTR* Comment);
 		HRESULT GetAttributes([out] VARIANT* Values);
+		HRESULT Compatibility([in] BSTR Name, [in, out] VARIANT* Value);
 	};
 	[
 		uuid(025BE2E4-1787-4da4-A585-C5B2B9EEB57C)

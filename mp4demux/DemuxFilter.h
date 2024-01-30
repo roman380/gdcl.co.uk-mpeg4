@@ -226,6 +226,9 @@ private:
 };
 typedef IPinPtr DemuxOutputPinPtr;
 
+extern bool g_ElstMediaTimeTruncation;
+__declspec(selectany) bool g_ElstMediaTimeTruncation = false;
+
 class DECLSPEC_UUID("025BE2E4-1787-4da4-A585-C5B2B9EEB57C")
 Mpeg4Demultiplexor
 : public CBaseFilter, public IDemuxFilter
@@ -322,6 +325,20 @@ public:
                     }
                     THROW_IF_FAILED(SafeArrayPutElement(Values->parray, ArrayIndices, &VariantAttribute));
                 }
+            }
+        }
+        CATCH_RETURN();
+        return S_OK;
+    }
+    IFACEMETHOD(Compatibility)(BSTR Name, [[maybe_unused]] VARIANT* Value) override
+    {
+        try
+        {
+            THROW_HR_IF_NULL(E_INVALIDARG, Name);
+            if(wcscmp(Name, L"elst media_time truncation") == 0)
+            {
+                // WARN: Thread unsafe and also global (we need to pass this to Movie consutructor before it is created)
+                g_ElstMediaTimeTruncation = true;
             }
         }
         CATCH_RETURN();

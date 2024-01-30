@@ -181,10 +181,10 @@ class SampleSizes;
 class KeyMap;
 class SampleTimes;
 
-struct EditEntry
+struct EditEntry // ISO/IEC 14496-12:2012; 8.6.6 Edit List Box
 {
-	LONGLONG duration;
-	LONGLONG offset;
+	LONGLONG segment_duration; // uint64_t
+	LONGLONG media_time; // int64_t
 	LONGLONG sumDurations;
 };
 
@@ -192,6 +192,7 @@ class MovieTrack
 {
 public:
     MovieTrack(Atom* pAtom, Movie* pMovie, long idx);
+
     bool Valid()
     {
         return (m_pRoot != NULL);
@@ -245,7 +246,7 @@ private:
     smart_ptr<SampleSizes> m_pSizes;
     smart_ptr<KeyMap> m_pKeyMap;
     smart_ptr<SampleTimes> m_pTimes;
-	bool m_bOldFixedAudio;
+	bool m_bOldFixedAudio = false;
 
 	REFERENCE_TIME m_tNext;
 	vector<EditEntry> m_Edits;

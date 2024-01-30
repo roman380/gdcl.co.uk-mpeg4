@@ -372,34 +372,30 @@ MuxInput::GetMediaType(int iPosition, CMediaType* pmt)
 STDMETHODIMP 
 MuxInput::Receive(IMediaSample* pSample)
 {
-    #if defined(_DEBUG) && FALSE
-        AM_SAMPLE2_PROPERTIES Properties;
-        ZeroMemory(&Properties, sizeof Properties);
+    #if !defined(NDEBUG) && 0
+        AM_SAMPLE2_PROPERTIES Properties { };
         if(pSample)
         {
-            QzCComPtr<IMediaSample2> pMediaSample2;
-            if(SUCCEEDED(pSample->QueryInterface(&pMediaSample2)))
+            auto const MediaSample2 = wil::try_com_query<IMediaSample2>(pSample);
+            if(MediaSample2)
             {
-                const HRESULT nGetPropertiesResult = pMediaSample2->GetProperties(sizeof Properties, (BYTE*) &Properties);
+                auto const GetPropertiesResult = MediaSample2->GetProperties(sizeof Properties, (BYTE*) &Properties);
             }
-            REFERENCE_TIME nStartTime = 0, nStopTime = 0;
-            const HRESULT nGetTimeResult = pSample->GetTime(&nStartTime, &nStopTime);
-            BYTE* pnData = NULL;
-            pSample->GetPointer(&pnData);
-            const LONG nDataSize = pSample->GetActualDataLength();
-            //CHAR pszData[1024] = { 0 };
-            //for(SIZE_T nIndex = 0; nIndex < nDataSize; nIndex++)
-            static LONG g_nCounter = 0;
-            CHAR pszText[1024] = { 0 };
-            sprintf_s(pszText, "%hs: " "m_index %d, nGetTimeResult 0x%08X, nStartTime %I64d, nStopTime %I64d, nDataSize %d (%d)\n", __FUNCTION__, 
+            REFERENCE_TIME StartTime = 0, StopTime = 0;
+            auto const GetTimeResult = pSample->GetTime(&StartTime, &StopTime);
+            BYTE* Data = nullptr;
+            pSample->GetPointer(&Data);
+            auto const DataSize = pSample->GetActualDataLength();
+            static unsigned long g_Counter = 0;
+            char Text[1024] { };
+            sprintf_s(Text, "%hs: " "m_index %d, nGetTimeResult 0x%08X, StartTime %lld, StopTime %lld, DataSize %d (%u)\n", __FUNCTION__, 
                 m_index,
-                nGetTimeResult, nStartTime, nStopTime, 
-                nDataSize,
-                ++g_nCounter,
-                0);
-            OutputDebugStringA(pszText);
+                GetTimeResult, StartTime, StopTime, 
+                DataSize,
+                ++g_Counter);
+            OutputDebugStringA(Text);
         }
-    #endif // defined(_DEBUG)
+    #endif
 
     #if defined(WITH_DIRECTSHOWSPY)
         if(m_pMediaSampleTrace)
