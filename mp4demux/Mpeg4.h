@@ -256,6 +256,7 @@ class Movie
 {
 public:
     Movie(Atom* pRoot);
+
     long Tracks()
     {
         return (long)m_Tracks.size();
@@ -264,11 +265,11 @@ public:
     {
         return m_Tracks[nTrack];
     }
-        
 	SIZE_T InvalidTrackCount() const
 	{
 		return m_invalidTrackCount;
 	}
+
     REFERENCE_TIME Duration()
     {
         return m_tDuration;
@@ -279,6 +280,10 @@ public:
     }
     HRESULT ReadAbsolute(LONGLONG llPos, BYTE* pBuffer, long cBytes);
 
+    std::vector<std::pair<std::string, std::wstring>> const& AttributeVector() const
+    {
+        return m_AttributeVector;
+    }
 
 private:
     smart_ptr<Atom> m_pRoot;

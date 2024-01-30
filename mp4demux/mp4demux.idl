@@ -26,7 +26,7 @@ library GdclMp4Demux
 	]
 	interface IDemuxOutputPin : IUnknown
 	{
-	    HRESULT GetMediaSampleTimes([out] ULONG* pnCount, [out] LONGLONG** ppnStartTimes, [out] LONGLONG** ppnStopTimes, [out] ULONG** ppnFlags, [out] ULONG** ppnDataSizes);
+		HRESULT GetMediaSampleTimes([out] ULONG* pnCount, [out] LONGLONG** ppnStartTimes, [out] LONGLONG** ppnStopTimes, [out] ULONG** ppnFlags, [out] ULONG** ppnDataSizes);
 	};
 	[
 		object,
@@ -38,7 +38,9 @@ library GdclMp4Demux
 	]
 	interface IDemuxFilter : IUnknown
 	{
-	    HRESULT GetInvalidTrackCount([out] ULONG* pnInvalidTrackCount);
+		HRESULT GetInvalidTrackCount([out] ULONG* InvalidTrackCount);
+		HRESULT GetComment([out] BSTR* Comment);
+		HRESULT GetAttributes([out] VARIANT* Values);
 	};
 	[
 		uuid(025BE2E4-1787-4da4-A585-C5B2B9EEB57C)
