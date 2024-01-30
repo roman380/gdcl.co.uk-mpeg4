@@ -320,22 +320,20 @@ MovieTrack::MovieTrack(Atom* pAtom, Movie* pMovie, long idx) :
 					for (vector<EditEntry>::iterator it = m_Edits.begin(); it != m_Edits.end(); it++)
 					{
 						// duration is in movie scale; offset is in track scale. 
-						it->duration = it->duration * UNITS / m_pMovie->Scale();
-						if (it->offset > 0)
-						{
-							it->offset = TimesIndex()->TrackToReftime(it->offset);
-						}
+						it->segment_duration = it->segment_duration * UNITS / m_pMovie->Scale();
+						if(it->media_time > 0)
+							it->media_time = TimesIndex()->TrackToReftime(it->media_time);
 						it->sumDurations = sumDurations;
-						sumDurations += it->duration;
+						sumDurations += it->segment_duration;
 					}
 				}
 				else
 				{
 					// create dummy edit
 					EditEntry e;
-					e.offset = 0;
+					e.media_time = 0;
 					e.sumDurations = 0;
-					e.duration = TimesIndex()->TotalDuration();
+					e.segment_duration = TimesIndex()->TotalDuration();
 					m_Edits.push_back(e);
 				}
             }
@@ -346,7 +344,7 @@ MovieTrack::MovieTrack(Atom* pAtom, Movie* pMovie, long idx) :
 LONGLONG 
 MovieTrack::ParseEDTS(Atom* patm)
 {
-    Atom* Elst = patm->FindChild(FOURCC("elst"));
+    Atom* Elst = patm->FindChild(FOURCC("elst")); // ISO/IEC 14496-12:2012; 8.6.6 Edit List Box
     if(Elst)
     {
 		AtomCache ElstCache = Elst;
@@ -356,18 +354,15 @@ MovieTrack::ParseEDTS(Atom* patm)
 			EditEntry Entry;
             if(ElstCache[0] == 0)
             {
-				Entry.duration = SwapLong(ElstCache + 8 + (Index * 12));
-				// WARN: elst atom has an explicitly defined offset -1 for an empty edit, should we still treat the value as signed otherwise?
-				Entry.offset = (INT32) SwapLong(ElstCache + 8 + 4 + (Index * 12));
-                if(g_ElstMediaTimeTruncation && Entry.offset == 0xFFFF)
-                {
-                    // WARN: Fixing truncated at 16-bit -1 value via explicit compatibility shim; see https://github.com/roman380/gdcl.co.uk-mpeg4/pull/49/files#r1469965874
-                    Entry.offset = -1;
-                }
+				Entry.segment_duration = SwapLong(ElstCache + 8 + (Index * 12));
+				Entry.media_time = static_cast<int32_t>(SwapLong(ElstCache + 8 + 4 + (Index * 12)));
+                // WARN: Fixing truncated at 16-bit -1 value via explicit compatibility shim; see https://github.com/roman380/gdcl.co.uk-mpeg4/pull/49/files#r1469965874
+                if(g_ElstMediaTimeTruncation && Entry.media_time == 0xFFFF)
+                    Entry.media_time = -1;
 			} else 
             {
-				Entry.duration = SwapI64(ElstCache + 8 + (Index * 20));
-				Entry.offset = (INT64) SwapI64(ElstCache + 8 + 8 + (Index * 20));
+				Entry.segment_duration = SwapI64(ElstCache + 8 + (Index * 20));
+				Entry.media_time = static_cast<int64_t>(SwapI64(ElstCache + 8 + 8 + (Index * 20)));
 			}
 			m_Edits.push_back(Entry);
 		}
@@ -576,39 +571,28 @@ MovieTrack::ReadSample(long nSample, BYTE* pBuffer, long cBytes)
 
 bool MovieTrack::CheckInSegment(REFERENCE_TIME tNext, bool bSyncBefore, size_t* pnSegment, long* pnSample)
 {
-	for (size_t idx = 0; idx < m_Edits.size(); idx++)
+	for(size_t idx = 0; idx < m_Edits.size(); idx++)
 	{
 		EditEntry* it = &m_Edits[idx];
-        LONGLONG endDuration = it->sumDurations + it->duration;
-        if (tNext < endDuration)
+		LONGLONG endDuration = it->sumDurations + it->segment_duration;
+		if(tNext >= endDuration)
+			continue;
+		if(it->media_time != -1) // empty edit; skip to next segment start
 		{
-			if (it->offset == -1)
-			{
-				// empty edit; skip to next segment start
-				tNext = it->sumDurations + it->duration;
-			}
-			else
-			{
-				// map to sample number
-				LONGLONG rCTS = tNext - it->sumDurations;
-				LONGLONG trackCTS = rCTS + it->offset;
-				long n = TimesIndex()->CTSToSample(trackCTS);
-				if (n < 0)
-				{
-					return false;
-				}
-				if (bSyncBefore)
-				{
-					n = GetKeyMap()->SyncFor(n);
-				}
-
-				*pnSample = n;
-				*pnSegment = idx;
-				return true;
-			}
+			// map to sample number
+			LONGLONG rCTS = tNext - it->sumDurations;
+			LONGLONG trackCTS = rCTS + it->media_time;
+			long n = TimesIndex()->CTSToSample(trackCTS);
+			if(n < 0)
+				return false;
+			if(bSyncBefore)
+				n = GetKeyMap()->SyncFor(n);
+			*pnSample = n;
+			*pnSegment = idx;
+			return true;
 		}
+		tNext = it->sumDurations + it->segment_duration;
 	}
-
 	return false;
 }
 
@@ -620,13 +604,11 @@ void MovieTrack::GetTimeBySegment(
 {
 	EditEntry* it = &m_Edits[segment];
 	REFERENCE_TIME cts = TimesIndex()->SampleToCTS(nSample);
-	REFERENCE_TIME relCTS = cts - it->offset;
+	REFERENCE_TIME relCTS = cts - it->media_time;
 
 	REFERENCE_TIME duration = TimesIndex()->Duration(nSample);
-	if ((relCTS + duration) > it->duration)
-	{
-		duration = it->duration - relCTS;
-	}
+	if ((relCTS + duration) > it->segment_duration)
+		duration = it->segment_duration - relCTS;
 	*ptStart = relCTS + it->sumDurations;
 	*pDuration = duration;
 }
@@ -636,18 +618,17 @@ bool MovieTrack::NextBySegment(long* pnSample, size_t* psegment)
 	int n = *pnSample + 1;
 	EditEntry* it = &m_Edits[*psegment];
 
-
 	if (n < SizeIndex()->SampleCount())
 	{
 		REFERENCE_TIME cts = TimesIndex()->SampleToCTS(n);
-		REFERENCE_TIME relCTS = cts - it->offset;
-		if (relCTS < it->duration)
+		REFERENCE_TIME relCTS = cts - it->media_time;
+		if (relCTS < it->segment_duration)
 		{
 			*pnSample = n;
 			return true;
 		}
 	}
-	REFERENCE_TIME tEdit = it->duration + it->sumDurations;
+	REFERENCE_TIME tEdit = it->segment_duration + it->sumDurations;
 	return CheckInSegment(tEdit, false, psegment, pnSample);
 }
 

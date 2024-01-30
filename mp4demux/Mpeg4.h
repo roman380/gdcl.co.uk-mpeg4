@@ -181,10 +181,10 @@ class SampleSizes;
 class KeyMap;
 class SampleTimes;
 
-struct EditEntry
+struct EditEntry // ISO/IEC 14496-12:2012; 8.6.6 Edit List Box
 {
-	LONGLONG duration;
-	LONGLONG offset;
+	LONGLONG segment_duration; // uint64_t
+	LONGLONG media_time; // int64_t
 	LONGLONG sumDurations;
 };
 
