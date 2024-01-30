@@ -201,7 +201,17 @@ EXTERN_C const IID IID_IDemuxFilter;
     {
     public:
         virtual HRESULT STDMETHODCALLTYPE GetInvalidTrackCount( 
-            /* [out] */ ULONG *pnInvalidTrackCount) = 0;
+            /* [out] */ ULONG *InvalidTrackCount) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE GetComment( 
+            /* [out] */ BSTR *Comment) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE GetAttributes( 
+            /* [out] */ VARIANT *Values) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE Compatibility( 
+            /* [in] */ BSTR Name,
+            /* [out][in] */ VARIANT *Value) = 0;
         
     };
     
@@ -230,7 +240,23 @@ EXTERN_C const IID IID_IDemuxFilter;
         DECLSPEC_XFGVIRT(IDemuxFilter, GetInvalidTrackCount)
         HRESULT ( STDMETHODCALLTYPE *GetInvalidTrackCount )( 
             IDemuxFilter * This,
-            /* [out] */ ULONG *pnInvalidTrackCount);
+            /* [out] */ ULONG *InvalidTrackCount);
+        
+        DECLSPEC_XFGVIRT(IDemuxFilter, GetComment)
+        HRESULT ( STDMETHODCALLTYPE *GetComment )( 
+            IDemuxFilter * This,
+            /* [out] */ BSTR *Comment);
+        
+        DECLSPEC_XFGVIRT(IDemuxFilter, GetAttributes)
+        HRESULT ( STDMETHODCALLTYPE *GetAttributes )( 
+            IDemuxFilter * This,
+            /* [out] */ VARIANT *Values);
+        
+        DECLSPEC_XFGVIRT(IDemuxFilter, Compatibility)
+        HRESULT ( STDMETHODCALLTYPE *Compatibility )( 
+            IDemuxFilter * This,
+            /* [in] */ BSTR Name,
+            /* [out][in] */ VARIANT *Value);
         
         END_INTERFACE
     } IDemuxFilterVtbl;
@@ -255,8 +281,17 @@ EXTERN_C const IID IID_IDemuxFilter;
     ( (This)->lpVtbl -> Release(This) ) 
 
 
-#define IDemuxFilter_GetInvalidTrackCount(This,pnInvalidTrackCount)	\
-    ( (This)->lpVtbl -> GetInvalidTrackCount(This,pnInvalidTrackCount) ) 
+#define IDemuxFilter_GetInvalidTrackCount(This,InvalidTrackCount)	\
+    ( (This)->lpVtbl -> GetInvalidTrackCount(This,InvalidTrackCount) ) 
+
+#define IDemuxFilter_GetComment(This,Comment)	\
+    ( (This)->lpVtbl -> GetComment(This,Comment) ) 
+
+#define IDemuxFilter_GetAttributes(This,Values)	\
+    ( (This)->lpVtbl -> GetAttributes(This,Values) ) 
+
+#define IDemuxFilter_Compatibility(This,Name,Value)	\
+    ( (This)->lpVtbl -> Compatibility(This,Name,Value) ) 
 
 #endif /* COBJMACROS */
 
