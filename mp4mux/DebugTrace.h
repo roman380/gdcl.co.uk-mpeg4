@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tuple>
 #include <stdarg.h>
 #include <string.h>
 #include <wchar.h>
@@ -58,5 +59,5 @@ struct TraceContext
 #if !defined(NDEBUG)
 	#define TRACE TraceContext(__FILE__, __LINE__, __FUNCTION__)
 #else
-	#define TRACE 1 ? 0 :
+	#define TRACE(...) do { std::ignore = std::make_tuple(__VA_ARGS__); } while(0)
 #endif
