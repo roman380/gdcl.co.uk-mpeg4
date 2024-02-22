@@ -287,8 +287,15 @@ public:
         {
             THROW_HR_IF_NULL(E_POINTER, Comment);
             *Comment = nullptr;
-            // TODO: Implement IDemuxFilter::GetComment
-            THROW_HR(E_NOTIMPL);
+            RETURN_HR_IF(S_FALSE, !m_pMovie);
+            // WARN: Thread unsafe?
+            auto const& CommentA = m_pMovie->Comment();
+		    auto const Capacity = MultiByteToWideChar(CP_UTF8, 0, CommentA.c_str(), static_cast<INT>(CommentA.size()), nullptr, 0);
+        	std::wstring CommentW;
+            CommentW.resize(Capacity);
+		    auto const Size = MultiByteToWideChar(CP_UTF8, 0, CommentA.c_str(), static_cast<INT>(CommentA.size()), const_cast<wchar_t*>(CommentW.data()), Capacity);
+    		CommentW.resize(Size);
+            *Comment = wil::make_bstr(CommentW.c_str()).release();
         }
         CATCH_RETURN();
         return S_OK;

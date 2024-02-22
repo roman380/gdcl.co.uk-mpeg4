@@ -281,6 +281,10 @@ public:
     }
     HRESULT ReadAbsolute(LONGLONG llPos, BYTE* pBuffer, long cBytes);
 
+    std::string const& Comment() const
+    {
+        return m_Comment;
+    }
     std::vector<std::pair<std::string, std::wstring>> const& AttributeVector() const
     {
         return m_AttributeVector;
@@ -293,5 +297,6 @@ private:
     long m_scale;
     LONGLONG m_duration;
     REFERENCE_TIME m_tDuration;
+    std::string m_Comment;
     std::vector<std::pair<std::string, std::wstring>> m_AttributeVector;
 };

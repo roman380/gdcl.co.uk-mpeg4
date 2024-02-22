@@ -212,7 +212,27 @@ Movie::Movie(Atom* pRoot) :
         try
         {
             AtomCache Udta(UdtaHeader);
-            // TODO: Meta atom and comment; see mp4mux\MovieWriter.cpp#L130
+            Atom* MetaHeader = UdtaHeader->FindChild(FOURCC("meta"));
+            if(MetaHeader && MetaHeader->Length() > 4 + 4 + 4)
+            {
+                MetaHeader->ScanChildrenAt(4); // Version, Flags
+                Atom* IlstHeader = MetaHeader->FindChild(FOURCC("ilst"));
+                if(IlstHeader)
+                {
+                    Atom* CmtHeader = IlstHeader->FindChild(0xA9000000 | 'cmt');
+                    if(CmtHeader)
+                    {
+                        Atom* DataHeader = CmtHeader->FindChild('data');
+                        if(DataHeader && DataHeader->Length() > 8)
+                        {
+                            std::vector<uint8_t> Data;
+                            Data.resize(static_cast<size_t>(DataHeader->Length() - DataHeader->HeaderSize()));
+                            THROW_IF_FAILED(DataHeader->Read(DataHeader->HeaderSize(), static_cast<long>(Data.size()), Data.data()));
+                            m_Comment = std::string(reinterpret_cast<char const*>(Data.data() + 8), reinterpret_cast<char const*>(Data.data() + Data.size()));
+                        }
+                    }
+                }
+            }
             Atom* XtraHeader = UdtaHeader->FindChild(FOURCC("Xtra"));
             if(XtraHeader)
             {
