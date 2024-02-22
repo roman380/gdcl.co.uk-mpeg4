@@ -7,6 +7,8 @@
 
 #pragma comment(lib, "propsys.lib")
 
+#include "..\mp4demux\mp4demux_h.h"
+#include "..\mp4demux\mp4demux_i.c"
 #include "..\mp4mux\mp4mux_h.h"
 #include "..\mp4mux\mp4mux_i.c"
 
@@ -137,12 +139,39 @@ namespace Test
 				RunFilterGraph(FilterGraph2, 20s);
 				// SUGG: Also try to set comment before closing on already running filter graph
 			}
-			FilePropertyStore PropertyStore { Path.c_str() };
-			wil::unique_prop_variant Comment;
-			PropertyStore.Get(PKEY_Comment, Comment);
-			Assert::AreEqual<VARTYPE>(VT_LPWSTR, Comment.vt);
-			Assert::IsNotNull(Comment.pwszVal);
-			Assert::IsTrue(strcmp(g_Comment, ToMultiByte(Comment.pwszVal).c_str()) == 0);
+			{
+				FilePropertyStore PropertyStore { Path.c_str() };
+				wil::unique_prop_variant Comment;
+				PropertyStore.Get(PKEY_Comment, Comment);
+				Assert::AreEqual<VARTYPE>(VT_LPWSTR, Comment.vt);
+				Assert::IsNotNull(Comment.pwszVal);
+				Assert::IsTrue(strcmp(g_Comment, ToMultiByte(Comment.pwszVal).c_str()) == 0);
+			}
+			{
+				Library Library(L"mp4demux.dll");
+				auto const FilterGraph2 = wil::CoCreateInstance<IFilterGraph2>(CLSID_FilterGraph, CLSCTX_INPROC_SERVER);
+				wil::com_ptr<IPin> CurrectOutputPin;
+				#pragma region Source
+				{
+					auto const BaseFilter = wil::CoCreateInstance<IBaseFilter>(CLSID_AsyncReader, CLSCTX_INPROC_SERVER);
+					THROW_IF_FAILED(BaseFilter.query<IFileSourceFilter>()->Load(Path.c_str(), nullptr));
+					AddFilter(FilterGraph2, BaseFilter, L"Source");
+					CurrectOutputPin = Pin(BaseFilter);
+				}
+				#pragma endregion
+				#pragma region Multiplexer
+				wil::unique_bstr Comment;
+				{
+					auto const Filter = Library.CreateInstance<DemuxFilter, IDemuxFilter>();
+					auto const BaseFilter = Filter.query<IBaseFilter>();
+					AddFilter(FilterGraph2, BaseFilter, L"Demultiplexer");
+					THROW_IF_FAILED(FilterGraph2->Connect(CurrectOutputPin.get(), Pin(BaseFilter, PINDIR_INPUT).get()));
+					CurrectOutputPin = Pin(BaseFilter, PINDIR_OUTPUT);
+					THROW_IF_FAILED(Filter->GetComment(Comment.put()));
+				}
+				#pragma endregion
+				Assert::IsTrue(strcmp(g_Comment, ToMultiByte(Comment.get()).c_str()) == 0);
+			}
 		}
 
 		#endif
