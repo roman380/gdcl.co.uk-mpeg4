@@ -17,209 +17,149 @@
 #include "ElemType.h"
 #include <dvdmedia.h>
 
-// ----- format-specific handlers -------------------
-
-// default no-translation
-
 class NoChangeHandler : public FormatHandler
 {
 public:
-    long BufferSize(long MaxSize);
-    void StartStream();
-    long PrepareOutput(IMediaSample* pSample, Movie* pMovie, LONGLONG llPos, long cBytes);
-};
-
-long 
-NoChangeHandler::BufferSize(long MaxSize)
-{
-    return MaxSize;
-}
-
-void 
-NoChangeHandler::StartStream()
-{
-}
-
-long 
-NoChangeHandler::PrepareOutput(IMediaSample* pSample, Movie* pMovie, LONGLONG llPos, long cBytes)
-{
-    BYTE* pBuffer;
-    pSample->GetPointer(&pBuffer);
-
-    if (pMovie->ReadAbsolute(llPos, pBuffer, cBytes) == S_OK)
+    long BufferSize(long MaxSize) override
     {
-        return cBytes;
+        return MaxSize;
     }
-    return 0;
-}
+    void StartStream() override
+    {
+	}
+    long PrepareOutput(IMediaSample* pSample, Movie* pMovie, LONGLONG llPos, long cBytes) override
+    {
+        BYTE* pBuffer;
+        pSample->GetPointer(&pBuffer);
+        if (pMovie->ReadAbsolute(llPos, pBuffer, cBytes) == S_OK)
+            return cBytes;
+        return 0;
+    }
+};
 
 class BigEndianAudioHandler : public NoChangeHandler
 {
 public:
-    long PrepareOutput(IMediaSample* pSample, Movie* pMovie, LONGLONG llPos, long cBytes);
-};
-
-long 
-BigEndianAudioHandler::PrepareOutput(IMediaSample* pSample, Movie* pMovie, LONGLONG llPos, long cBytes)
-{
-	cBytes = __super::PrepareOutput(pSample, pMovie, llPos, cBytes);
-	if (cBytes > 0)
+    long PrepareOutput(IMediaSample* pSample, Movie* pMovie, LONGLONG llPos, long cBytes) override
 	{
-		BYTE* pBuffer;
-		pSample->GetPointer(&pBuffer);
-		if (cBytes%2) 
+		cBytes = __super::PrepareOutput(pSample, pMovie, llPos, cBytes);
+		if (cBytes > 0)
 		{
-			cBytes--;
+			BYTE* pBuffer;
+			pSample->GetPointer(&pBuffer);
+			if (cBytes%2) 
+			{
+				cBytes--;
+			}
+			BYTE* pEnd = pBuffer + cBytes;
+			while (pBuffer < pEnd)
+			{
+				WORD w = *(WORD*)pBuffer;
+				w = Swap2Bytes(w);
+				*(WORD*)pBuffer = w;
+				pBuffer += 2;
+			}
 		}
-		BYTE* pEnd = pBuffer + cBytes;
-		while (pBuffer < pEnd)
-		{
-			WORD w = *(WORD*)pBuffer;
-			w = Swap2Bytes(w);
-			*(WORD*)pBuffer = w;
-			pBuffer += 2;
-		}
+		return cBytes;
 	}
-	return cBytes;
-}
+};
 
 // for CoreAAC, minimum buffer size is 8192 bytes.
 class CoreAACHandler : public NoChangeHandler
 {
 public:
-    long BufferSize(long MaxSize)
+    long BufferSize(long MaxSize) override
     {
         if (MaxSize < 8192)
-        {
             MaxSize = 8192;
-        }
         return MaxSize;
     }
 };
 
-// for DivX, need to prepend data to the first buffer
-// from the media type
+// for DivX, need to prepend data to the first buffer from the media type
 class DivxHandler : public NoChangeHandler
 {
 public:
-    DivxHandler(const BYTE* pDSI, long cDSI);
-    long BufferSize(long MaxSize);
-    void StartStream();
-    long PrepareOutput(IMediaSample* pSample, Movie* pMovie, LONGLONG llPos, long cBytes);
-private:
-    smart_array<BYTE> m_pPrepend;
-    long m_cBytes;
-    bool m_bFirst;
-};
-
-DivxHandler::DivxHandler(const BYTE* pDSI, long cDSI)
-: m_cBytes(0)
-{
-    // The divx codec requires the stream to start with a VOL
-    // header from the DecSpecificInfo. We search for
-    // a VOL start code in the form 0x0000012x.
-    while (cDSI > 4)
+    DivxHandler(std::vector<uint8_t> const& DecoderSpecificInfo)
     {
-        if ((pDSI[0] == 0) &&
-            (pDSI[1] == 0) &&
-            (pDSI[2] == 1) &&
-            ((pDSI[3] & 0xF0) == 0x20))
-        {
-            m_cBytes = cDSI;
-            m_pPrepend = new BYTE[m_cBytes];
-            CopyMemory(m_pPrepend, pDSI,  m_cBytes);
-            break;
+        // The divx codec requires the stream to start with a VOL
+        // header from the DecSpecificInfo. We search for
+        // a VOL start code in the form 0x0000012x.
+        for (size_t Index = 0; Index + 4 <= DecoderSpecificInfo.size(); Index++)
+		{
+            if ((DecoderSpecificInfo[Index + 0] == 0) && (DecoderSpecificInfo[Index + 1] == 0) && (DecoderSpecificInfo[Index + 2] == 1) &&
+                ((DecoderSpecificInfo[Index + 3] & 0xF0) == 0x20))
+            {
+                m_Prepend = std::vector<uint8_t>(DecoderSpecificInfo.data() + Index, DecoderSpecificInfo.data() + DecoderSpecificInfo.size());
+                break;
+            }
         }
-        pDSI++;
-        cDSI--;
     }
-}
 
-long 
-DivxHandler::BufferSize(long MaxSize)
-{
-    // we need to prepend the media type data
-    // to the first sample, and with seeking, we don't know which
-    // that will be.
-    return MaxSize + m_cBytes; 
-}
-
-void 
-DivxHandler::StartStream()
-{
-    m_bFirst = true;
-}
-
-long 
-DivxHandler::PrepareOutput(IMediaSample* pSample, Movie* pMovie, LONGLONG llPos, long cBytes)
-{
-    if (m_bFirst)
+    long BufferSize(long MaxSize) override
     {
-        m_bFirst = false;
-
-        if (pSample->GetSize() < (cBytes + m_cBytes))
-        {
+        // we need to prepend the media type data
+        // to the first sample, and with seeking, we don't know which
+        // that will be.
+        return static_cast<long>(MaxSize + m_Prepend.size());
+    }
+    void StartStream() override
+    {
+        m_bFirst = true;
+    }
+    long PrepareOutput(IMediaSample* pSample, Movie* pMovie, LONGLONG llPos, long cBytes) override
+    {
+        if (!std::exchange(m_bFirst, false))
+            return NoChangeHandler::PrepareOutput(pSample, pMovie, llPos, cBytes);
+        if (pSample->GetSize() < static_cast<long>(cBytes + m_Prepend.size()))
             return 0;
-        }
-
         BYTE* pBuffer;
         pSample->GetPointer(&pBuffer);
 
         // stuff the VOL header at the start of the stream
-        CopyMemory(pBuffer,  m_pPrepend,  m_cBytes);
-        pBuffer += m_cBytes;
+        CopyMemory(pBuffer, m_Prepend.data(), m_Prepend.size());
+        pBuffer += m_Prepend.size();
         if (pMovie->ReadAbsolute(llPos, pBuffer, cBytes) != S_OK)
-        {
             return 0;
-        }
-        return m_cBytes + cBytes;
-            
-    } else {
-        return NoChangeHandler::PrepareOutput(pSample, pMovie, llPos, cBytes);
+        return static_cast<long>(m_Prepend.size() + cBytes);
     }
-}
+
+private:
+    std::vector<uint8_t> m_Prepend;
+    bool m_bFirst;
+};
 
 // for H624 byte stream, need to re-insert the 00 00 01 start codes
 
 class H264ByteStreamHandler : public NoChangeHandler
 {
 public:
-	H264ByteStreamHandler(const BYTE* pDSI, long cDSI);
-	void StartStream()
+	H264ByteStreamHandler(std::vector<uint8_t> const& DecoderSpecificInfo) :
+		m_Prepend(DecoderSpecificInfo)
+	{
+		if (DecoderSpecificInfo.size() > 4)
+			m_cLength = (DecoderSpecificInfo[4] & 3) + 1;
+	}
+
+	void StartStream() override
 	{
 		m_bFirst = true;
 	}
-    long BufferSize(long MaxSize)
+    long BufferSize(long MaxSize) override
 	{
 		// we need to add 00 00 00 01 for each NALU. There
 		// could potentially be several NALUs for each frame. Assume a max of 12.
 		if (m_cLength < 4)
-		{		
 			MaxSize += (12 * (4 - m_cLength));
-		}
-		return MaxSize + m_cPrepend;
+		return static_cast<long>(MaxSize + m_Prepend.size());
 	}
-    long PrepareOutput(IMediaSample* pSample, Movie* pMovie, LONGLONG llPos, long cBytes);
+    long PrepareOutput(IMediaSample* pSample, Movie* pMovie, LONGLONG llPos, long cBytes) override;
 
 private:
-	long m_cLength;
-	smart_array<BYTE> m_pPrepend;
-	int m_cPrepend;
+	long m_cLength = 0;
+    std::vector<uint8_t> m_Prepend;
 	bool m_bFirst;
 };
-
-
-H264ByteStreamHandler::H264ByteStreamHandler(const BYTE* pDSI, long cDSI)
-: m_cLength(0),
-  m_cPrepend(cDSI)
-{
-	m_pPrepend = new BYTE[m_cPrepend];
-	CopyMemory(m_pPrepend, pDSI, m_cPrepend);
-	if (cDSI > 4)
-	{
-		m_cLength = (pDSI[4] & 3) + 1;
-	}
-}
 
 int ReadMSW(const BYTE* p)
 {
@@ -244,8 +184,8 @@ H264ByteStreamHandler::PrepareOutput(IMediaSample* pSample, Movie* pMovie, LONGL
 	{
 		m_bFirst = false;
 
-		const BYTE* pSrc = m_pPrepend + 6;
-		int cSPS = m_pPrepend[5] & 0x1f;
+		const BYTE* pSrc = m_Prepend.data() + 6;
+		int cSPS = m_Prepend[5] & 0x1f;
 		while (cSPS--)
 		{
 			int c = ReadMSW(pSrc);
@@ -324,57 +264,33 @@ H264ByteStreamHandler::PrepareOutput(IMediaSample* pSample, Movie* pMovie, LONGL
 
 // -----------------------------------------------------
 
-ElementaryType::ElementaryType()
-: m_cDecoderSpecific(0),
-  m_tFrame(0),
-  m_pHandler(NULL),
-  m_depth(0)
-{
-}
-
-ElementaryType::~ElementaryType()
-{
-    delete m_pHandler;
-}
-
-
 bool 
 ElementaryType::ParseDescriptor(Atom* patmESD)
 {
     AtomCache pESD(patmESD);
     if (pESD[0] != 0)
-    {
         return false;   // only version 0 is speced
-    }
 
 	long cPayload = long(patmESD->Length() - patmESD->HeaderSize());
 
     // parse the ES_Descriptor to get the decoder info
     Descriptor ESDescr;
     if (!ESDescr.Parse(pESD+4, cPayload-4) || (ESDescr.Type() != Descriptor::ES_DescrTag))
-    {
         return false;
-    }
 	long cOffset = 3;
     BYTE flags = ESDescr.Start()[2];
     if (flags & 0x80)
-    {
         cOffset += 2;   // depends-on stream
-    }
     if (flags & 0x40)
     {
         // URL string -- count of chars precedes string
         cOffset += ESDescr.Start()[cOffset] + 1;
     }
     if (flags & 0x20)
-    {
         cOffset += 2;   // OCR id
-    }
     Descriptor dscDecoderConfig;
     if (!ESDescr.DescriptorAt(cOffset, dscDecoderConfig))
-    {
         return false;
-    }
     Descriptor dscSpecific;
     if (!dscDecoderConfig.DescriptorAt(13, dscSpecific))
     {
@@ -387,11 +303,7 @@ ElementaryType::ParseDescriptor(Atom* patmESD)
         return false;
     }
 
-    // store decoder-specific info
-    m_cDecoderSpecific = dscSpecific.Length();
-    m_pDecoderSpecific = new BYTE[dscSpecific.Length()];
-    CopyMemory(m_pDecoderSpecific,  dscSpecific.Start(),  m_cDecoderSpecific);
-
+    m_pDecoderSpecific = std::vector<uint8_t>(dscSpecific.Start(), dscSpecific.Start() + dscSpecific.Length());
     return true;
 }
 
@@ -577,9 +489,8 @@ ElementaryType::Parse(REFERENCE_TIME tFrame, Atom* patm)
         cOffset = 28;
 
 		// parse audio sample entry and store in case we don't find a descriptor
-		m_cDecoderSpecific = sizeof(WAVEFORMATEX);
-		m_pDecoderSpecific = new BYTE[m_cDecoderSpecific];
-		WAVEFORMATEX* pwfx = (WAVEFORMATEX*)(BYTE*)m_pDecoderSpecific;
+		m_pDecoderSpecific.resize(sizeof (WAVEFORMATEX));
+		auto pwfx = reinterpret_cast<WAVEFORMATEX*>(m_pDecoderSpecific.data());
 		pwfx->cbSize = 0;
 		WORD w = *(USHORT*)(pSD + 16);
 		pwfx->nChannels = Swap2Bytes(w);
@@ -591,7 +502,6 @@ ElementaryType::Parse(REFERENCE_TIME tFrame, Atom* patm)
 		pwfx->nBlockAlign = pwfx->nChannels * pwfx->wBitsPerSample / 8;
 		pwfx->nAvgBytesPerSec = pwfx->nBlockAlign * pwfx->nSamplesPerSec;
 		pwfx->wFormatTag = WAVE_FORMAT_PCM;
-
 
 		// add support for some non-ISO files
 		int version = (pSD[8] << 8) + pSD[9];
@@ -642,9 +552,8 @@ ElementaryType::Parse(REFERENCE_TIME tFrame, Atom* patm)
 		m_fourcc = patm->Type();
 
 		// basic pcm audio type - parse this audio atom as a QT sample description
-		m_cDecoderSpecific = sizeof(WAVEFORMATEX);
-		m_pDecoderSpecific = new BYTE[m_cDecoderSpecific];
-		WAVEFORMATEX* pwfx = (WAVEFORMATEX*)(BYTE*)m_pDecoderSpecific;
+		m_pDecoderSpecific.resize(sizeof (WAVEFORMATEX));
+		auto pwfx = reinterpret_cast<WAVEFORMATEX*>(m_pDecoderSpecific.data());
 
 		pwfx->cbSize = 0;
 		WORD w = *(USHORT*)(pSD + 16);
@@ -681,13 +590,11 @@ ElementaryType::Parse(REFERENCE_TIME tFrame, Atom* patm)
     }
 
     patm->ScanChildrenAt(cOffset);
-	for (int i = 0; i < patm->ChildCount(); i++)
+	for (size_t i = 0; i < patm->ChildCount(); i++)
 	{
 	    Atom* patmESD = patm->Child(i);
 		if (!patmESD)
-		{
 			return false;
-		}
     
 		AtomCache pESD(patmESD);
 		long cPayload = long(patmESD->Length() - patmESD->HeaderSize());
@@ -697,9 +604,7 @@ ElementaryType::Parse(REFERENCE_TIME tFrame, Atom* patm)
 			if (patmESD->Type() == FOURCC("avcC"))
 			{
 				// store the whole payload as decoder specific
-				m_cDecoderSpecific = cPayload;
-				m_pDecoderSpecific = new BYTE[cPayload];
-				CopyMemory(m_pDecoderSpecific,  pESD,  m_cDecoderSpecific);
+                m_pDecoderSpecific = std::vector<uint8_t>(static_cast<uint8_t const*>(pESD), static_cast<uint8_t const*>(pESD) + cPayload);
 				break;
 			}
 
@@ -735,7 +640,7 @@ ElementaryType::Parse(REFERENCE_TIME tFrame, Atom* patm)
 		{
 			// this appears to be a non-ISO file (prob quicktime)
 			// search for esds in children of this atom
-			for (int j = 0; j < patmESD->ChildCount(); j++)
+			for (size_t j = 0; j < patmESD->ChildCount(); j++)
 			{
 				Atom* pwav = patmESD->Child(j);
 				if (pwav->Type() == FOURCC("esds"))
@@ -746,20 +651,16 @@ ElementaryType::Parse(REFERENCE_TIME tFrame, Atom* patm)
 					}
 				}
 			}
-			if (m_cDecoderSpecific > 0)
-			{
+			if (!m_pDecoderSpecific.empty())
 				break;
-			}
 		}
 	}
     // check that we have picked up the seq header or other data
     // except for the few formats where it is not needed.
     if ((m_type != Audio_AAC) && (m_type != Audio_WAVEFORMATEX))
     {
-        if (m_cDecoderSpecific <= 0)
-        {
+		if (m_pDecoderSpecific.empty())
             return false;
-        }
     }
     return true;
 }
@@ -775,8 +676,7 @@ ElementaryType::SetType(const CMediaType* pmt)
 {
     if (m_mtChosen != *pmt)
     {
-        delete m_pHandler;
-        m_pHandler = NULL;
+        m_Handler.reset();
         m_mtChosen = *pmt;
     
         int idx = 0;
@@ -788,7 +688,7 @@ ElementaryType::SetType(const CMediaType* pmt)
                 // handler based on m_type and idx
                 if (m_type == Audio_AAC)
                 {
-                    m_pHandler = new CoreAACHandler();
+                    m_Handler = std::make_unique<CoreAACHandler>();
                 } else 
 					// bugfix pointed out by David Hunter --
 					// Use the divxhandler to prepend VOL header for divx and xvid types.
@@ -796,19 +696,17 @@ ElementaryType::SetType(const CMediaType* pmt)
 					// (should really compare subtypes here I think)
 					if ((m_type == Video_Mpeg4) && (idx > 0))
                 {
-                    m_pHandler = new DivxHandler(m_pDecoderSpecific, m_cDecoderSpecific);
+                    m_Handler = std::make_unique<DivxHandler>(m_pDecoderSpecific);
 				} 
 				else if ((m_type == Video_H264) && (*pmt->FormatType() != FORMAT_MPEG2Video))
 				{
-					m_pHandler = new H264ByteStreamHandler(m_pDecoderSpecific, m_cDecoderSpecific);
+                    m_Handler = std::make_unique<H264ByteStreamHandler>(m_pDecoderSpecific);
 				}
-				else if ((m_type == Audio_WAVEFORMATEX) &&
-						(m_fourcc == FOURCC("twos"))
-						)
+				else if (m_type == Audio_WAVEFORMATEX && m_fourcc == FOURCC("twos"))
 				{
-					m_pHandler = new BigEndianAudioHandler();
+                    m_Handler = std::make_unique<BigEndianAudioHandler>();
                 } else {
-                    m_pHandler = new NoChangeHandler();
+                    m_Handler = std::make_unique<NoChangeHandler>();
                 }
                 return true;
             }
@@ -861,7 +759,7 @@ ElementaryType::GetType(CMediaType* pmt, int nType)
 			pmt->SetType(&MEDIATYPE_Video);
 			pmt->SetSubtype(&MEDIASUBTYPE_MPEG2_VIDEO);
 			pmt->SetFormatType(&FORMAT_MPEG2_VIDEO);
-			MPEG2VIDEOINFO* pVI = (MPEG2VIDEOINFO*)pmt->AllocFormatBuffer(sizeof(MPEG2VIDEOINFO) + m_cDecoderSpecific);
+			auto pVI = reinterpret_cast<MPEG2VIDEOINFO*>(pmt->AllocFormatBuffer(static_cast<ULONG>(sizeof(MPEG2VIDEOINFO) + m_pDecoderSpecific.size())));
 			ZeroMemory(pVI, sizeof(MPEG2VIDEOINFO));
 			pVI->hdr.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
 			pVI->hdr.bmiHeader.biBitCount = 24;
@@ -870,12 +768,8 @@ ElementaryType::GetType(CMediaType* pmt, int nType)
 			pVI->hdr.bmiHeader.biSizeImage = DIBSIZE(pVI->hdr.bmiHeader);
 			pVI->hdr.bmiHeader.biCompression = Swap4Bytes(FOURCC("mpg2"));
 			pVI->hdr.AvgTimePerFrame = m_tFrame;
-
-			if (m_cDecoderSpecific)
-			{
-				BYTE* pDecSpecific = (BYTE*)(pVI+1);
-				CopyMemory(pDecSpecific, m_pDecoderSpecific,  m_cDecoderSpecific);
-			}
+			if (!m_pDecoderSpecific.empty())
+				CopyMemory((BYTE*)(pVI+1), m_pDecoderSpecific.data(), m_pDecoderSpecific.size());
 			return true;
 		}
 		break;
@@ -918,7 +812,7 @@ ElementaryType::GetType_H264(CMediaType* pmt)
 	// with dwFlags for nr of bytes in length field, and param sets in 
 	// sequence header (allows 1 DWORD already -- extend this).
 
-	const BYTE* pconfig = m_pDecoderSpecific;
+	const BYTE* pconfig = m_pDecoderSpecific.data();
 	// count param set bytes (including 2-byte length)
 	int cParams = 0;
 	int cSeq = pconfig[5] & 0x1f;
@@ -1033,7 +927,7 @@ ElementaryType::GetType_Mpeg4V(CMediaType* pmt, int n)
     FOURCCMap divx(fourcc);
     pmt->SetSubtype(&divx);
     pmt->SetFormatType(&FORMAT_VideoInfo);
-    VIDEOINFOHEADER* pVI = (VIDEOINFOHEADER*)pmt->AllocFormatBuffer(sizeof(VIDEOINFOHEADER) + m_cDecoderSpecific);
+    auto pVI = reinterpret_cast<VIDEOINFOHEADER*>(pmt->AllocFormatBuffer(static_cast<ULONG>(sizeof(VIDEOINFOHEADER) + m_pDecoderSpecific.size())));
     ZeroMemory(pVI, sizeof(VIDEOINFOHEADER));
     pVI->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
     pVI->bmiHeader.biPlanes = 1;
@@ -1043,9 +937,8 @@ ElementaryType::GetType_Mpeg4V(CMediaType* pmt, int n)
     pVI->bmiHeader.biSizeImage = DIBSIZE(pVI->bmiHeader);
     pVI->bmiHeader.biCompression = fourcc;
     pVI->AvgTimePerFrame = m_tFrame;
-
-	BYTE* pDecSpecific = (BYTE*)(pVI+1);
-	CopyMemory(pDecSpecific, m_pDecoderSpecific,  m_cDecoderSpecific);
+	if(!m_pDecoderSpecific.empty())
+		CopyMemory((BYTE*)(pVI+1), m_pDecoderSpecific.data(),  m_pDecoderSpecific.size());
 
     return true;
 }
@@ -1135,10 +1028,11 @@ ElementaryType::GetType_AAC(CMediaType* pmt)
     FOURCCMap faad(WAVE_FORMAT_AAC);
     pmt->SetSubtype(&faad);
     pmt->SetFormatType(&FORMAT_WaveFormatEx);
-    WAVEFORMATEX* pwfx = (WAVEFORMATEX*)pmt->AllocFormatBuffer(sizeof(WAVEFORMATEX) + m_cDecoderSpecific);
+    auto pwfx = reinterpret_cast<WAVEFORMATEX*>(pmt->AllocFormatBuffer(static_cast<ULONG>(sizeof(WAVEFORMATEX) + m_pDecoderSpecific.size())));
     ZeroMemory(pwfx,  sizeof(WAVEFORMATEX));
-    pwfx->cbSize = WORD(m_cDecoderSpecific);
-    CopyMemory((pwfx+1),  m_pDecoderSpecific,  m_cDecoderSpecific);
+    pwfx->cbSize = static_cast<WORD>(m_pDecoderSpecific.size());
+	if(!m_pDecoderSpecific.empty())
+		CopyMemory((BYTE*)(pwfx+1), m_pDecoderSpecific.data(),  m_pDecoderSpecific.size());
 
     // parse decoder-specific info to get rate/channels
     long samplerate = ((m_pDecoderSpecific[0] & 0x7) << 1) + ((m_pDecoderSpecific[1] & 0x80) >> 7);
@@ -1158,12 +1052,9 @@ ElementaryType::GetType_WAVEFORMATEX(CMediaType* pmt)
     // in the mpeg-4 file format
 
     // the dec-specific info is a waveformatex
-    WAVEFORMATEX* pwfx = (WAVEFORMATEX*)(BYTE*)m_pDecoderSpecific;
-    if ((m_cDecoderSpecific < sizeof(WAVEFORMATEX)) ||
-        (m_cDecoderSpecific < int(sizeof(WAVEFORMATEX) + pwfx->cbSize)))
-    {
+    auto pwfx = (WAVEFORMATEX*)m_pDecoderSpecific.data();
+    if ((m_pDecoderSpecific.size() < sizeof(WAVEFORMATEX)) || (m_pDecoderSpecific.size() < int(sizeof(WAVEFORMATEX) + pwfx->cbSize)))
         return false;
-    }
 
     pmt->InitMediaType();
     pmt->SetType(&MEDIATYPE_Audio);

@@ -14,11 +14,11 @@
 #include "Mpeg4.h"
 #include "ElemType.h"
 #include "Index.h"
+#include <assert.h>
 
 Atom::Atom(AtomReader* pReader, LONGLONG llOffset, LONGLONG llLength, DWORD type, long cHeader)
 : m_pSource(pReader),
   m_llOffset(llOffset),
-  m_cBufferRefCount(0),
   m_cHeader(cHeader),
   m_llLength(llLength),
   m_type(type)
@@ -69,115 +69,76 @@ Atom::ScanChildrenAt(LONGLONG llOffset)
         }
         
         if ((llLength < 0) || ((llOffset + llLength) > (m_llLength)))
-        {
             break;
-        }
 
-        AtomPtr pChild = new Atom(this, llOffset, llLength, type, cHeader);
-        m_Children.push_back(pChild);
-
+        m_Children.push_back(std::make_shared<Atom>(this, llOffset, llLength, type, cHeader));
         llOffset += llLength;
     }
 }
 
-long 
-Atom::ChildCount()
+size_t Atom::ChildCount()
 {
     if (m_Children.size() == 0)
-    {
         ScanChildrenAt(0);
-    }
-    return (long)m_Children.size();
+    return m_Children.size();
 }
-
-Atom* 
-Atom::Child(long nChild)
+Atom* Atom::Child(size_t nChild) const
 {
-    if (nChild >= ChildCount())
-    {
-        return NULL;
-    }
-    list<AtomPtr>::iterator it = m_Children.begin();
-    while ((nChild-- > 0) && (it != m_Children.end()))
-    {
-        it++;
-    }
-    if (it == m_Children.end())
-    {
-        return NULL;
-    }
-    return *it;
+    if(nChild >= m_Children.size())
+        return nullptr;
+    return m_Children[nChild].get();
 }
-
-Atom* 
-Atom::FindChild(DWORD fourcc)
+Atom* Atom::FindChild(DWORD fourcc)
 {
     if (ChildCount() == 0) // force enum of children
-    {
-        return NULL;
-    }
-
-    list<AtomPtr>::iterator it = m_Children.begin();
-    while (it != m_Children.end())
-    {
-        Atom* pChild = *it;
-        if (pChild->Type() == fourcc)
-        {
-            return pChild;
-        }
-        it++;
-    }
-    return NULL;
+        return nullptr;
+    auto const Iterator = std::find_if(m_Children.cbegin(), m_Children.cend(), [=] (auto&& Element) { return Element->Type() == fourcc; });
+    if(Iterator == m_Children.cend())
+        return nullptr;
+    return Iterator->get();
 }
 
-bool 
-Atom::IsBuffered()
+bool Atom::IsBuffered() const
 {
-    if (m_cBufferRefCount <= 0)
-    {
-        return m_pSource->IsBuffered();
-    } 
-    return true;
+    return (m_BufferReferenceCount > 0) ? true : m_pSource->IsBuffered();
 }
-
-const BYTE* 
-Atom::Buffer()
+uint8_t const* Atom::Buffer()
 {
-    if (m_llLength > 0x7fffffff)
+    // TODO: fix the 32-bit limitation
+    if(m_llLength > 0x7FFFFFFF)
+        return nullptr;
+    if(m_BufferReferenceCount == 0)
     {
-        return NULL;
+        if (m_pSource->IsBuffered() && m_llOffset < 0x7FFFFFFF)
+            return m_pSource->Buffer() + static_cast<size_t>(m_llOffset);
+        assert(m_Buffer.empty());
+        m_Buffer.resize(static_cast<size_t>(m_llLength));
+        [[maybe_unused]] auto const ReadResult = Read(0, static_cast<long>(m_llLength), m_Buffer.data());
+        // WARN: ReadResult is ignored
     }
-
-    if (!m_Buffer)
-    {
-        if (m_pSource->IsBuffered() && (m_llOffset < 0x7fffffff))
-        {
-            return m_pSource->Buffer() + long(m_llOffset);
-        }
-        m_Buffer = new BYTE[long(m_llLength)];
-        Read(0, long(m_llLength), m_Buffer);
-    }
-    m_cBufferRefCount++;
-    return m_Buffer;
+    m_BufferReferenceCount++;
+    return m_Buffer.data();
 }
-
-void 
-Atom::BufferRelease()
+void Atom::BufferRelease()
 {
-    if (--m_cBufferRefCount == 0)
+    if (m_BufferReferenceCount == 0)
     {
-        m_Buffer = NULL;
+        m_pSource->BufferRelease();
+        return;
     }
+    assert(m_BufferReferenceCount > 0);
+    if (--m_BufferReferenceCount == 0)
+        m_Buffer.clear();
 }
 
 // -- main movie header, contains list of tracks ---------------
 
 extern bool g_ElstMediaTimeTruncation;
 
-Movie::Movie(Atom* pRoot) : 
-    m_pRoot(pRoot)
+Movie::Movie(std::shared_ptr<Atom>&& RootAtom) : 
+    m_RootAtom(std::move(RootAtom))
 {
-    Atom* pMovie = m_pRoot->FindChild(FOURCC("moov"));
+    Atom* pMovie = m_RootAtom->FindChild(FOURCC("moov"));
     if(!pMovie)
         return;
     Atom* patmHdr = pMovie->FindChild(FOURCC("mvhd"));
@@ -194,17 +155,19 @@ Movie::Movie(Atom* pRoot) :
         }
         m_tDuration = MFllMulDiv(m_duration, 1'000'0000ll, m_scale, 0);
     }
-    long TrackIndexEx = 0;
-    for(long TrackIndex = 0; TrackIndex < pMovie->ChildCount(); TrackIndex++)
+    size_t TrackIndexEx = 0;
+    for(size_t TrackIndex = 0; TrackIndex < pMovie->ChildCount(); TrackIndex++)
     {
         Atom* patm = pMovie->Child(TrackIndex);
         if(patm->Type() != FOURCC("trak") && patm->Type() != FOURCC("cctk"))
             continue;
-        MovieTrackPtr pTrack = new MovieTrack(patm, this, TrackIndexEx++);
-        if(pTrack->Valid())
-            m_Tracks.push_back(pTrack);
-        else
+        auto Track = std::make_shared<MovieTrack>(patm, this, TrackIndexEx++);
+        if(!Track->Valid()) 
+        {
 			m_invalidTrackCount++;
+            continue;
+        }
+        m_Tracks.push_back(Track);
     }
     Atom* UdtaHeader = pMovie->FindChild(FOURCC("udta"));
     if(UdtaHeader)
@@ -293,14 +256,14 @@ Movie::Movie(Atom* pRoot) :
 HRESULT 
 Movie::ReadAbsolute(LONGLONG llPos, BYTE* pBuffer, long cBytes)
 {
-    return m_pRoot->Read(llPos, cBytes, pBuffer);
+    return m_RootAtom->Read(llPos, cBytes, pBuffer);
 }
 
 
 // ------------------------------------------------------------------
 
 
-MovieTrack::MovieTrack(Atom* pAtom, Movie* pMovie, long idx) : 
+MovieTrack::MovieTrack(Atom* pAtom, Movie* pMovie, size_t idx) : 
     m_pMovie(pMovie),
     m_idx(idx)
 {
@@ -417,32 +380,22 @@ MovieTrack::ParseMDIA(Atom* patm, REFERENCE_TIME tFirst)
 
     Atom* patmMINF = patm->FindChild(FOURCC("minf"));
     if (!patmMINF)
-    {
         return false;
-    }
     m_patmSTBL = patmMINF->FindChild(FOURCC("stbl"));
     if (!m_patmSTBL)
-    {
         return false;
-    }
 
     // initialize index tables
-    m_pSizes = new SampleSizes;
+    m_pSizes = std::make_shared<SampleSizes>();
     if ((!m_pSizes->Parse(m_patmSTBL) || (m_pSizes->SampleCount() <= 0)))
-    {
         return false;
-    }
-    m_pKeyMap = new KeyMap;
+    m_pKeyMap = std::make_shared<KeyMap>();
     if (!m_pKeyMap->Parse(m_patmSTBL))
-    {
         return false;
-    }
 
-    m_pTimes = new SampleTimes;
+    m_pTimes = std::make_shared<SampleTimes>();
     if (!m_pTimes->Parse(m_scale, tFirst, m_patmSTBL))
-    {
         return false;
-    }
 
     // now index is ready, we can calculate average frame duration
     // for the media type
@@ -450,9 +403,7 @@ MovieTrack::ParseMDIA(Atom* patm, REFERENCE_TIME tFirst)
 
     Atom* pSTSD = m_patmSTBL->FindChild(FOURCC("stsd"));
     if (!pSTSD || !ParseSTSD(tFrame, pSTSD))
-    {
         return false;
-    }
 
 	// check for old-format uncomp audio
 	if ((m_pType->StreamType() == Audio_WAVEFORMATEX) &&
@@ -521,8 +472,7 @@ MovieTrack::ParseMDIA(Atom* patm, REFERENCE_TIME tFirst)
 			}
 			tFrame = (UNITS * 1000 / fpsk);
 			m_pType->SetRate(tFrame);
-		}
-
+        }
 	}
 
     return true;
@@ -548,22 +498,20 @@ MovieTrack::ParseSTSD(REFERENCE_TIME tFrame, Atom* pSTSD)
         return false;
     }
 
-    m_pType = new ElementaryType();
+    m_pType = std::make_shared<ElementaryType>();
     if (!m_pType->Parse(tFrame, patm))
-    {
         return false;
-    }
     return true;
 }
 
 bool 
-MovieTrack::IsVideo()
+MovieTrack::IsVideo() const
 {
     return m_pType->IsVideo();
 }
 
 bool 
-MovieTrack::GetType(CMediaType* pmt, int nType)
+MovieTrack::GetType(CMediaType* pmt, int nType) const
 {
     return m_pType->GetType(pmt, nType);
 }
@@ -652,31 +600,31 @@ bool MovieTrack::NextBySegment(long* pnSample, size_t* psegment)
 	return CheckInSegment(tEdit, false, psegment, pnSample);
 }
 
-SIZE_T MovieTrack::GetTimes(REFERENCE_TIME** ppnStartTimes, REFERENCE_TIME** ppnStopTimes, ULONG** ppnFlags, ULONG** ppnDataSizes)
+size_t MovieTrack::GetTimes(REFERENCE_TIME** ppnStartTimes, REFERENCE_TIME** ppnStopTimes, ULONG** ppnFlags, ULONG** ppnDataSizes)
 {
 	ASSERT(ppnStartTimes);
 	if(!TimesIndex())
 		return 0;
 	ppnStopTimes; ppnDataSizes;
 	ASSERT(!ppnStopTimes && !ppnDataSizes); // Not Implemented
-	const SIZE_T nSampleCount = TimesIndex()->Get(*ppnStartTimes);
+	const size_t nSampleCount = TimesIndex()->Get(*ppnStartTimes);
 	if(nSampleCount)
 	{
 		if(ppnFlags)
 		{
 			ULONG* pnFlags = (ULONG*) CoTaskMemAlloc(nSampleCount * sizeof *pnFlags);
 			ASSERT(pnFlags);
-			for(SIZE_T nSampleIndex = 0; nSampleIndex < nSampleCount; nSampleIndex++)
+			for(size_t nSampleIndex = 0; nSampleIndex < nSampleCount; nSampleIndex++)
 				pnFlags[nSampleIndex] = AM_SAMPLE_TIMEVALID;
 			if(GetKeyMap())
 			{
-				SIZE_T* pnIndexes = NULL;
-				const SIZE_T nIndexCount = GetKeyMap()->Get(pnIndexes);
+				size_t* pnIndexes = NULL;
+				const size_t nIndexCount = GetKeyMap()->Get(pnIndexes);
 				if(nIndexCount)
 				{
-					for(SIZE_T nIndexIndex = 0; nIndexIndex < nIndexCount; nIndexIndex++)
+					for(size_t nIndexIndex = 0; nIndexIndex < nIndexCount; nIndexIndex++)
 					{
-						const SIZE_T nSampleIndex = pnIndexes[nIndexIndex];
+						const size_t nSampleIndex = pnIndexes[nIndexIndex];
 						ASSERT(nSampleIndex < nSampleCount);
 						if(nSampleIndex < nSampleCount)
 							pnFlags[nSampleIndex] |= AM_SAMPLE_SPLICEPOINT;
@@ -684,7 +632,7 @@ SIZE_T MovieTrack::GetTimes(REFERENCE_TIME** ppnStartTimes, REFERENCE_TIME** ppn
 				} else
 				{
 					// NOTE: Missing key map means all samples are splice points (all frames are key frames)
-					for(SIZE_T nSampleIndex = 0; nSampleIndex < nSampleCount; nSampleIndex++)
+					for(size_t nSampleIndex = 0; nSampleIndex < nSampleCount; nSampleIndex++)
 						pnFlags[nSampleIndex] |= AM_SAMPLE_SPLICEPOINT;
 				}
 				CoTaskMemFree(pnIndexes);

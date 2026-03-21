@@ -106,44 +106,25 @@ Mpeg4Demultiplexor::CreateInstance(LPUNKNOWN pUnk, HRESULT* phr)
     return new Mpeg4Demultiplexor(pUnk, phr);
 }
 
-
-Mpeg4Demultiplexor::Mpeg4Demultiplexor(LPUNKNOWN pUnk, HRESULT* phr)
-: m_pInput(NULL),
-  m_pSeekingPin(NULL),
-  m_tStart(0),
-  m_tStop(0x7ffffffffffffff),       // less than MAX_TIME so we can add one second to it
-  m_dRate(1.0),
-  CBaseFilter(NAME("Mpeg4Demultiplexor"), pUnk, &m_csFilter, *m_sudFilter.clsID)
+Mpeg4Demultiplexor::Mpeg4Demultiplexor(LPUNKNOWN pUnk, HRESULT* phr) : 
+	m_SeekingParams { 0, std::numeric_limits<REFERENCE_TIME>::max(), 1.0 },
+	CBaseFilter(NAME("Mpeg4Demultiplexor"), pUnk, &m_csFilter, *m_sudFilter.clsID)
 {
-    m_pInput = new DemuxInputPin(this, &m_csFilter, phr);
+    m_pInput = std::make_unique<DemuxInputPin>(this, &m_csFilter, phr);
 }
 
-Mpeg4Demultiplexor::~Mpeg4Demultiplexor()
+int Mpeg4Demultiplexor::GetPinCount()
 {
-    delete m_pInput;
+    return static_cast<int>(1u + m_Outputs.size());
 }
-
-
-int 
-Mpeg4Demultiplexor::GetPinCount()
+CBasePin* Mpeg4Demultiplexor::GetPin(int Index)
 {
-    return 1 + (int)m_Outputs.size();
+    if (Index == 0)
+        return m_pInput.get();
+    if (static_cast<size_t>(Index) <= m_Outputs.size())
+        return Output(Index-1);
+    return nullptr;
 }
-
-CBasePin *
-Mpeg4Demultiplexor::GetPin(int n)
-{
-    if (n == 0)
-    {
-        return m_pInput;
-    } else if (n <= (int)m_Outputs.size())
-    {
-        return Output(n-1);
-    } else {
-        return NULL;
-    }
-}
-
 
 bool 
 Mpeg4Demultiplexor::SelectSeekingPin(DemuxOutputPin* pPin)
@@ -164,27 +145,15 @@ Mpeg4Demultiplexor::DeselectSeekingPin(DemuxOutputPin* pPin)
         m_pSeekingPin = NULL;
 }
 
-void 
-Mpeg4Demultiplexor::GetSeekingParams(REFERENCE_TIME* ptStart, REFERENCE_TIME* ptStop, double* pdRate)
+Mpeg4Demultiplexor::SeekingParams Mpeg4Demultiplexor::GetSeekingParams() const
 {
-    if (ptStart != NULL)
-    {
-        *ptStart = m_tStart;
-    }
-    if (ptStop != NULL)
-    {
-        *ptStop = m_tStop;
-    }
-    if (pdRate != NULL)
-    {
-        *pdRate = m_dRate;
-    }
+    return m_SeekingParams;
 }
 HRESULT 
 Mpeg4Demultiplexor::SetRate(double dRate)
 {
     CAutoLock lock(&m_csSeeking);
-    m_dRate = dRate;
+    m_SeekingParams.Rate = dRate;
     return S_OK;
 }
 
@@ -195,12 +164,12 @@ Mpeg4Demultiplexor::SetStopTime(REFERENCE_TIME tStop)
     // this does not guarantee that a stop change only, while running,
     // will stop at the right point -- but most filters only
     // implement stop/rate changes when the current position changes
-    m_tStop = tStop;
+    m_SeekingParams.StopTime = tStop;
     return S_OK;
 }
 
 REFERENCE_TIME 
-Mpeg4Demultiplexor::GetDuration()
+Mpeg4Demultiplexor::GetDuration() const
 {
     return m_pMovie->Duration();
 }
@@ -211,14 +180,14 @@ Mpeg4Demultiplexor::Seek(REFERENCE_TIME& tStart, BOOL bSeekToKeyFrame, REFERENCE
 	#pragma region Flush, Stop Thread
     if(IsActive())
     {
-        for(SIZE_T nIndex = 0; nIndex < m_Outputs.size(); nIndex++)
+        for(size_t nIndex = 0; nIndex < m_Outputs.size(); nIndex++)
         {
             DemuxOutputPin* pPin = Output((INT) nIndex);
             if(!pPin->IsConnected())
 				continue;
 			pPin->DeliverBeginFlush();
         }
-        for(SIZE_T nIndex = 0; nIndex < m_Outputs.size(); nIndex++)
+        for(size_t nIndex = 0; nIndex < m_Outputs.size(); nIndex++)
         {
             DemuxOutputPin* pPin = Output((INT) nIndex);
             if(!pPin->IsConnected())
@@ -229,7 +198,7 @@ Mpeg4Demultiplexor::Seek(REFERENCE_TIME& tStart, BOOL bSeekToKeyFrame, REFERENCE
 				pPin->StopThread();
 			#endif
         }
-        for(SIZE_T nIndex = 0; nIndex < m_Outputs.size(); nIndex++)
+        for(size_t nIndex = 0; nIndex < m_Outputs.size(); nIndex++)
         {
             DemuxOutputPin* pPin = Output((INT) nIndex);
             if(!pPin->IsConnected())
@@ -292,15 +261,11 @@ Mpeg4Demultiplexor::Seek(REFERENCE_TIME& tStart, BOOL bSeekToKeyFrame, REFERENCE
 		}
 	}
 	#pragma endregion 
-	#pragma region Update
-    m_tStart = tStart;
-    m_tStop = tStop;
-    m_dRate = dRate;
-	#pragma endregion
+    m_SeekingParams = { tStart, tStop, dRate };
 	#pragma region Start Thread
     if(IsActive())
     {
-        for(SIZE_T nIndex = 0; nIndex < m_Outputs.size(); nIndex++)
+        for(size_t nIndex = 0; nIndex < m_Outputs.size(); nIndex++)
         {
             DemuxOutputPin* pPin = Output((INT) nIndex);
             if(!pPin->IsConnected())
@@ -360,38 +325,23 @@ Mpeg4Demultiplexor::CompleteConnect(IPin* pPeer)
 {
     IAsyncReaderPtr pRdr = pPeer;
     if (pRdr == NULL)
-    {
         return E_NOINTERFACE;
-    }
     LONGLONG llTotal, llAvail;
     pRdr->Length(&llTotal, &llAvail);
-    Atom* pfile = new Atom(m_pInput, 0, llTotal, 0, 0);
-    m_pMovie = new Movie(pfile);
-    // pfile now owned and deleted by Movie object
-
+    m_pMovie = std::make_shared<Movie>(std::make_shared<Atom>(m_pInput.get(), 0, llTotal, 0, 0));
     if (m_pMovie->Tracks() <= 0)
-    {
         return VFW_E_TYPE_NOT_ACCEPTED;
-    }
-
 
     // construct output pin for each valid track
     HRESULT hr = S_OK;
-    for (long  nTrack = 0; nTrack < m_pMovie->Tracks(); nTrack++)
+    for (size_t TrackIndex = 0; TrackIndex < m_pMovie->Tracks(); TrackIndex++)
     {
-        MovieTrack* pTrack = m_pMovie->Track(nTrack);
-        _bstr_t strName = pTrack->Name();
-        DemuxOutputPinPtr pPin = new DemuxOutputPin(pTrack, this, &m_csFilter, &hr, strName);
-        m_Outputs.push_back(pPin);
+        auto Track = m_pMovie->Track(TrackIndex);
+        _bstr_t NameW = Track->Name().c_str();
+        m_Outputs.push_back(new DemuxOutputPin(Track.get(), this, &m_csFilter, &hr, NameW));
     }
     return hr;
 }
-
-
-AsyncRequestor::AsyncRequestor()
-: m_bBusy(false),
-  m_ev(true)		// manual reset
-{}
 
 void AsyncRequestor::Active(IAsyncReader* pRdr)
 {
@@ -541,8 +491,6 @@ HRESULT AsyncRequestor::Read(LONGLONG llOffset, long cBytes, BYTE* pBuffer)
 	return S_OK;
 }
 
-
-
 // -------- input pin -----------------------------------------
 
 DemuxInputPin::DemuxInputPin(Mpeg4Demultiplexor* pFilter, CCritSec* pLock, HRESULT* phr)
@@ -658,14 +606,12 @@ DemuxInputPin::Read(LONGLONG llOffset, long cBytes, BYTE* pBuffer)
 }
 
 LONGLONG 
-DemuxInputPin::Length()
+DemuxInputPin::Length() const
 {
     LONGLONG llTotal = 0, llAvail;
-    IAsyncReaderPtr pRdr = GetConnected();
-    if (pRdr != NULL)
-    {
+    IAsyncReaderPtr pRdr = const_cast<DemuxInputPin*>(this)->GetConnected();
+    if (pRdr)
         pRdr->Length(&llTotal, &llAvail);
-    }
     return llTotal;
 }
 
@@ -810,37 +756,30 @@ DemuxOutputPin::ThreadProc()
 		if(!InternalRestartThread())
 			break;
 
-		REFERENCE_TIME tStart, tStop;
-		// HOTFIX: Volatile specifier is not really necessary here but it fixes a nasty problem with MainConcept AVC SDK violating x64 calling convention;
-		//         MS compiler might choose to keep dRate in XMM6 register and the value would be destroyed by the violating call leading to incorrect 
-		//         further streaming (wrong time stamps)
-		volatile DOUBLE dRate;
-		m_pParser->GetSeekingParams(&tStart, &tStop, (DOUBLE*) &dRate);
-
+		auto SeekingParams = m_pParser->GetSeekingParams();
 		#if defined(WITH_DIRECTSHOWSPY)
 			if(m_pMediaSampleTrace)
-				m_pMediaSampleTrace->RegisterNewSegment((IBaseFilter*) m_pFilter, Name(), tStart, tStop, dRate, nullptr, 0);
+				m_pMediaSampleTrace->RegisterNewSegment((IBaseFilter*) m_pFilter, Name(), SeekingParams.StartTime, SeekingParams.StopTime, SeekingParams.Rate, nullptr, 0);
 		#endif // defined(WITH_DIRECTSHOWSPY)
 
-		DeliverNewSegment(tStart, tStop, dRate);
+		DeliverNewSegment(SeekingParams.StartTime, SeekingParams.StopTime, SeekingParams.Rate);
 
 		m_tLate = 0;
 
 		// wind back to key frame before and check against duration
 		long nSample;
 		size_t segment;
-		if (!m_pTrack->CheckInSegment(tStart, true, &segment, &nSample))
+		if (!m_pTrack->CheckInSegment(SeekingParams.StartTime, true, &segment, &nSample))
 		{
 			DeliverEndOfStream();
 			return 0;
 		}
 
-		if (tStop > m_pTrack->GetMovie()->Duration())
-		{
-			tStop = m_pTrack->GetMovie()->Duration();
-		}
+		auto const MovieDuration = m_pTrack->GetMovie()->Duration();
+		if (SeekingParams.StopTime > MovieDuration)
+			SeekingParams.StopTime = MovieDuration;
 		// used only for quality management. No segment support yet
-		long nStop = m_pTrack->TimesIndex()->DTSToSample(tStop);
+		long nStop = m_pTrack->TimesIndex()->DTSToSample(SeekingParams.StopTime);
 
 		bool bFirst = true;
 		pHandler->StartStream();
@@ -861,11 +800,11 @@ DemuxOutputPin::ThreadProc()
 		const BOOL bIsAvc1Subtype = bIsFourCharacterCodeSubtype && (Subtype.Data1 == MAKEFOURCC('A', 'V', 'C', '1') || Subtype.Data1 == MAKEFOURCC('a', 'v', 'c', '1'));
 		////////////////////////////////////////////////
 
-		const HANDLE phObjects[] = { ExitEvent(), RestartRequestEvent() };
+		HANDLE const phObjects[] { ExitEvent(), RestartRequestEvent() };
 		BOOL bRestart = FALSE;
 		for(; ; )
 		{
-			const DWORD nWaitResult = WaitForMultipleObjects(_countof(phObjects), phObjects, FALSE, 0);
+			auto const nWaitResult = WaitForMultipleObjects(_countof(phObjects), phObjects, FALSE, 0);
 			ASSERT(nWaitResult - WAIT_OBJECT_0 < _countof(phObjects) || nWaitResult == WAIT_TIMEOUT);
 			if(nWaitResult != WAIT_TIMEOUT)
 			{
@@ -873,10 +812,12 @@ DemuxOutputPin::ThreadProc()
 				break;
 			}
 
+			// TODO: Very small files with track duration zero skip the remainder of samples right here because tStop is zero.
+
 			REFERENCE_TIME tNext, tDur;
 			m_pTrack->GetTimeBySegment(nSample, segment, &tNext, &tDur);
 
-			if (tNext >= tStop)
+			if (tNext >= SeekingParams.StopTime)
 			{
 				DeliverEndOfStream();
 				break;
@@ -891,7 +832,7 @@ DemuxOutputPin::ThreadProc()
 					CAutoLock lock(&m_csLate);
 					late = m_tLate;
 				}
-				REFERENCE_TIME perFrame = REFERENCE_TIME(tDur / dRate);
+				REFERENCE_TIME perFrame = REFERENCE_TIME(tDur / SeekingParams.Rate);
 				// if we are more than two frames late, aim to be a frame early
 				if (late > (perFrame * 2))
 				{
@@ -905,7 +846,7 @@ DemuxOutputPin::ThreadProc()
 					if (next && (next <= nStop))
 					{
 						REFERENCE_TIME tDiff = m_pTrack->TimesIndex()->SampleToCTS(next) - m_pTrack->TimesIndex()->SampleToCTS(nSample);
-						tDiff = REFERENCE_TIME(tDiff / dRate);
+						tDiff = REFERENCE_TIME(tDiff / SeekingParams.Rate);
 						if ((next == (nSample+1)) || ((tDiff/2) < late))
 						{
 							// yes -- we are late by at least 1/2 of the distance to the next key frame
@@ -946,7 +887,7 @@ DemuxOutputPin::ThreadProc()
 				{
 					REFERENCE_TIME tAdd, tDurAdd;
 					m_pTrack->GetTimeBySegment(nThis, segThis, &tAdd, &tDurAdd);
-					if (tAdd >= tStop)
+					if (tAdd >= SeekingParams.StopTime)
 					{
 						break;
 					}
@@ -1004,7 +945,7 @@ DemuxOutputPin::ThreadProc()
 						pSample->SetMediaTime(&nMediaStartTime, &nMediaStopTime);
 					}
 
-					REFERENCE_TIME tSampleStart = tNext - tStart;
+					REFERENCE_TIME tSampleStart = tNext - SeekingParams.StartTime;
 					if (tSampleStart < 0)
 					{
 						pSample->SetPreroll(true);
@@ -1012,8 +953,8 @@ DemuxOutputPin::ThreadProc()
 					REFERENCE_TIME tSampleEnd = tSampleStart + tDur;
 
 					// oops. clearly you need to divide by dRate. At double the rate, each frame lasts half as long.
-					tSampleStart = REFERENCE_TIME(tSampleStart / dRate);
-					tSampleEnd = REFERENCE_TIME(tSampleEnd / dRate);
+					tSampleStart = REFERENCE_TIME(tSampleStart / SeekingParams.Rate);
+					tSampleEnd = REFERENCE_TIME(tSampleEnd / SeekingParams.Rate);
 
 					pSample->SetTime(&tSampleStart, &tSampleEnd);
 					if (bFirst)
@@ -1226,10 +1167,7 @@ DemuxOutputPin::GetDuration(LONGLONG *pDuration)
 STDMETHODIMP 
 DemuxOutputPin::GetStopPosition(LONGLONG *pStop)
 {
-    REFERENCE_TIME tStart, tStop;
-    double dRate;
-    m_pParser->GetSeekingParams(&tStart, &tStop, &dRate);
-    *pStop = tStop;
+    *pStop = m_pParser->GetSeekingParams().StopTime;
     return S_OK;
 }
 
@@ -1280,52 +1218,40 @@ DemuxOutputPin::SetPositions(
 	#endif // defined(TRACE_SEEK)
 
     // fetch current properties
-    REFERENCE_TIME tStart, tStop;
-    double dRate;
-    m_pParser->GetSeekingParams(&tStart, &tStop, &dRate);
+    auto SeekingParams = m_pParser->GetSeekingParams();
     if (dwCurrentFlags & AM_SEEKING_AbsolutePositioning)
-    {
-        tStart = *pCurrent;
-    } else if (dwCurrentFlags & AM_SEEKING_RelativePositioning)
-    {
-        tStart += *pCurrent;
-    }
+        SeekingParams.StartTime = *pCurrent;
+    else if (dwCurrentFlags & AM_SEEKING_RelativePositioning)
+        SeekingParams.StartTime += *pCurrent;
 
     if (dwStopFlags & AM_SEEKING_AbsolutePositioning)
-    {
-        tStop = *pStop;
-    } else if (dwStopFlags & AM_SEEKING_IncrementalPositioning)
-    {
-        tStop = *pStop + tStart;
-    } else
-    {
-        if (dwStopFlags & AM_SEEKING_RelativePositioning)
-        {
-            tStop += *pStop;
-        }
-    }
+        SeekingParams.StopTime = *pStop;
+    else if (dwStopFlags & AM_SEEKING_IncrementalPositioning)
+        SeekingParams.StopTime = *pStop + SeekingParams.StartTime;
+    else if (dwStopFlags & AM_SEEKING_RelativePositioning)
+        SeekingParams.StopTime += *pStop;
 
 	HRESULT nResult;
     if(dwCurrentFlags & AM_SEEKING_PositioningBitsMask)
     {
-        nResult = m_pParser->Seek(tStart, dwCurrentFlags & AM_SEEKING_SeekToKeyFrame, tStop, dRate);
+        nResult = m_pParser->Seek(SeekingParams.StartTime, dwCurrentFlags & AM_SEEKING_SeekToKeyFrame, SeekingParams.StopTime, SeekingParams.Rate);
     } else 
 	if(dwStopFlags & AM_SEEKING_PositioningBitsMask)
     {
-        nResult = m_pParser->SetStopTime(tStop); // stop change only
+        nResult = m_pParser->SetStopTime(SeekingParams.StopTime); // stop change only
     } else
         return S_FALSE; // no operation required
 	if(SUCCEEDED(nResult))
 	{
 		if(pCurrent && (dwCurrentFlags & AM_SEEKING_ReturnTime))
-			*pCurrent = tStart;
+			*pCurrent = SeekingParams.StartTime;
 		if(pStop && (dwStopFlags & AM_SEEKING_ReturnTime))
-			*pStop = tStop;
+			*pStop = SeekingParams.StopTime;
 	}
 
 	#if defined(TRACE_SEEK)
-		const ULONG nTimeB = GetTickCount();
-		TCHAR pszText[1024] = { 0 };
+		auto const nTimeB = GetTickCount();
+		TCHAR pszText[1024] { };
 		_stprintf(pszText, _T("%hs: this 0x%p, this, Time %d - %d (%d), dwCurrentFlags 0x%X") _T("\n"), __FUNCTION__, this, nTimeA, nTimeB, nTimeB - nTimeA, dwCurrentFlags);
 		OutputDebugString(pszText);
 	#endif // defined(TRACE_SEEK)
@@ -1336,25 +1262,19 @@ DemuxOutputPin::SetPositions(
 STDMETHODIMP 
 DemuxOutputPin::GetPositions(LONGLONG * pCurrent, LONGLONG * pStop)
 {
-    REFERENCE_TIME tStart, tStop;
-    double dRate;
-    m_pParser->GetSeekingParams(&tStart, &tStop, &dRate);
-    *pCurrent = tStart;
-    *pStop = tStop;
+    auto const SeekingParams = m_pParser->GetSeekingParams();
+    *pCurrent = SeekingParams.StartTime;
+    *pStop = SeekingParams.StopTime;
     return S_OK;
 }
 
 STDMETHODIMP 
 DemuxOutputPin::GetAvailable(LONGLONG * pEarliest, LONGLONG * pLatest)
 {
-    if (pEarliest != NULL)
-    {
+    if (pEarliest)
         *pEarliest = 0;
-    }
-    if (pLatest != NULL)
-    {
+    if (pLatest)
         *pLatest = m_pParser->GetDuration();
-    }
     return S_OK;
 }
 
@@ -1369,15 +1289,10 @@ DemuxOutputPin::SetRate(double dRate)
     return hr;
 }
 
-
-
 STDMETHODIMP 
 DemuxOutputPin::GetRate(double * pdRate)
 {
-    REFERENCE_TIME tStart, tStop;
-    double dRate;
-    m_pParser->GetSeekingParams(&tStart, &tStop, &dRate);
-    *pdRate = dRate;
+    *pdRate = m_pParser->GetSeekingParams().Rate;
     return S_OK;
 }
 

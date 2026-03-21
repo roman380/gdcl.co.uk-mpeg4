@@ -97,7 +97,6 @@
     <ClInclude Include="Index.h" />
     <ClInclude Include="Mpeg4.h" />
     <ClInclude Include="resource.h" />
-    <ClInclude Include="smartptr.h" />
     <ClInclude Include="StdAfx.h" />
     <ClInclude Include="thread.h" />
   </ItemGroup>

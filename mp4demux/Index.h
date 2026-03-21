@@ -20,54 +20,52 @@
 class SampleSizes
 {
 public:
-    SampleSizes();
-
     bool Parse(Atom* patmSTBL);
-    long Size(long nSample);
-    long SampleCount()
+    long Size(long nSample) const;
+    long SampleCount() const
     {
         return m_nSamples;
     }
-    long MaxSize()
+    long MaxSize() const
     {
         return m_nMaxSize;
     }
-    LONGLONG Offset(long nSample);
+    LONGLONG Offset(long nSample) const;
 
-	// support for old-style uncompressed audio, where fixedsize =1 means 1 sample
-	void AdjustFixedSize(long nBytes);
+    // support for old-style uncompressed audio, where fixedsize =1 means 1 sample
+    void AdjustFixedSize(long nBytes);
+
 private:
-    Atom* m_patmSTSZ;
-	AtomCache m_pBuffer;
-    long m_nSamples;
-    long m_nMaxSize;
-    long m_nFixedSize;
-    
-    long m_nEntriesSTSC;
-    long m_nChunks;
-    bool m_bCO64;
-    Atom* m_patmSTSC;
-	AtomCache m_pSTSC;
-    Atom* m_patmSTCO;
-	AtomCache m_pSTCO;
+    Atom* m_patmSTSZ = nullptr;
+    AtomCache m_pBuffer;
+    long m_nSamples = 0;
+    long m_nMaxSize = 0;
+    long m_nFixedSize = 0;
+
+    long m_nEntriesSTSC = 0;
+    long m_nChunks = 0;
+    bool m_bCO64 = false;
+    Atom* m_patmSTSC = nullptr;
+    AtomCache m_pSTSC;
+    Atom* m_patmSTCO = nullptr;
+    AtomCache m_pSTCO;
 };
 
 // map of key samples
 class KeyMap
 {
 public:
-    KeyMap();
     ~KeyMap();
 
     bool Parse(Atom* patmSTBL);
-    long SyncFor(long nSample);
-	long Next(long nSample);
-	SIZE_T Get(SIZE_T*& pnIndexes) const;
+    long SyncFor(long nSample) const;
+    long Next(long nSample);
+    size_t Get(size_t*& pnIndexes) const;
 
 private:
-    Atom* m_patmSTSS;
-    const BYTE* m_pSTSS;
-    long m_nEntries;
+    Atom* m_patmSTSS = nullptr;
+    const BYTE* m_pSTSS = nullptr;
+    long m_nEntries = 0;
 };
 
 // time and duration of samples
@@ -76,75 +74,75 @@ class SampleTimes
 {
 public:
 
-	class CompositionTimeOffset
-	{
-	public:
-		UINT32 m_BaseSampleIndex;
-		UINT32 m_SampleCount;
-		UINT32 m_Value;
+    struct CompositionTimeOffset
+    {
+        static uint32_t LookupValue(const std::vector<CompositionTimeOffset>& Vector, uint32_t SampleIndex)
+        {
+            ASSERT(!Vector.empty());
+            ASSERT(SampleIndex <= Vector.back().m_BaseSampleIndex + Vector.back().m_SampleCount);
+            size_t L = 0, R = Vector.size();
+            for (; ; )
+            {
+                auto const& E = Vector[L];
+                if (SampleIndex - E.m_BaseSampleIndex < E.m_SampleCount)
+                    return E.m_Value;
+                ASSERT(R - L >= 2);
+                size_t const C = (L + R) / 2;
+                if (SampleIndex < Vector[C].m_BaseSampleIndex)
+                    R = C;
+                else
+                    L = C;
+            }
+            ASSERT(FALSE);
+            return 0;
+        }
+        static uint32_t IncrementalLookupValue(const std::vector<CompositionTimeOffset>& Vector, size_t& Index, uint32_t SampleIndex)
+        {
+            if (Vector.empty())
+                return 0;
+            ASSERT(Index < Vector.size());
+            auto const& E0 = Vector[Index];
+            ASSERT(SampleIndex >= E0.m_BaseSampleIndex);
+            if (SampleIndex - E0.m_BaseSampleIndex < E0.m_SampleCount)
+                return E0.m_Value;
+            auto const& E1 = Vector[++Index];
+            ASSERT(SampleIndex >= E1.m_BaseSampleIndex);
+            ASSERT(SampleIndex - E1.m_BaseSampleIndex < E1.m_SampleCount);
+            return E1.m_Value;
+        }
 
-	public:
-	// CompositionTimeOffset
-		CompositionTimeOffset()
-		{
-		}
-		CompositionTimeOffset(UINT32 BaseSampleIndex, UINT32 SampleCount, UINT32 Value) :
-			m_BaseSampleIndex(BaseSampleIndex),
-			m_SampleCount(SampleCount),
-			m_Value(Value)
-		{
-		}
-		static UINT32 LookupValue(const std::vector<CompositionTimeOffset>& Vector, UINT32 SampleIndex)
-		{
-			ASSERT(!Vector.empty());
-			ASSERT(SampleIndex <= Vector.back().m_BaseSampleIndex + Vector.back().m_SampleCount);
-			SIZE_T L = 0, R = Vector.size();
-			for(; ; )
-			{
-				const CompositionTimeOffset& E = Vector[L];
-				if(SampleIndex - E.m_BaseSampleIndex < E.m_SampleCount)
-					return E.m_Value;
-				ASSERT(R - L >= 2);
-				const SIZE_T C = (L + R) / 2;
-				if(SampleIndex < Vector[C].m_BaseSampleIndex)
-					R = C;
-				else
-					L = C;
-			}
-			ASSERT(FALSE);
-			return 0;
-		}
-		static UINT32 IncrementalLookupValue(const std::vector<CompositionTimeOffset>& Vector, SIZE_T& Index, UINT32 SampleIndex)
-		{
-			if(Vector.empty())
-				return 0;
-			ASSERT(Index < Vector.size());
-			const CompositionTimeOffset& E0 = Vector[Index];
-			ASSERT(SampleIndex >= E0.m_BaseSampleIndex);
-			if(SampleIndex - E0.m_BaseSampleIndex < E0.m_SampleCount)
-				return E0.m_Value;
-			const CompositionTimeOffset& E1 = Vector[++Index];
-			ASSERT(SampleIndex >= E1.m_BaseSampleIndex);
-			ASSERT(SampleIndex - E1.m_BaseSampleIndex < E1.m_SampleCount);
-			return E1.m_Value;
-		}
-	};
+        CompositionTimeOffset(uint32_t BaseSampleIndex, uint32_t SampleCount, uint32_t Value) :
+            m_BaseSampleIndex(BaseSampleIndex),
+            m_SampleCount(SampleCount),
+            m_Value(Value)
+        {
+        }
 
-public:
-	bool Parse(long scale, LONGLONG CTOffset, Atom* patmSTBL);
+        uint32_t m_BaseSampleIndex;
+        uint32_t m_SampleCount;
+        uint32_t m_Value;
+    };
+
+    bool Parse(long scale, LONGLONG CTOffset, Atom* patmSTBL);
 
     long DTSToSample(LONGLONG tStart);
-	SIZE_T Get(REFERENCE_TIME*& pnTimes) const;
+    size_t Get(REFERENCE_TIME*& pnTimes) const;
     LONGLONG SampleToCTS(long nSample);
     LONGLONG Duration(long nSample);
     LONGLONG CTSOffset(long nSample) const;
-	void GetCompositionTimeOffsetVector(std::vector<CompositionTimeOffset>& CompositionTimeOffsetVector) const;
+    void GetCompositionTimeOffsetVector(std::vector<CompositionTimeOffset>& CompositionTimeOffsetVector) const;
     long CTSToSample(LONGLONG tStart);
-    LONGLONG TotalDuration()					{ return m_total; }
+    LONGLONG TotalDuration() const
+    {
+        return m_total;
+    }
 
     LONGLONG TrackToReftime(LONGLONG nTrack) const;
-    bool HasCTSTable()  { return m_nCTTS > 0; }
-	LONGLONG ReftimeToTrack(LONGLONG reftime);
+    bool HasCTSTable() const
+    {
+        return m_nCTTS > 0;
+    }
+    LONGLONG ReftimeToTrack(LONGLONG reftime);
 
 private:
     long m_scale;               // track scale units

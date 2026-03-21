@@ -37,8 +37,6 @@ class DemuxOutputPin;
 class AsyncRequestor
 {
 public:
-	AsyncRequestor();
-
 	void Active(IAsyncReader* pRdr);
 	void Inactive();
 	HRESULT Read(LONGLONG llOffset, long cBytes, BYTE* pBuffer);
@@ -54,8 +52,8 @@ private:
 	IMemAllocatorPtr m_pAlloc;
 	list<IMediaSamplePtr> m_free;
 	list<IMediaSamplePtr> m_requests;
-	bool m_bBusy;
-	CAMEvent m_ev;
+	bool m_bBusy = false;
+    CAMEvent m_ev { true };
 	ALLOCATOR_PROPERTIES m_props;
 };
 
@@ -81,36 +79,31 @@ public:
     HRESULT CompleteConnect(IPin* pPeer);
     HRESULT BreakConnect();
 
-    // AtomReader abstraction:
-    // access to the file from the Mpeg-4 parsing classes
-    HRESULT Read(LONGLONG llOffset, long cBytes, BYTE* pBuffer);
-    LONGLONG Length();
-
-    // ...but we don't support the caching interface for the whole file
-    // -- only individual atoms should be cached in memory
-    bool IsBuffered()
-    {
-        return false;
-    }
-
-    // calls to Buffer and BufferRelease are refcounted and should correspond.
-    const BYTE* Buffer() 
-    {
-        return NULL;
-    }
-    void BufferRelease() 
-    {
-    }
-
     HRESULT Active();
     HRESULT Inactive();
 
+// AtomReader
+    HRESULT Read(LONGLONG llOffset, long cBytes, BYTE* pBuffer) override;
+    LONGLONG Length() const override;
+    bool IsBuffered() const override
+    {
+        // ...but we don't support the caching interface for the whole file
+        // -- only individual atoms should be cached in memory
+        return false;
+    }
+    const BYTE* Buffer() override
+    {
+        // calls to Buffer and BufferRelease are refcounted and should correspond.
+        return nullptr;
+    }
+    void BufferRelease() override
+    {
+    }
+
 private:
     Mpeg4Demultiplexor* m_pParser;
-
 	AsyncRequestor m_requestor;
 };
-
 
 class DemuxOutputPin
 : public CBaseOutputPin,
@@ -263,8 +256,14 @@ public:
     // called from output pins for seeking support
     bool SelectSeekingPin(DemuxOutputPin* pPin);
     void DeselectSeekingPin(DemuxOutputPin* pPin);
-    REFERENCE_TIME GetDuration();
-    void GetSeekingParams(REFERENCE_TIME* ptStart, REFERENCE_TIME* ptStop, double* pdRate);
+    REFERENCE_TIME GetDuration() const;
+    struct SeekingParams
+    {
+        REFERENCE_TIME StartTime;
+        REFERENCE_TIME StopTime;
+        double Rate;
+    };
+    SeekingParams GetSeekingParams() const;
     HRESULT Seek(REFERENCE_TIME& tStart, BOOL bSeekToKeyFrame, REFERENCE_TIME tStop, double dRate);
     HRESULT SetRate(double dRate);
     HRESULT SetStopTime(REFERENCE_TIME tStop);
@@ -353,9 +352,7 @@ public:
     }
 
 private:
-    // construct only via class factory
     Mpeg4Demultiplexor(LPUNKNOWN pUnk, HRESULT* phr);
-    ~Mpeg4Demultiplexor();
 
     DemuxOutputPin* Output(int n)
     {
@@ -363,20 +360,17 @@ private:
     }
 private:
     CCritSec m_csFilter;
-    DemuxInputPin* m_pInput;
+    std::unique_ptr<DemuxInputPin> m_pInput;
 
     // one output pin for each enabled track
-    vector<DemuxOutputPinPtr> m_Outputs;
+    std::vector<DemuxOutputPinPtr> m_Outputs;
 
-    // for seeking
     CCritSec m_csSeeking;
-    REFERENCE_TIME m_tStart;
-    REFERENCE_TIME m_tStop;
-    double m_dRate;
-    DemuxOutputPin* m_pSeekingPin;
+    SeekingParams m_SeekingParams;
+    DemuxOutputPin* m_pSeekingPin = nullptr;
 
     // file headers
-    smart_ptr<Movie> m_pMovie;
+    std::shared_ptr<Movie> m_pMovie;
 };
 
 

@@ -21,8 +21,6 @@ _COM_SMARTPTR_TYPEDEF(IPin, IID_IPin);
 
 #pragma comment(lib, "mfplat.lib")
 
-#include "smartptr.h"
-
 #include <string>
 #include <sstream>
 #include <vector>
