@@ -42,7 +42,7 @@ const AMOVIESETUP_PIN
 Mpeg4Mux::m_sudPin[] = 
 {
     {
-        L"Video",           // pin name
+        const_cast<LPWSTR>(L"Video"), // pin name
         FALSE,              // is rendered?    
         FALSE,              // is output?
         FALSE,              // zero instances allowed?
@@ -53,7 +53,7 @@ Mpeg4Mux::m_sudPin[] =
         &m_sudType[0]       // list of registered media types    
     },
     {
-        L"Audio",           // pin name
+        const_cast<LPWSTR>(L"Audio"), // pin name
         FALSE,              // is rendered?    
         FALSE,              // is output?
         FALSE,              // zero instances allowed?
@@ -64,7 +64,7 @@ Mpeg4Mux::m_sudPin[] =
         &m_sudType[1]       // list of registered media types    
     },
     {
-        L"Output",          // pin name
+        const_cast<LPWSTR>(L"Output"), // pin name
         FALSE,              // is rendered?    
         TRUE,               // is output?
         FALSE,              // zero instances allowed?
