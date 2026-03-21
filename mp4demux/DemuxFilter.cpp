@@ -776,7 +776,10 @@ DemuxOutputPin::ThreadProc()
 		}
 
 		auto const MovieDuration = m_pTrack->GetMovie()->Duration();
-		if (SeekingParams.StopTime > MovieDuration)
+        // HOTFIX: Typical streaming request is to play to the end and some files have bogus duration, 
+		//         so if the stop time is max, or beyond the movie duration, just play to the end of the movie.
+        // TODO: Check mp4mux, we seem to be creating such files in the case of small amount of samples, and we should fix that as well.
+		if (SeekingParams.StopTime != std::numeric_limits<REFERENCE_TIME>::max() && SeekingParams.StopTime > MovieDuration)
 			SeekingParams.StopTime = MovieDuration;
 		// used only for quality management. No segment support yet
 		long nStop = m_pTrack->TimesIndex()->DTSToSample(SeekingParams.StopTime);
