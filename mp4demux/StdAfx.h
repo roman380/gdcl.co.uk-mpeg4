@@ -5,10 +5,6 @@
 
 #pragma once
 
-
-// Insert your headers here
-#define WIN32_LEAN_AND_MEAN		// Exclude rarely-used stuff from Windows headers
-
 // ignore deprecated warnings for standard headers
 #pragma warning(push)
 #pragma warning(disable:4995)
