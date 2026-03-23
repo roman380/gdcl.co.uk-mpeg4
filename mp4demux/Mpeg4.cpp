@@ -472,7 +472,19 @@ MovieTrack::ParseMDIA(Atom* patm, REFERENCE_TIME tFirst)
 			}
 			tFrame = (UNITS * 1000 / fpsk);
 			m_pType->SetRate(tFrame);
-        }
+		} else 
+		if (cFrames > 0 && cFrames < 120)
+		{ 
+			// HOTFIX: Small files might be recorded with zero duration...
+			int64_t DurationSum = 0;
+			for (int i = 0; i < cFrames; i++)
+				DurationSum += m_pTimes->Duration(i);
+			if(DurationSum) 
+			{
+				auto const AverageDuration = DurationSum / cFrames;
+				m_pType->SetRate(AverageDuration);
+			}
+		}
 	}
 
     return true;
