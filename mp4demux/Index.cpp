@@ -9,22 +9,12 @@
 // http://www.gdcl.co.uk
 //////////////////////////////////////////////////////////////////////
 
-
 #include "stdafx.h"
 #include "Mpeg4.h"
 #include "Index.h"
 
 // sample count and sizes ------------------------------------------------
 
-SampleSizes::SampleSizes()
-: m_nSamples(0),
-  m_nMaxSize(0),
-  m_nFixedSize(0),
-  m_patmSTSZ(NULL),
-  m_patmSTSC(NULL),
-  m_patmSTCO(NULL)
-{}
-     
 bool 
 SampleSizes::Parse(Atom* patmSTBL)
 {
@@ -33,14 +23,10 @@ SampleSizes::Parse(Atom* patmSTBL)
 
     m_patmSTSZ = patmSTBL->FindChild(FOURCC("stsz"));
     if (!m_patmSTSZ)
-    {
         return false;
-    }
     m_pBuffer = m_patmSTSZ;
     if (m_pBuffer[0] != 0)  // check version 0
-    {
         return false;
-    }
 
     m_nFixedSize = SwapLong(m_pBuffer+4);
     m_nSamples = SwapLong(m_pBuffer+8);
@@ -61,9 +47,7 @@ SampleSizes::Parse(Atom* patmSTBL)
 
     m_patmSTSC = patmSTBL->FindChild(FOURCC("stsc"));
     if (!m_patmSTSC)
-    {
         return false;
-    }
     m_pSTSC = m_patmSTSC;
     m_nEntriesSTSC = SwapLong(m_pSTSC+4);
 
@@ -74,9 +58,7 @@ SampleSizes::Parse(Atom* patmSTBL)
     } else {
         m_patmSTCO = patmSTBL->FindChild(FOURCC("co64"));
         if (!m_patmSTCO)
-        {
             return false;
-        }
         m_bCO64 = true;
     }
     m_pSTCO = m_patmSTCO;
@@ -85,18 +67,16 @@ SampleSizes::Parse(Atom* patmSTBL)
 }
 
 long 
-SampleSizes::Size(long nSample)
+SampleSizes::Size(long nSample) const
 {
     long cThis = m_nFixedSize;
     if ((cThis == 0) && (nSample < m_nSamples))
-    {
         cThis = SwapLong(m_pBuffer + 12 + (nSample * 4));
-    }
     return cThis;
 }
                  
 LONGLONG 
-SampleSizes::Offset(long nSample)
+SampleSizes::Offset(long nSample) const
 {
     // !! consider caching prev entry and length of chunk
     // and just adding on sample size until chunk count reached
@@ -176,19 +156,10 @@ SampleSizes::AdjustFixedSize(long nBytes)
 
 // --- sync sample map --------------------------------
 
-KeyMap::KeyMap()
-: m_patmSTSS(NULL),
-  m_pSTSS(NULL),
-  m_nEntries(0)
-{
-}
-
 KeyMap::~KeyMap()
 {
     if (m_patmSTSS)
-    {
         m_patmSTSS->BufferRelease();
-    }
 }
 
 bool 
@@ -212,7 +183,7 @@ KeyMap::Parse(Atom* patmSTBL)
 }
 
 long 
-KeyMap::SyncFor(long nSample)
+KeyMap::SyncFor(long nSample) const
 {
     if (!m_patmSTSS || (m_nEntries == 0))
     {
@@ -255,20 +226,20 @@ KeyMap::Next(long nSample)
     return 0;
 }
 
-SIZE_T KeyMap::Get(SIZE_T*& pnIndexes) const
+size_t KeyMap::Get(size_t*& pnIndexes) const
 {
 	ASSERT(!pnIndexes);
 	if(m_nEntries)
 	{
-		pnIndexes = (SIZE_T*) CoTaskMemAlloc(m_nEntries * sizeof *pnIndexes);
+		pnIndexes = (size_t*) CoTaskMemAlloc(m_nEntries * sizeof *pnIndexes);
 		ASSERT(pnIndexes);
-	    for(SIZE_T nEntryIndex = 0; nEntryIndex < (SIZE_T) m_nEntries; nEntryIndex++)
+	    for(size_t nEntryIndex = 0; nEntryIndex < (size_t) m_nEntries; nEntryIndex++)
 		{
-	        const SIZE_T nIndex = SwapLong(m_pSTSS + 8 + (nEntryIndex * 4))-1;
+	        const size_t nIndex = SwapLong(m_pSTSS + 8 + (nEntryIndex * 4))-1;
 			pnIndexes[nEntryIndex] = nIndex;
 		}
 	}
-	return (SIZE_T) m_nEntries;
+	return (size_t) m_nEntries;
 }
 
 // ----- times index ----------------------------------
@@ -398,7 +369,7 @@ SampleTimes::DTSToSample(LONGLONG tStart)
     return 0;
 }
 
-SIZE_T SampleTimes::Get(REFERENCE_TIME*& pnTimes) const
+size_t SampleTimes::Get(REFERENCE_TIME*& pnTimes) const
 {
 	ASSERT(!pnTimes);
 	size_t EntryCount = 0; 
@@ -408,7 +379,7 @@ SIZE_T SampleTimes::Get(REFERENCE_TIME*& pnTimes) const
 	{
 		std::vector<CompositionTimeOffset> CompositionTimeOffsetVector;
 		GetCompositionTimeOffsetVector(CompositionTimeOffsetVector);
-		SIZE_T CompositionTimeOffsetVectorIndex = 0;
+		size_t CompositionTimeOffsetVectorIndex = 0;
 		pnTimes = (REFERENCE_TIME*) CoTaskMemAlloc(EntryCount * sizeof *pnTimes);
 		ASSERT(pnTimes);
 		size_t EntryIndex = 0;

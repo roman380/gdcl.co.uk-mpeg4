@@ -14,36 +14,35 @@
 
 inline UINT16 Swap2Bytes(UINT16 Value)
 {
-	return _byteswap_ushort(Value);
+    return _byteswap_ushort(Value);
 }
 inline UINT32 Swap4Bytes(UINT32 Value)
 {
-	return _byteswap_ulong(Value);
+    return _byteswap_ulong(Value);
 }
 inline UINT32 SwapLong(const BYTE* Value)
 {
-	return _byteswap_ulong(*((const UINT32*) Value));
+    return _byteswap_ulong(*((const UINT32*)Value));
 }
 inline UINT64 SwapI64(const BYTE* Value)
 {
-	return _byteswap_uint64(*((const UINT64*) Value));
+    return _byteswap_uint64(*((const UINT64*)Value));
 }
 
 class Atom;
-typedef smart_ptr<Atom> AtomPtr;
 
 // abstract interface that is implemented by the supplier of data,
 // e.g. by the filter's input pin
 class AtomReader
 {
 public:
-    virtual ~AtomReader() {}
+    virtual ~AtomReader() = default;
 
     virtual HRESULT Read(LONGLONG llOffset, long cBytes, BYTE* pBuffer) = 0;
-    virtual LONGLONG Length() = 0;
+    virtual LONGLONG Length() const = 0;
 
     // support for caching in memory. 
-    virtual bool IsBuffered() = 0;
+    virtual bool IsBuffered() const = 0;
 
     // calls to Buffer and BufferRelease are refcounted and should correspond.
     virtual const BYTE* Buffer() = 0;
@@ -70,13 +69,7 @@ public:
     // to the constructor. This means we can use the same class for the outer file
     // container (which does not have a header).
     Atom(AtomReader* pReader, LONGLONG llOffset, LONGLONG llLength, DWORD type, long cHeader);
-    virtual ~Atom() {}
 
-    virtual HRESULT Read(LONGLONG llOffset, long cBytes, BYTE* pBuffer);
-    virtual LONGLONG Length()
-    {
-        return m_llLength;
-    }
     virtual DWORD Type()
     {
         return m_type;
@@ -88,21 +81,27 @@ public:
         return m_cHeader;
     }
 
-    virtual long ChildCount();
+    virtual size_t ChildCount();
 
     // these methods return a pointer to an Atom object that is contained within
     // this Atom -- so do not delete.
-    virtual Atom* Child(long nChild);
+    virtual Atom* Child(size_t nChild) const;
     virtual Atom* FindChild(DWORD fourcc);
-
-    virtual bool IsBuffered();
-    // calls to Buffer and BufferRelease are refcounted and should correspond.
-    virtual const BYTE* Buffer();
-    virtual void BufferRelease();
 
     // call this if the child items do not start immediately after the header
     // -- llOffset is an offset from HeaderSize
     virtual void ScanChildrenAt(LONGLONG llOffset);
+
+// AtomReader
+    HRESULT Read(LONGLONG llOffset, long cBytes, BYTE* pBuffer) override;
+    LONGLONG Length() const override
+    {
+        return m_llLength;
+    }
+    bool IsBuffered() const override;
+    // calls to Buffer and BufferRelease are refcounted and should correspond.
+    uint8_t const* Buffer() override;
+    void BufferRelease() override;
 
 private:
     AtomReader* m_pSource;
@@ -112,11 +111,10 @@ private:
     DWORD m_type;
 
     // caching
-    smart_array<BYTE> m_Buffer;
-    long m_cBufferRefCount;
+    std::vector<uint8_t> m_Buffer;
+    long m_BufferReferenceCount = 0;
 
-    // list of children
-    list<AtomPtr> m_Children;
+    std::vector<std::shared_ptr<Atom>> m_Children;
 };
 
 // this class is a simple way to manage the Buffer/BufferRelease
@@ -125,19 +123,19 @@ class AtomCache
 {
 public:
     AtomCache(Atom* patm = NULL)
-    : m_pAtom(patm)
+        : m_pAtom(patm)
     {
-		if (patm != NULL)
-		{
-			m_pBuffer = patm->Buffer() + patm->HeaderSize();
-		}
+        if (patm != NULL)
+        {
+            m_pBuffer = patm->Buffer() + patm->HeaderSize();
+        }
     }
     ~AtomCache()
     {
-		if (m_pAtom != NULL)
-		{
-			m_pAtom->BufferRelease();
-		}
+        if (m_pAtom != NULL)
+        {
+            m_pAtom->BufferRelease();
+        }
     }
     const AtomCache& operator=(Atom* patm)
     {
@@ -154,7 +152,7 @@ public:
     }
 
 
-    const BYTE* operator->() const 
+    const BYTE* operator->() const
     {
         return m_pBuffer;
     }
@@ -162,11 +160,11 @@ public:
     {
         return m_pBuffer[idx];
     }
-    operator const BYTE*() const
+    operator const BYTE* () const
     {
         return m_pBuffer;
     }
-	
+
 private:
     Atom* m_pAtom;
     const BYTE* m_pBuffer;
@@ -183,99 +181,97 @@ class SampleTimes;
 
 struct EditEntry // ISO/IEC 14496-12:2012; 8.6.6 Edit List Box
 {
-	LONGLONG segment_duration; // uint64_t
-	LONGLONG media_time; // int64_t
-	LONGLONG sumDurations;
+    LONGLONG segment_duration; // uint64_t
+    LONGLONG media_time; // int64_t
+    LONGLONG sumDurations;
 };
 
 class MovieTrack
 {
 public:
-    MovieTrack(Atom* pAtom, Movie* pMovie, long idx);
+    MovieTrack(Atom* pAtom, Movie* pMovie, size_t idx);
 
-    bool Valid()
+    bool Valid() const
     {
-        return (m_pRoot != NULL);
+        return m_pRoot != nullptr;
     }
-    const char* Name()
+    std::string const& Name() const
     {
-        return m_strName.c_str();
+        return m_strName;
     }
-    bool IsVideo();
-    bool GetType(CMediaType* pmt, int nType);
+    bool IsVideo() const;
+    bool GetType(CMediaType* pmt, int nType) const;
     bool SetType(const CMediaType* pmt);
     FormatHandler* Handler();
 
-    SampleSizes* SizeIndex()
+    auto const& SizeIndex() const
     {
         return m_pSizes;
     }
-    KeyMap* GetKeyMap()
+    auto const& GetKeyMap() const
     {
         return m_pKeyMap;
     }
-    SampleTimes* TimesIndex()
+    auto const& TimesIndex() const
     {
         return m_pTimes;
     }
-    Movie* GetMovie()
+    Movie* GetMovie() const
     {
         return m_pMovie;
     }
     HRESULT ReadSample(long nSample, BYTE* pBuffer, long cBytes);
-	bool IsOldAudioFormat()		{ return m_bOldFixedAudio; }
-	bool CheckInSegment(REFERENCE_TIME tNext, bool bSyncBefore, size_t* pnSegment, long* pnSample);
-	void GetTimeBySegment(long nSample, size_t segment, REFERENCE_TIME* ptStart, REFERENCE_TIME* pDuration);
-	bool NextBySegment(long* pnSample, size_t* psegment);
-	SIZE_T GetTimes(REFERENCE_TIME** ppnStartTimes, REFERENCE_TIME** ppnStopTimes, ULONG** ppnFlags, ULONG** ppnDataSizes);
+    bool IsOldAudioFormat()	const { return m_bOldFixedAudio; }
+    bool CheckInSegment(REFERENCE_TIME tNext, bool bSyncBefore, size_t* pnSegment, long* pnSample);
+    void GetTimeBySegment(long nSample, size_t segment, REFERENCE_TIME* ptStart, REFERENCE_TIME* pDuration);
+    bool NextBySegment(long* pnSample, size_t* psegment);
+    size_t GetTimes(REFERENCE_TIME** ppnStartTimes, REFERENCE_TIME** ppnStopTimes, ULONG** ppnFlags, ULONG** ppnDataSizes);
 
 private:
     bool ParseMDIA(Atom* patm, REFERENCE_TIME tFirst);
     bool ParseSTSD(REFERENCE_TIME tFrame, Atom* pSTSD);
     LONGLONG ParseEDTS(Atom* patm);
 
-private:
-    Atom* m_pRoot = nullptr;
-    Movie* m_pMovie = nullptr;
+    Atom* m_pRoot;
+    Movie* m_pMovie;
+    size_t m_idx;
     string m_strName;
-    long m_idx;
 
     long m_scale;
     Atom* m_patmSTBL = nullptr;
-    smart_ptr<ElementaryType> m_pType;
-    smart_ptr<SampleSizes> m_pSizes;
-    smart_ptr<KeyMap> m_pKeyMap;
-    smart_ptr<SampleTimes> m_pTimes;
-	bool m_bOldFixedAudio = false;
+    std::shared_ptr<ElementaryType> m_pType;
+    std::shared_ptr<SampleSizes> m_pSizes;
+    std::shared_ptr<KeyMap> m_pKeyMap;
+    std::shared_ptr<SampleTimes> m_pTimes;
+    bool m_bOldFixedAudio = false;
 
-	REFERENCE_TIME m_tNext;
-	vector<EditEntry> m_Edits;
+    REFERENCE_TIME m_tNext;
+    vector<EditEntry> m_Edits;
 };
-typedef smart_ptr<MovieTrack> MovieTrackPtr;
 
 class Movie
 {
 public:
-    Movie(Atom* pRoot);
+    Movie(std::shared_ptr<Atom>&& RootAtom);
 
-    long Tracks()
+    size_t Tracks() const
     {
-        return (long)m_Tracks.size();
+        return m_Tracks.size();
     }
-    MovieTrack* Track(long nTrack)
+    std::shared_ptr<MovieTrack> const& Track(size_t TrackIndex) const
     {
-        return m_Tracks[nTrack];
+        return m_Tracks[TrackIndex];
     }
-	SIZE_T InvalidTrackCount() const
-	{
-		return m_invalidTrackCount;
-	}
+    size_t InvalidTrackCount() const
+    {
+        return m_invalidTrackCount;
+    }
 
-    REFERENCE_TIME Duration()
+    REFERENCE_TIME Duration() const
     {
         return m_tDuration;
     }
-    LONGLONG Scale()
+    LONGLONG Scale() const
     {
         return m_scale;
     }
@@ -291,9 +287,9 @@ public:
     }
 
 private:
-    smart_ptr<Atom> m_pRoot;
-    vector<MovieTrackPtr> m_Tracks;
-	size_t m_invalidTrackCount = 0;
+    std::shared_ptr<Atom> m_RootAtom;
+    std::vector<std::shared_ptr<MovieTrack>> m_Tracks;
+    size_t m_invalidTrackCount = 0;
     long m_scale;
     LONGLONG m_duration;
     REFERENCE_TIME m_tDuration;

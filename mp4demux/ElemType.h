@@ -81,7 +81,7 @@ enum eESType {
 class FormatHandler
 {
 public:
-    virtual ~FormatHandler() {}
+    virtual ~FormatHandler() = default;
 
     virtual long BufferSize(long MaxSize) = 0;
     virtual void StartStream() = 0;
@@ -99,23 +99,20 @@ public:
 class ElementaryType  
 {
 public:
-    ElementaryType();
-    ~ElementaryType();
-
     bool Parse(REFERENCE_TIME tFrame, Atom* patm); // atom should be stsd descriptor mp4v, jvt1, mp4a
 	bool IsVideo();
-	string ShortName()
+	string ShortName() const
 	{
 		return m_shortname;
 	}
     bool GetType(CMediaType* pmt, int nType);
     bool SetType(const CMediaType* pmt);
-    FormatHandler* Handler() 
+    FormatHandler* Handler() const
     {
-        return m_pHandler;
+        return m_Handler.get();
     }
 
-	eESType StreamType()
+	eESType StreamType() const
 	{
 		return m_type;
 	}
@@ -135,21 +132,20 @@ private:
 
 private:
     eESType m_type;
-    smart_array<BYTE> m_pDecoderSpecific;
-    long m_cDecoderSpecific;
+    std::vector<uint8_t> m_pDecoderSpecific;
 
     long m_cx;
     long m_cy;
     static const int SamplingFrequencies[];
-    REFERENCE_TIME m_tFrame;
+    REFERENCE_TIME m_tFrame = 0;
 
 	// fourcc and bitdepth -- for uncompressed or RLE format
 	DWORD m_fourcc;
-	int m_depth;
+	int m_depth = 0;
 
     CMediaType m_mtChosen;
-    FormatHandler* m_pHandler;
-	string m_shortname;
+    std::unique_ptr<FormatHandler> m_Handler;
+	std::string m_shortname;
 };
 
 // --- directshow type info
